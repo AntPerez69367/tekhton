@@ -28,9 +28,9 @@ extract_human_notes() {
         return
     fi
     if [ -n "$NOTES_FILTER" ]; then
-        grep "^- \[ \] \[${NOTES_FILTER}\]" HUMAN_NOTES.md | sed 's/^- \[ \] /- /'
+        grep "^- \[ \] \[${NOTES_FILTER}\]" HUMAN_NOTES.md | sed 's/^- \[ \] /- /' || true
     else
-        grep "^- \[ \]" HUMAN_NOTES.md | sed 's/^- \[ \] /- /'
+        grep "^- \[ \]" HUMAN_NOTES.md | sed 's/^- \[ \] /- /' || true
     fi
 }
 

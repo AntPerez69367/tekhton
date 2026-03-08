@@ -188,13 +188,16 @@ run_stage_architect() {
     resolve_section=$(awk '/^## Drift Observations to Resolve/{found=1; next} found && /^##/{exit} found{print}' \
         ARCHITECT_PLAN.md 2>/dev/null || true)
 
-    if [ -n "$resolve_section" ] && ! echo "$resolve_section" | grep -qiE '^\s*-?\s*None\s*$'; then
+    if [ -n "$resolve_section" ]; then
         log "Marking addressed drift observations as resolved..."
         # Build pattern list from resolve section lines
         local resolve_patterns=()
         while IFS= read -r line; do
             line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
             [ -z "$line" ] && continue
+            # Skip placeholder / boilerplate lines
+            echo "$line" | grep -qiE '^\s*None\b' && continue
+            echo "$line" | grep -qE '^\s*-+\s*$' && continue
             # Escape regex special characters for safe grep matching
             local escaped
             escaped=$(printf '%s' "$line" | sed 's/[.[\*^$()+?{|]/\\&/g')
@@ -213,13 +216,29 @@ run_stage_architect() {
     design_section=$(awk '/^## Design Doc Observations/{found=1; next} found && /^##/{exit} found{print}' \
         ARCHITECT_PLAN.md 2>/dev/null || true)
 
-    if [ -n "$design_section" ] && ! echo "$design_section" | grep -qiE '^\s*-?\s*None\s*$'; then
-        log "Adding design doc observations to human action file..."
+    if [ -n "$design_section" ]; then
+        # Filter out non-actionable lines: section subtitles, separators, "None"
+        local filtered_lines=""
         while IFS= read -r line; do
-            line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
-            [ -z "$line" ] && continue
-            append_human_action "architect" "$line"
+            local cleaned
+            cleaned=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
+            [ -z "$cleaned" ] && continue
+            # Skip placeholder / boilerplate lines
+            echo "$cleaned" | grep -qiE '^\s*-?\s*None\.?\s*$' && continue
+            echo "$cleaned" | grep -qE '^\s*-+\s*$' && continue
+            echo "$cleaned" | grep -qiE '^\*?\(route to human' && continue
+            filtered_lines+="${cleaned}"$'\n'
         done <<< "$design_section"
+
+        # Only append if there are real actionable lines
+        filtered_lines=$(echo "$filtered_lines" | sed '/^$/d')
+        if [ -n "$filtered_lines" ]; then
+            log "Adding design doc observations to human action file..."
+            while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                append_human_action "architect" "$line"
+            done <<< "$filtered_lines"
+        fi
     fi
 
     # --- Reset audit counter -------------------------------------------------

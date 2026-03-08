@@ -65,8 +65,11 @@ run_final_checks() {
     header "Final Checks"
 
     log "Running ${ANALYZE_CMD}..."
-    ANALYZE_OUTPUT=$(${ANALYZE_CMD} 2>&1 | tee -a "$log_file")
-    ANALYZE_EXIT=${PIPESTATUS[0]}
+    set +e
+    ANALYZE_OUTPUT=$(${ANALYZE_CMD} 2>&1)
+    ANALYZE_EXIT=$?
+    set -e
+    echo "$ANALYZE_OUTPUT" >> "$log_file"
 
     if [ $ANALYZE_EXIT -eq 0 ] && ! echo "$ANALYZE_OUTPUT" | grep -qE "^  (warning|error|info)"; then
         print_run_summary
@@ -93,7 +96,7 @@ run_final_checks() {
 
         warn "Running analyze cleanup pass (${CLEANUP_MODEL})..."
 
-        ANALYZE_ISSUES=$(echo "$ANALYZE_OUTPUT" | grep -E "^  (error|warning|info)")
+        ANALYZE_ISSUES=$(echo "$ANALYZE_OUTPUT" | grep -E "^  (error|warning|info)" || true)
         CLEANUP_PROMPT=$(render_prompt "analyze_cleanup")
 
         run_agent \

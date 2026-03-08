@@ -52,10 +52,10 @@ run_stage_review() {
 
         # --- Parse verdict ---------------------------------------------------
 
-        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md | tail -1 | tr -d '[:space:]')
+        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         # Also catch inline verdict formats like "Verdict: APPROVED" or "**Verdict: CHANGES_REQUIRED**"
         if [ -z "$VERDICT" ] || [ "$VERDICT" = "##Verdict" ]; then
-            VERDICT=$(grep -oi "APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md | head -1)
+            VERDICT=$(grep -oi "APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 

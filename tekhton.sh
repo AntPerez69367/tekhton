@@ -31,6 +31,32 @@
 
 set -euo pipefail
 
+# --- Crash diagnostics -------------------------------------------------------
+# Catch unexpected exits (from set -e, pipefail, or unset variables) and print
+# a diagnostic message pointing to the source. Fires on EXIT so it catches
+# everything, but only prints when exit code is non-zero.
+_tekhton_cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        echo >&2
+        echo -e "\033[0;31m[✗] ══════════════════════════════════════\033[0m" >&2
+        echo -e "\033[0;31m[✗]   PIPELINE CRASHED (exit code: ${exit_code})\033[0m" >&2
+        echo -e "\033[0;31m[✗] ══════════════════════════════════════\033[0m" >&2
+        echo -e "\033[0;31m[✗] Last command: ${BASH_COMMAND:-unknown}\033[0m" >&2
+        echo -e "\033[0;31m[✗] Source:       ${BASH_SOURCE[1]:-unknown}:${BASH_LINENO[0]:-?}\033[0m" >&2
+        echo -e "\033[0;31m[✗] Task:         ${TASK:-not set}\033[0m" >&2
+        if [ -n "${LOG_FILE:-}" ]; then
+            echo -e "\033[0;31m[✗] Log:          ${LOG_FILE}\033[0m" >&2
+        fi
+        echo -e "\033[0;31m[✗]\033[0m" >&2
+        echo -e "\033[0;31m[✗] This is likely a command that returned non-zero under\033[0m" >&2
+        echo -e "\033[0;31m[✗] 'set -euo pipefail'. Common causes: grep found no\033[0m" >&2
+        echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
+        echo >&2
+    fi
+}
+trap _tekhton_cleanup EXIT
+
 # --- Path resolution ---------------------------------------------------------
 # TEKHTON_HOME: where this script (and lib/, stages/, prompts/) lives.
 # PROJECT_DIR:  the target project — always the caller's working directory.
@@ -494,7 +520,7 @@ if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ]; then
 else
     header "Stage 2 / 3 — Reviewer (skipped)"
     log "Using existing REVIEWER_REPORT.md"
-    VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md | tail -1 | tr -d '[:space:]')
+    VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
     log "Existing verdict: ${VERDICT}"
 fi
 

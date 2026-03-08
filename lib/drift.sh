@@ -241,7 +241,7 @@ get_next_adl_number() {
         return
     fi
     local max
-    max=$(grep -oE 'ADL-[0-9]+' "$adl_file" 2>/dev/null | grep -oE '[0-9]+' | sort -n | tail -1)
+    max=$(grep -oE 'ADL-[0-9]+' "$adl_file" 2>/dev/null | grep -oE '[0-9]+' | sort -n | tail -1 || true)
     if [ -z "$max" ]; then
         echo "1"
     else

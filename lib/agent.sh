@@ -45,6 +45,9 @@ run_agent() {
     local start_time
     start_time=$(date +%s)
 
+    # Temporarily disable pipefail — claude can exit non-zero on turn limits
+    # and we don't want that to kill the entire tekhton pipeline
+    set +o pipefail
     claude \
         --model "$model" \
         --dangerously-skip-permissions \
@@ -70,6 +73,12 @@ run_agent() {
                 2>/dev/null || echo "0")
             echo "$turns" > "/tmp/tekhton_${PROJECT_NAME// /_}_last_turns"
         )
+    local agent_exit=${PIPESTATUS[0]}
+    set -o pipefail
+
+    if [ "$agent_exit" -ne 0 ]; then
+        warn "[$label] claude exited with code ${agent_exit} (may indicate turn limit or error)"
+    fi
 
     local end_time
     end_time=$(date +%s)
@@ -77,18 +86,19 @@ run_agent() {
     local mins=$(( elapsed / 60 ))
     local secs=$(( elapsed % 60 ))
     local turns_used
-    turns_used=$(cat "/tmp/tekhton_${PROJECT_NAME// /_}_last_turns" 2>/dev/null || echo "?")
+    turns_used=$(cat "/tmp/tekhton_${PROJECT_NAME// /_}_last_turns" 2>/dev/null || echo "0")
+    [[ "$turns_used" =~ ^[0-9]+$ ]] || turns_used=0
 
     # Detect overshoot — Claude CLI's --max-turns is a soft cap
     local turns_display="${turns_used}/${max_turns}"
-    if [ "$turns_used" != "?" ] && [ "$turns_used" -gt "$max_turns" ] 2>/dev/null; then
+    if [ "$turns_used" -gt "$max_turns" ] 2>/dev/null; then
         turns_display="${turns_used}/${max_turns} (overshot by $(( turns_used - max_turns )))"
     fi
 
     log "[$label] Turns: ${turns_display} | Time: ${mins}m${secs}s"
 
     # Accumulate run totals
-    TOTAL_TURNS=$(( TOTAL_TURNS + ${turns_used:-0} ))
+    TOTAL_TURNS=$(( TOTAL_TURNS + turns_used ))
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))
 
     # Store per-stage for summary

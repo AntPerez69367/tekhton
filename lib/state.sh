@@ -71,5 +71,7 @@ EOF
 }
 
 clear_pipeline_state() {
-    [ -f "$PIPELINE_STATE_FILE" ] && rm "$PIPELINE_STATE_FILE"
+    if [ -f "$PIPELINE_STATE_FILE" ]; then
+        rm "$PIPELINE_STATE_FILE"
+    fi
 }
