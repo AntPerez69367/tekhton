@@ -53,6 +53,19 @@ _tekhton_cleanup() {
         echo -e "\033[0;31m[✗] 'set -euo pipefail'. Common causes: grep found no\033[0m" >&2
         echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
         echo >&2
+
+        # --- Crash cleanup: archive transient artifacts -----------------------
+        # ARCHITECT_PLAN.md is a single-run artifact — archive it if it exists
+        if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ] && [ -f "ARCHITECT_PLAN.md" ]; then
+            mv "ARCHITECT_PLAN.md" "${LOG_DIR}/${TIMESTAMP}_ARCHITECT_PLAN.md" 2>/dev/null || true
+            echo -e "\033[0;31m[✗] Archived ARCHITECT_PLAN.md to logs before exit.\033[0m" >&2
+        fi
+
+        # Reset any in-progress [~] human notes back to [ ] so next run starts clean
+        if [ -f "HUMAN_NOTES.md" ]; then
+            sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md 2>/dev/null || true
+            echo -e "\033[0;31m[✗] Reset in-progress [~] human notes back to [ ].\033[0m" >&2
+        fi
     fi
 }
 trap _tekhton_cleanup EXIT

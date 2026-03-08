@@ -246,10 +246,11 @@ run_stage_architect() {
     reset_runs_since_audit
     log "Runs-since-audit counter reset."
 
-    # --- Archive plan --------------------------------------------------------
+    # --- Archive and clean up plan -------------------------------------------
 
     if [ -f "ARCHITECT_PLAN.md" ]; then
-        cp "ARCHITECT_PLAN.md" "${LOG_DIR}/${TIMESTAMP}_ARCHITECT_PLAN.md"
+        mv "ARCHITECT_PLAN.md" "${LOG_DIR}/${TIMESTAMP}_ARCHITECT_PLAN.md"
+        log "ARCHITECT_PLAN.md archived and removed from working directory."
     fi
 
     success "Architect audit complete."

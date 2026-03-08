@@ -96,3 +96,18 @@ When finished, update CODER_SUMMARY.md with:
 - '## Status' set to either 'COMPLETE' or 'IN PROGRESS'
 - '## Remaining Work' listing anything not finished if IN PROGRESS
 - Do NOT set COMPLETE if any planned work is unfinished
+{{IF:HUMAN_NOTES_BLOCK}}
+
+## Human Notes Completion Tracking (mandatory when human notes are present)
+Add this section to CODER_SUMMARY.md to report which human notes you addressed:
+```
+## Human Notes Status
+- COMPLETED: [TAG] exact note text here
+- NOT_ADDRESSED: [TAG] exact note text here (reason)
+```
+List EVERY human note injected above. For each, use exactly one of:
+- `COMPLETED:` — you fixed/implemented this item and verified it works
+- `NOT_ADDRESSED:` — you did not work on this item (add a brief reason)
+Copy the note text exactly as written above (including the [TAG] prefix).
+This section is required — the pipeline uses it to track note completion.
+{{ENDIF:HUMAN_NOTES_BLOCK}}

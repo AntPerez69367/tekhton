@@ -159,6 +159,11 @@ $(cat TESTER_REPORT.md)"
 
     # --- Invoke coder agent --------------------------------------------------
 
+    # Mark human notes as in-progress before coder runs
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+        claim_human_notes
+    fi
+
     CODER_PROMPT=$(render_prompt "coder")
 
     log "Invoking coder agent (max ${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS} turns)..."
@@ -176,15 +181,20 @@ $(cat TESTER_REPORT.md)"
     if [ ! -f "CODER_SUMMARY.md" ]; then
         error "Coder did not produce CODER_SUMMARY.md. Check the log: ${LOG_FILE}"
         error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
-        warn "HUMAN_NOTES.md was NOT archived — coder did not complete. Notes preserved for next run."
+        # Reset claimed notes — coder didn't produce any work
+        resolve_human_notes
         exit 1
+    fi
+
+    # Resolve human notes based on coder's structured reporting
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+        resolve_human_notes
     fi
 
     # Check if coder left status as IN PROGRESS (hit turn limit mid-work)
     CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
         warn "Coder summary shows IN PROGRESS — coder hit turn limit before finishing."
-        warn "Human notes have NOT been archived — they may not have been fully implemented."
 
         # Determine if enough was done to proceed to review
         IMPLEMENTED_LINES=$(grep -c "^- " CODER_SUMMARY.md 2>/dev/null || echo "0")
