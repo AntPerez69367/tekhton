@@ -574,6 +574,13 @@ FINAL_CHECK_RESULT=0
 if [ "${SKIP_FINAL_CHECKS:-false}" = true ]; then
     warn "Skipping final checks — a stage had a null run (agent died without doing work)."
     warn "Fix the underlying issue and re-run before running analyze/test."
+
+    # Archive whatever reports exist so they aren't lost
+    archive_reports "$LOG_DIR" "$TIMESTAMP"
+    print_run_summary
+    warn "Pipeline exiting early due to null run. Re-run to resume."
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
 else
     run_final_checks "$LOG_FILE" || FINAL_CHECK_RESULT=$?
 

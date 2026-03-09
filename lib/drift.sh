@@ -163,6 +163,10 @@ get_runs_since_audit() {
     fi
     local count
     count=$(grep -m1 "Runs since audit:" "$drift_file" 2>/dev/null | grep -oE '[0-9]+' || echo "0")
+    # Defensive: ensure count is numeric (guards against corrupted drift files)
+    if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+        count="0"
+    fi
     echo "$count"
 }
 
@@ -242,7 +246,7 @@ get_next_adl_number() {
     fi
     local max
     max=$(grep -oE 'ADL-[0-9]+' "$adl_file" 2>/dev/null | grep -oE '[0-9]+' | sort -n | tail -1 || true)
-    if [ -z "$max" ]; then
+    if [ -z "$max" ] || ! [[ "$max" =~ ^[0-9]+$ ]]; then
         echo "1"
     else
         echo "$((max + 1))"

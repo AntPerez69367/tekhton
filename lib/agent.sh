@@ -56,12 +56,15 @@ run_agent() {
     # Temporarily disable pipefail — claude can exit non-zero on turn limits
     # and we don't want that to kill the entire tekhton pipeline
     set +o pipefail
+    # Redirect stdin to /dev/null so piped input (e.g. yes | tekhton) doesn't
+    # leak into the claude process or accumulate in the buffer after it exits.
     claude \
         --model "$model" \
         --dangerously-skip-permissions \
         --max-turns "$max_turns" \
         --output-format json \
         -p "$prompt" \
+        < /dev/null \
         2>&1 | tee -a "$log_file" | (
             # Stream JSON lines — print text content live, capture final stats
             local turns=0
