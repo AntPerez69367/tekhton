@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <style>
+      .stone { fill: #1a1a1a; }
+      .keystone { fill: #1a1a1a; }
+      .gap { fill: none; }
+    </style>
+  </defs>
+
+  <!-- 
+    TEKHTON LOGO
+    An arch of 6 voussoir stones with a gap at the crown.
+    The keystone floats above, descending into place.
+    Geometry: semicircular arch, inner radius 52, outer radius 80
+    Centre of arch: (100, 148)
+    Each voussoir spans 30 degrees. Gap at top = 30 degrees (the keystone's place).
+    Voussoirs: 3 left (75°-105°, 105°-135°, 135°-165°) and mirror on right.
+    Angles measured from positive x-axis. Arch rises from horizontal.
+    Left stones: 75° to 165° (from right horizontal going counterclockwise)
+    Right stones: 15° to 105°
+    Gap: 75° to 105° (crown, 15 degrees each side of vertical = 30° gap)
+  -->
+
+  <!-- 
+    Arch centre: cx=100, cy=148
+    Inner radius: r1=50, Outer radius: r2=80
+    Stone spans 30° each, gap is 30° at crown (75°–105° from horizontal = 15° each side of vertical)
+    
+    Angles in standard math coords (0=right, 90=up):
+    Left side stones (going left from gap):
+      Stone L1: 90°+15° to 90°+45°  = 105° to 135°
+      Stone L2: 135° to 165°
+      Stone L3: 165° to 195° (goes below horizontal — we clip at 180°)
+    Right side stones (mirror):
+      Stone R1: 90°-15° to 90°-45°  = 75° to 45°
+      Stone R2: 45° to 15°
+      Stone R3: 15° to -15° (clipped at 0°)
+    
+    SVG coords: y increases downward, so we transform:
+    SVG_x = cx + r*cos(angle)
+    SVG_y = cy - r*sin(angle)   [minus because y flips]
+  -->
+
+  <!-- Helper: for angle a (degrees), cx=100, cy=148:
+       inner(a): x=100+50*cos(a°), y=148-50*sin(a°)
+       outer(a): x=100+80*cos(a°), y=148-80*sin(a°)
+  -->
+
+  <!-- LEFT STONE 1: 105° to 135° -->
+  <!-- outer arc from 105 to 135, then inner arc back from 135 to 105 -->
+  <!-- outer(105): x=100+80*cos105=100+80*(-0.2588)=100-20.7=79.3, y=148-80*sin105=148-80*(0.9659)=148-77.3=70.7 -->
+  <!-- outer(135): x=100+80*cos135=100+80*(-0.7071)=100-56.6=43.4, y=148-80*sin135=148-80*(0.7071)=148-56.6=91.4 -->
+  <!-- inner(135): x=100+50*cos135=100+50*(-0.7071)=100-35.4=64.6, y=148-50*sin135=148-50*(0.7071)=148-35.4=112.6 -->
+  <!-- inner(105): x=100+50*cos105=100+50*(-0.2588)=100-12.9=87.1, y=148-50*sin105=148-50*(0.9659)=148-48.3=99.7 -->
+  <path class="stone" d="
+    M 79.3,70.7
+    A 80,80 0 0,0 43.4,91.4
+    L 64.6,112.6
+    A 50,50 0 0,1 87.1,99.7
+    Z
+  "/>
+
+  <!-- LEFT STONE 2: 135° to 165° -->
+  <!-- outer(165): x=100+80*cos165=100+80*(-0.9659)=100-77.3=22.7, y=148-80*sin165=148-80*(0.2588)=148-20.7=127.3 -->
+  <!-- inner(165): x=100+50*cos165=100+50*(-0.9659)=100-48.3=51.7, y=148-50*sin165=148-50*(0.2588)=148-12.9=135.1 -->
+  <path class="stone" d="
+    M 43.4,91.4
+    A 80,80 0 0,0 22.7,127.3
+    L 51.7,135.1
+    A 50,50 0 0,1 64.6,112.6
+    Z
+  "/>
+
+  <!-- LEFT STONE 3: 165° to 180° -->
+  <!-- outer(180): x=100+80*cos180=100-80=20, y=148-80*sin180=148-0=148 -->
+  <!-- inner(180): x=100+50*cos180=100-50=50, y=148-50*sin180=148 -->
+  <path class="stone" d="
+    M 22.7,127.3
+    A 80,80 0 0,0 20,148
+    L 50,148
+    A 50,50 0 0,1 51.7,135.1
+    Z
+  "/>
+
+  <!-- RIGHT STONE 1: 75° to 45° -->
+  <!-- outer(75): x=100+80*cos75=100+80*(0.2588)=100+20.7=120.7, y=148-80*sin75=148-80*(0.9659)=148-77.3=70.7 -->
+  <!-- outer(45): x=100+80*cos45=100+80*(0.7071)=100+56.6=156.6, y=148-80*sin45=148-80*(0.7071)=148-56.6=91.4 -->
+  <!-- inner(45): x=100+50*cos45=100+50*(0.7071)=100+35.4=135.4, y=148-50*sin45=148-50*(0.7071)=148-35.4=112.6 -->
+  <!-- inner(75): x=100+50*cos75=100+50*(0.2588)=100+12.9=112.9, y=148-50*sin75=148-50*(0.9659)=148-48.3=99.7 -->
+  <path class="stone" d="
+    M 120.7,70.7
+    A 80,80 0 0,1 156.6,91.4
+    L 135.4,112.6
+    A 50,50 0 0,0 112.9,99.7
+    Z
+  "/>
+
+  <!-- RIGHT STONE 2: 45° to 15° -->
+  <!-- outer(15): x=100+80*cos15=100+80*(0.9659)=100+77.3=177.3, y=148-80*sin15=148-80*(0.2588)=148-20.7=127.3 -->
+  <!-- inner(15): x=100+50*cos15=100+50*(0.9659)=100+48.3=148.3, y=148-50*sin15=148-50*(0.2588)=148-12.9=135.1 -->
+  <path class="stone" d="
+    M 156.6,91.4
+    A 80,80 0 0,1 177.3,127.3
+    L 148.3,135.1
+    A 50,50 0 0,0 135.4,112.6
+    Z
+  "/>
+
+  <!-- RIGHT STONE 3: 15° to 0° -->
+  <!-- outer(0): x=100+80=180, y=148 -->
+  <!-- inner(0): x=100+50=150, y=148 -->
+  <path class="stone" d="
+    M 177.3,127.3
+    A 80,80 0 0,1 180,148
+    L 150,148
+    A 50,50 0 0,0 148.3,135.1
+    Z
+  "/>
+
+  <!--
+    KEYSTONE: spans 75° to 105° (the crown gap)
+    Sits above the gap, descending.
+    
+    The true keystone shape for this gap:
+    Its bottom inner corners align with the gap edges at inner radius.
+    Its bottom outer corners align with gap edges at outer radius.
+    But it floats ~14px above its seated position.
+    
+    Seated position coords:
+    outer(105)=79.3,70.7  outer(75)=120.7,70.7
+    inner(105)=87.1,99.7  inner(75)=112.9,99.7
+    
+    Float offset: translate up by 18px
+    So keystone points:
+    top-left:  79.3, 52.7
+    top-right: 120.7, 52.7
+    bot-right: 112.9, 81.7
+    bot-left:  87.1,  81.7
+  -->
+  <path class="keystone" d="
+    M 79.3,52.7
+    L 120.7,52.7
+    L 112.9,81.7
+    L 87.1,81.7
+    Z
+  "/>
+
+  <!-- Small gap indicators — thin white lines to visually separate stones -->
+  <!-- These are rendered as white strokes over the stones to create mortar lines -->
+  <g stroke="white" stroke-width="2" fill="none">
+    <!-- Left joint between gap and L1 -->
+    <line x1="87.1" y1="99.7" x2="79.3" y2="70.7"/>
+    <!-- Left joint between L1 and L2 -->
+    <line x1="64.6" y1="112.6" x2="43.4" y2="91.4"/>
+    <!-- Left joint between L2 and L3 -->
+    <line x1="51.7" y1="135.1" x2="22.7" y2="127.3"/>
+    <!-- Right joint between gap and R1 -->
+    <line x1="112.9" y1="99.7" x2="120.7" y2="70.7"/>
+    <!-- Right joint between R1 and R2 -->
+    <line x1="135.4" y1="112.6" x2="156.6" y2="91.4"/>
+    <!-- Right joint between R2 and R3 -->
+    <line x1="148.3" y1="135.1" x2="177.3" y2="127.3"/>
+    <!-- Inner and outer arc lines for mortar illusion -->
+    <!-- Arch base horizontals -->
+    <line x1="20" y1="148" x2="50" y2="148"/>
+    <line x1="150" y1="148" x2="180" y2="148"/>
+  </g>
+
+</svg>

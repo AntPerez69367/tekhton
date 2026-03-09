@@ -430,7 +430,8 @@ log "Task: ${BOLD}${TASK}${NC}"
 log "Log:  ${LOG_FILE}"
 log "Senior Coder Model: ${CLAUDE_CODER_MODEL}"
 log "Jr Coder Model: ${CLAUDE_JR_CODER_MODEL}"
-log "Reviewer/Tester Model: ${CLAUDE_STANDARD_MODEL}"
+log "Reviewer Model: ${CLAUDE_STANDARD_MODEL}"
+log "Tester Model: ${CLAUDE_TESTER_MODEL}"
 
 if [ "$MILESTONE_MODE" = true ]; then
     warn "MILESTONE MODE — Review cycles: ${MAX_REVIEW_CYCLES}, Coder turns: ${CODER_MAX_TURNS}, Tester turns: ${TESTER_MAX_TURNS}"
@@ -615,12 +616,32 @@ log "Commit with suggested message? [y/e/n]"
 echo "  y = commit now with this message"
 echo "  e = open message in \$EDITOR first"
 echo "  n = skip (commit manually later)"
-read -r COMMIT_CHOICE
+
+# Read from /dev/tty when stdin is piped, so `yes | tekhton` doesn't
+# silently auto-answer the commit prompt after consuming the resume prompt.
+if [ -t 0 ]; then
+    read -r COMMIT_CHOICE
+else
+    read -r COMMIT_CHOICE < /dev/tty 2>/dev/null || COMMIT_CHOICE="y"
+    log "(read from /dev/tty — stdin was piped)"
+fi
+
+# Helper: stage, commit, and log output without printing verbose git details
+_do_git_commit() {
+    local msg="$1"
+    git add -A > /dev/null 2>&1
+    local git_output
+    git_output=$(git commit -m "$msg" 2>&1) || true
+    echo "$git_output" >> "$LOG_FILE"
+    # Show only the summary line (e.g. "[branch abc1234] feat: message")
+    local summary
+    summary=$(echo "$git_output" | head -1)
+    log "$summary"
+}
 
 case "$COMMIT_CHOICE" in
     y|Y)
-        git add -A
-        git commit -m "$COMMIT_MSG"
+        _do_git_commit "$COMMIT_MSG"
         print_run_summary
         success "Committed. Open a PR and squash-merge to main when ready."
         ;;
@@ -630,8 +651,7 @@ case "$COMMIT_CHOICE" in
         ${EDITOR:-nano} "$TMPFILE"
         EDITED_MSG=$(cat "$TMPFILE")
         rm "$TMPFILE"
-        git add -A
-        git commit -m "$EDITED_MSG"
+        _do_git_commit "$EDITED_MSG"
         print_run_summary
         success "Committed. Open a PR and squash-merge to main when ready."
         ;;

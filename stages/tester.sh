@@ -34,7 +34,26 @@ run_stage_tester() {
         "$LOG_FILE"
     TESTER_EXIT=$?
 
+    # --- SIGKILL retry --------------------------------------------------------
+    # Exit 137 (SIGKILL) is typically OOM in WSL2. Retry once after a cooldown
+    # to give the system time to reclaim memory.
+
+    if was_null_run && [ "$LAST_AGENT_EXIT_CODE" -eq 137 ]; then
+        warn "SIGKILL detected — retrying tester in 15 seconds..."
+        sleep 15
+        run_agent \
+            "Tester (retry)" \
+            "$CLAUDE_TESTER_MODEL" \
+            "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
+            "$TESTER_PROMPT" \
+            "$LOG_FILE"
+        TESTER_EXIT=$?
+    fi
+
     # --- Null run detection ---------------------------------------------------
+
+    local resume_flag="--start-at test"
+    [ "$MILESTONE_MODE" = true ] && resume_flag="--milestone --start-at test"
 
     if was_null_run; then
         warn "Tester was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."
@@ -42,10 +61,10 @@ run_stage_tester() {
         write_pipeline_state \
             "tester" \
             "null_run" \
-            "--start-at test" \
+            "$resume_flag" \
             "${TASK}" \
             "Tester agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during discovery. Check logs: ${LOG_FILE}"
-        warn "State saved — re-run with: $0 --start-at test \"${TASK}\""
+        warn "State saved — re-run with: $0 ${resume_flag} \"${TASK}\""
         # Signal to pipeline to skip final checks — no point running cleanup
         # agents or test suites when the tester itself couldn't even start.
         SKIP_FINAL_CHECKS=true
@@ -82,10 +101,13 @@ run_stage_tester() {
         elif [ "$REMAINING" -gt 0 ]; then
             warn "Tester completed partial run — ${REMAINING} planned test(s) not yet written."
 
+            local resume_tester_flag="--start-at tester"
+            [ "$MILESTONE_MODE" = true ] && resume_tester_flag="--milestone --start-at tester"
+
             write_pipeline_state \
                 "tester" \
                 "partial_tests" \
-                "--start-at tester" \
+                "$resume_tester_flag" \
                 "${TASK}" \
                 "${REMAINING} test(s) remaining — TESTER_REPORT.md has the checklist"
 
