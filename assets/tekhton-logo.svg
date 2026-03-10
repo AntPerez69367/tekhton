@@ -7,6 +7,9 @@
     </style>
   </defs>
 
+  <!-- White background with rounded corners -->
+  <rect width="200" height="200" rx="24" ry="24" fill="#ffffff"/>
+
   <!-- 
     TEKHTON LOGO
     An arch of 6 voussoir stones with a gap at the crown.
