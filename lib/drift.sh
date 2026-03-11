@@ -8,6 +8,49 @@
 #          DRIFT_RUNS_SINCE_AUDIT_THRESHOLD, TASK (set by caller/config)
 # =============================================================================
 
+# --- Shared AWK helper -------------------------------------------------------
+
+# _awk_join_bullets — AWK program that parses markdown bullet lists, joins
+# continuation lines, and inserts formatted entries after a target section header.
+# Args: $1 = section_regex  $2 = printf_format (for date, task, note)
+# Returns the AWK program text. Caller passes -v date=... -v task=... -v input=...
+_awk_join_bullets() {
+    local section_regex="$1"
+    local line_format="$2"
+    cat <<AWKEOF
+${section_regex} {
+    print
+    n = split(input, lines, "\\n")
+    note = ""
+    for (i = 1; i <= n; i++) {
+        line = lines[i]
+        gsub(/[[:space:]]+\$/, "", line)
+        if (length(line) == 0) continue
+        if (match(line, /^[[:space:]]*-[[:space:]]*/)) {
+            if (length(note) > 0 && tolower(note) != "none") {
+                printf "${line_format}\\n", date, task, note
+            }
+            sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+            gsub(/^[[:space:]]+/, "", line)
+            note = line
+        } else {
+            gsub(/^[[:space:]]+/, "", line)
+            if (length(note) > 0) {
+                note = note " " line
+            } else {
+                note = line
+            }
+        }
+    }
+    if (length(note) > 0 && tolower(note) != "none") {
+        printf "${line_format}\\n", date, task, note
+    }
+    next
+}
+{ print }
+AWKEOF
+}
+
 # --- Drift Log ---------------------------------------------------------------
 
 # _ensure_drift_log — Creates DRIFT_LOG.md with initial structure if missing.
@@ -58,25 +101,13 @@ append_drift_observations() {
     local tmpfile
     tmpfile=$(mktemp)
 
-    awk -v date="$date_tag" -v task="$task_desc" -v obs="$observations" '
-    /^## Unresolved Observations/ {
-        print
-        # Split observations into lines and format each
-        n = split(obs, lines, "\n")
-        for (i = 1; i <= n; i++) {
-            line = lines[i]
-            # Strip leading "- " if present, skip empty lines
-            gsub(/^[[:space:]]*-[[:space:]]*/, "", line)
-            gsub(/^[[:space:]]+/, "", line)
-            gsub(/[[:space:]]+$/, "", line)
-            if (length(line) > 0 && line != "None") {
-                printf "- [%s | \"%s\"] %s\n", date, task, line
-            }
-        }
-        next
-    }
-    { print }
-    ' "$drift_file" > "$tmpfile"
+    local awk_prog
+    awk_prog=$(_awk_join_bullets \
+        '/^## Unresolved Observations/' \
+        '- [%s | \"%s\"] %s')
+
+    awk -v date="$date_tag" -v task="$task_desc" -v input="$observations" \
+        "$awk_prog" "$drift_file" > "$tmpfile"
 
     mv "$tmpfile" "$drift_file"
 }
@@ -126,15 +157,12 @@ resolve_drift_observations() {
 
     # Process file: move matching unresolved lines to resolved section
     local in_unresolved=0
-    local in_resolved=0
     while IFS= read -r line; do
         if echo "$line" | grep -q "^## Unresolved Observations"; then
             in_unresolved=1
-            in_resolved=0
             echo "$line" >> "$tmpfile"
         elif echo "$line" | grep -q "^## Resolved"; then
             in_unresolved=0
-            in_resolved=1
             echo "$line" >> "$tmpfile"
             # Append newly resolved lines here
             if [ -n "$resolved_lines" ]; then
@@ -143,6 +171,7 @@ resolve_drift_observations() {
         elif [ "$in_unresolved" -eq 1 ] && echo "$line" | grep -qE "$combined_pattern"; then
             # This line matches — save for resolved section
             local stripped
+            # shellcheck disable=SC2001
             stripped=$(echo "$line" | sed 's/^- \[[^]]*\] //')
             resolved_lines="${resolved_lines}
 - [RESOLVED ${date_tag}] ${stripped}"
@@ -447,24 +476,13 @@ append_nonblocking_notes() {
     local tmpfile
     tmpfile=$(mktemp)
 
-    awk -v date="$date_tag" -v task="$task_desc" -v notes="$notes" '
-    /^## Open/ {
-        print
-        n = split(notes, lines, "\n")
-        for (i = 1; i <= n; i++) {
-            line = lines[i]
-            # Strip leading "- " if present, skip empty lines
-            gsub(/^[[:space:]]*-[[:space:]]*/, "", line)
-            gsub(/^[[:space:]]+/, "", line)
-            gsub(/[[:space:]]+$/, "", line)
-            if (length(line) > 0 && tolower(line) != "none") {
-                printf "- [ ] [%s | \"%s\"] %s\n", date, task, line
-            }
-        }
-        next
-    }
-    { print }
-    ' "$nb_file" > "$tmpfile"
+    local awk_prog
+    awk_prog=$(_awk_join_bullets \
+        '/^## Open/' \
+        '- [ ] [%s | \"%s\"] %s')
+
+    awk -v date="$date_tag" -v task="$task_desc" -v input="$notes" \
+        "$awk_prog" "$nb_file" > "$tmpfile"
 
     mv "$tmpfile" "$nb_file"
 }
@@ -535,6 +553,7 @@ _resolve_addressed_nonblocking_notes() {
                 local basename_mod
                 basename_mod=$(basename "$mod_file" 2>/dev/null || echo "$mod_file")
                 if echo "$line" | grep -q "$basename_mod"; then
+                    # shellcheck disable=SC2001
                     echo "$line" | sed 's/^- \[ \]/- [x]/' >> "$tmpfile"
                     matched=true
                     resolved=$((resolved + 1))

@@ -9,9 +9,11 @@
 #   tekhton --start-at review "Fix: edge case in module Y"
 #   tekhton --start-at test "Fix: edge case in module Y"
 #   tekhton --init                    # First-time setup in a new project
+#   tekhton --plan                    # Interactive planning phase
 #
 # Flags:
 #   --init                Scaffold pipeline config + agent roles for a new project
+#   --plan                Interactive planning: build DESIGN.md + CLAUDE.md from scratch
 #   --status              Print saved pipeline state and exit
 #   --milestone           Milestone mode: higher turn limits, more review cycles
 #   --start-at coder      Full pipeline from scratch (default)
@@ -115,7 +117,14 @@ if [ "${1:-}" = "--init" ]; then
 
     # Copy config template
     cp "${TEKHTON_HOME}/templates/pipeline.conf.example" "$CONF_FILE"
-    success "Created ${CONF_FILE}"
+
+    # Auto-set DESIGN_FILE if DESIGN.md exists (e.g., from a prior --plan run)
+    if [[ -f "${PROJECT_DIR}/DESIGN.md" ]]; then
+        sed -i 's/^DESIGN_FILE=""$/DESIGN_FILE="DESIGN.md"/' "$CONF_FILE"
+        success "Created ${CONF_FILE} (DESIGN_FILE set to DESIGN.md)"
+    else
+        success "Created ${CONF_FILE}"
+    fi
 
     # Install agent role templates (only if they don't already exist)
     for role in coder reviewer tester jr-coder architect; do
@@ -163,6 +172,25 @@ RULES_EOF
     exit 0
 fi
 
+# --- Early --plan check (runs before config exists) -------------------------
+
+if [ "${1:-}" = "--plan" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/prompts.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"
+    source "${TEKHTON_HOME}/lib/plan.sh"
+    source "${TEKHTON_HOME}/lib/plan_state.sh"
+    source "${TEKHTON_HOME}/lib/plan_completeness.sh"
+    source "${TEKHTON_HOME}/stages/plan_interview.sh"
+    source "${TEKHTON_HOME}/stages/plan_generate.sh"
+    # PROJECT_NAME is needed by run_agent() for temp file naming;
+    # in --plan mode config is not loaded, so derive from directory name.
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    run_plan || true
+    exit 0
+fi
+
 # --- Library sources ---------------------------------------------------------
 
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -191,6 +219,7 @@ usage() {
     echo "Usage: tekhton [flags] \"<task description>\""
     echo ""
     echo "  --init                    Scaffold pipeline config + agent roles for a new project"
+    echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
     echo "  --status                  Print saved pipeline state and exit (no run)"
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
     echo "                            upgraded tester model"
@@ -208,6 +237,7 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
+    echo "  tekhton --plan                           # Interactive planning phase"
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
     echo "  tekhton --milestone \"Feat: payment system\""
@@ -232,6 +262,9 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
     SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_REASON=$(awk '/^## Exit Reason$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    # Split the saved flag string into an array so multi-word flags
+    # (e.g. "--milestone --start-at tester") are passed as separate arguments
+    read -ra SAVED_RESUME_FLAGS <<< "$SAVED_RESUME_FLAG"
 
     warn "Exit reason: ${SAVED_REASON}"
     warn "Will resume with: $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
@@ -244,7 +277,7 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
 
     case "$RESUME_CHOICE" in
         y|Y)
-            exec "$0" $SAVED_RESUME_FLAG "$SAVED_TASK"
+            exec "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
             ;;
         fresh)
             clear_pipeline_state
@@ -343,7 +376,9 @@ EOF
                 exit 1
             fi
 
+            export ARCHITECTURE_SYSTEMS
             ARCHITECTURE_SYSTEMS=$(grep -E "^### " "${ARCHITECTURE_FILE}" | sed 's/^### /- /')
+            export ARCHITECTURE_CONTENT
             ARCHITECTURE_CONTENT=$(cat "${ARCHITECTURE_FILE}")
             SEED_PROMPT=$(render_prompt "seed_contracts")
 
@@ -495,7 +530,7 @@ if [ "$START_AT" = "coder" ]; then
         if [ -f "$f" ]; then
             ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_${f}"
             mkdir -p "${LOG_DIR}/archive"
-            cp "$f" "$ARCHIVE_NAME"
+            mv "$f" "$ARCHIVE_NAME"
             log "Archived previous ${f}"
         fi
     done
@@ -508,12 +543,10 @@ elif [ "$START_AT" = "review" ]; then
     done
     log "Resuming with existing CODER_SUMMARY.md"
 elif [ "$START_AT" = "test" ]; then
-    for f in TESTER_REPORT.md; do
-        if [ -f "$f" ]; then
-            mv "$f" "${LOG_DIR}/${TIMESTAMP}_prev_${f}"
-            log "Archived previous $f"
-        fi
-    done
+    if [ -f "TESTER_REPORT.md" ]; then
+        mv "TESTER_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_prev_TESTER_REPORT.md"
+        log "Archived previous TESTER_REPORT.md"
+    fi
     log "Resuming with existing CODER_SUMMARY.md and REVIEWER_REPORT.md"
 elif [ "$START_AT" = "tester" ]; then
     log "Resuming tester from existing TESTER_REPORT.md"
@@ -610,22 +643,59 @@ echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT}${NC}"
 echo -e "  Log:       ${LOG_FILE}"
 echo
 
-if [ -f "TESTER_REPORT.md" ] && grep -q "^- " TESTER_REPORT.md 2>/dev/null; then
-    warn "Tester found bugs — review TESTER_REPORT.md before committing."
-    echo
+# --- Action Items summary ----------------------------------------------------
+# Consolidated block showing everything the human should review before moving on.
+
+ACTION_ITEMS=()
+
+# Check for tester bugs
+# "None" at the start of the section (with optional period/whitespace) means no bugs,
+# even if the tester added explanatory bullet points after it.
+if [ -f "TESTER_REPORT.md" ] && \
+   awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
+    _bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
+    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ TESTER_REPORT.md — ${_bug_count} bug(s) found (see ## Bugs Found)${NC}")")
 fi
 
-# --- Human Action Required banner --------------------------------------------
+# Check for test failures from final checks
+if [ "$FINAL_CHECK_RESULT" -ne 0 ]; then
+    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ Test suite — final checks failed (see output above)${NC}")")
+fi
 
+# Check for human action items
 if has_human_actions 2>/dev/null; then
-    action_count=$(count_human_actions)
-    echo -e "${YELLOW}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║  HUMAN ACTION REQUIRED                                      ║"
-    echo "║  The pipeline identified ${action_count} item(s) needing your attention.  ║"
-    echo "║  Review: ${HUMAN_ACTION_FILE}$(printf '%*s' $((34 - ${#HUMAN_ACTION_FILE})) '')║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
+    _ha_count=$(count_human_actions)
+    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ ${HUMAN_ACTION_FILE} — ${_ha_count} item(s) needing manual work${NC}")")
+fi
+
+# Check for non-blocking notes (info only)
+if [ -f "${NON_BLOCKING_LOG_FILE:-}" ] && [ -s "${NON_BLOCKING_LOG_FILE:-}" ]; then
+    _nb_count=$(count_open_nonblocking_notes 2>/dev/null || echo 0)
+    if [ "$_nb_count" -gt 0 ]; then
+        ACTION_ITEMS+=("$(echo -e "${CYAN}  ℹ ${NON_BLOCKING_LOG_FILE} — ${_nb_count} accumulated observation(s)${NC}")")
+    fi
+fi
+
+# Check for drift observations (info only)
+if [ -f "${DRIFT_LOG_FILE:-}" ] && [ -s "${DRIFT_LOG_FILE:-}" ]; then
+    _drift_count=$(count_drift_observations 2>/dev/null || echo 0)
+    if [ "$_drift_count" -gt 0 ]; then
+        ACTION_ITEMS+=("$(echo -e "${CYAN}  ℹ ${DRIFT_LOG_FILE} — ${_drift_count} unresolved drift observation(s)${NC}")")
+    fi
+fi
+
+if [ ${#ACTION_ITEMS[@]} -gt 0 ]; then
+    echo -e "${BOLD}══════════════════════════════════════${NC}"
+    echo -e "${BOLD}  Action Items${NC}"
+    echo -e "${BOLD}══════════════════════════════════════${NC}"
+    for item in "${ACTION_ITEMS[@]}"; do
+        echo -e "$item"
+    done
+    echo -e "${BOLD}══════════════════════════════════════${NC}"
+    echo
+else
+    success "No action items — clean run."
+    echo
 fi
 
 log "Suggested commit message:"

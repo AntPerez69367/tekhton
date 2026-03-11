@@ -13,6 +13,28 @@
 : "${TOTAL_TIME:=0}"
 : "${STAGE_SUMMARY:=}"
 
+# --- Timeout --kill-after support detection ----------------------------------
+# GNU coreutils timeout supports --kill-after; macOS/BSD timeout does not.
+# Detect once at source time so every run_agent() call can use it.
+_TIMEOUT_KILL_AFTER_FLAG=""
+if command -v timeout &>/dev/null && timeout --help 2>&1 | grep -q 'kill-after'; then
+    _TIMEOUT_KILL_AFTER_FLAG="--kill-after=60"
+fi
+
+# --- Claude binary type warning (WSL + Windows claude = signal issues) -------
+# A Windows-native claude.exe run through WSL interop does NOT receive Linux
+# signals (SIGINT, SIGTERM, SIGKILL). This means Ctrl+C will NOT kill it and
+# the timeout SIGTERM will be ignored, causing the pipeline to hang indefinitely.
+# Detect and warn once at source time.
+if grep -qiE 'microsoft|WSL' /proc/version 2>/dev/null; then
+    _claude_path="$(command -v claude 2>/dev/null || true)"
+    if echo "${_claude_path:-}" | grep -qiE '(/mnt/c/|\.exe$|AppData|Program)'; then
+        warn "[agent] WARNING: claude appears to be a Windows binary running via WSL interop."
+        warn "[agent] Windows processes do not receive Linux signals — Ctrl+C and timeout may not kill it."
+        warn "[agent] To fix: install claude natively in WSL (npm install -g @anthropic-ai/claude-code)."
+    fi
+fi
+
 # --- Agent exit detection globals --------------------------------------------
 # Set after every run_agent() call. Callers inspect these to decide next steps.
 
@@ -58,7 +80,30 @@ run_agent() {
     set +o pipefail
     # Redirect stdin to /dev/null so piped input (e.g. yes | tekhton) doesn't
     # leak into the claude process or accumulate in the buffer after it exits.
-    claude \
+    # AGENT_TIMEOUT (seconds) guards against a hung claude process. Defaults to
+    # 7200 (2 hours). Set to 0 in pipeline.conf to disable.
+    local _timeout="${AGENT_TIMEOUT:-7200}"
+    local _invoke
+    if [ "$_timeout" -gt 0 ] 2>/dev/null && command -v timeout &>/dev/null; then
+        # Use --kill-after if available: sends SIGKILL after 60s if SIGTERM is ignored.
+        # Critical for Windows claude.exe via WSL interop, which ignores SIGTERM.
+        _invoke="timeout ${_TIMEOUT_KILL_AFTER_FLAG} $_timeout"
+    else
+        _invoke=""
+    fi
+
+    # Trap INT/TERM so Ctrl+C or an external kill cleans up the entire pipeline.
+    # The handler clears itself first to prevent re-entrancy, then kills the
+    # process group (claude + tee + subshell). Sets CLEAN_EXIT so the crash
+    # diagnostic does not fire on a user-initiated abort.
+    _run_agent_abort() {
+        trap - INT TERM
+        _TEKHTON_CLEAN_EXIT=true
+        kill 0 2>/dev/null || true
+    }
+    trap '_run_agent_abort' INT TERM
+
+    $_invoke claude \
         --model "$model" \
         --dangerously-skip-permissions \
         --max-turns "$max_turns" \
@@ -85,10 +130,15 @@ run_agent() {
             echo "$turns" > "/tmp/tekhton_${PROJECT_NAME// /_}_last_turns"
         )
     local agent_exit=${PIPESTATUS[0]}
+    trap - INT TERM
     set -o pipefail
 
     if [ "$agent_exit" -ne 0 ]; then
-        warn "[$label] claude exited with code ${agent_exit} (may indicate turn limit or error)"
+        if [ "$agent_exit" -eq 124 ]; then
+            warn "[$label] TIMEOUT — agent did not complete within ${_timeout}s. Set AGENT_TIMEOUT in pipeline.conf to change."
+        else
+            warn "[$label] claude exited with code ${agent_exit} (may indicate turn limit or error)"
+        fi
     fi
 
     local end_time
@@ -118,15 +168,19 @@ run_agent() {
     # --- Agent exit detection ------------------------------------------------
     # Populate LAST_AGENT_* globals so callers can check for null runs.
 
-    LAST_AGENT_TURNS="$turns_used"
-    LAST_AGENT_EXIT_CODE="$agent_exit"
-    LAST_AGENT_ELAPSED="$elapsed"
+    export LAST_AGENT_TURNS="$turns_used"
+    export LAST_AGENT_EXIT_CODE="$agent_exit"
+    export LAST_AGENT_ELAPSED="$elapsed"
     LAST_AGENT_NULL_RUN=false
 
     # Null run heuristic: agent used very few turns (≤2) OR exited non-zero
     # with zero turns. This typically means it died during discovery/search.
+    # Exit 124 = timeout — always a null run regardless of turn count.
     local null_threshold="${AGENT_NULL_RUN_THRESHOLD:-2}"
-    if [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
+    if [ "$agent_exit" -eq 124 ]; then
+        LAST_AGENT_NULL_RUN=true
+        warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+    elif [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
         LAST_AGENT_NULL_RUN=true
         warn "[$label] NULL RUN DETECTED — agent used ${turns_used} turn(s) and exited ${agent_exit}."
         # Provide specific guidance based on exit code
