@@ -127,6 +127,9 @@ select_project_type() {
 # The response is tee'd to the log file and also passed through to stdout so
 # the caller can capture it with output=$(_call_planning_batch ...).
 #
+# Shows a progress indicator on /dev/tty while claude is running so the user
+# knows the operation hasn't stalled. Skipped in TEKHTON_TEST_MODE.
+#
 # Usage:
 #   output=$(_call_planning_batch model max_turns prompt log_file)
 #   rc=$?   # claude's exit code
@@ -138,6 +141,31 @@ _call_planning_batch() {
     local prompt="$3"
     local log_file="$4"
 
+    # Start an in-place spinner on /dev/tty (visible even inside $() capture).
+    # Animates a single line with elapsed time so the user knows it's working
+    # without flooding the terminal with output over 20+ minute runs.
+    local spinner_pid=""
+    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
+        (
+            local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+            local start_ts
+            start_ts=$(date +%s)
+            local i=0
+            while true; do
+                local now
+                now=$(date +%s)
+                local elapsed=$(( now - start_ts ))
+                local mins=$(( elapsed / 60 ))
+                local secs=$(( elapsed % 60 ))
+                printf '\r\033[0;36m[tekhton]\033[0m %s Generating... %dm%02ds ' \
+                    "${chars:i%${#chars}:1}" "$mins" "$secs" > /dev/tty
+                i=$(( i + 1 ))
+                sleep 0.2
+            done
+        ) &
+        spinner_pid=$!
+    fi
+
     set +o pipefail
     claude \
         --model "$model" \
@@ -148,6 +176,14 @@ _call_planning_batch() {
         2>&1 | tee -a "$log_file"
     local -a _pst=("${PIPESTATUS[@]}")
     set -o pipefail
+
+    # Stop spinner and clear the line
+    if [[ -n "$spinner_pid" ]]; then
+        kill "$spinner_pid" 2>/dev/null || true
+        wait "$spinner_pid" 2>/dev/null || true
+        printf '\r\033[K' > /dev/tty 2>/dev/null || true
+    fi
+
     return "${_pst[0]}"
 }
 

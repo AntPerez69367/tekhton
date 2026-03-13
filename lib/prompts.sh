@@ -77,8 +77,11 @@ render_prompt() {
 
         local value="${!var_name:-}"
 
-        # Use awk for replacement to avoid sed delimiter issues with complex content
-        content=$(echo "$content" | awk -v pat="{{${var_name}}}" -v rep="$value" '{
+        # Use awk for replacement to avoid sed delimiter issues with complex content.
+        # ENVIRON avoids awk -v escape-sequence interpretation (\n, \t, \| etc.)
+        export __RENDER_REP="$value"
+        content=$(echo "$content" | awk -v pat="{{${var_name}}}" '{
+            rep = ENVIRON["__RENDER_REP"]
             idx = index($0, pat)
             while (idx > 0) {
                 $0 = substr($0, 1, idx-1) rep substr($0, idx + length(pat))
@@ -86,6 +89,7 @@ render_prompt() {
             }
             print
         }')
+        unset __RENDER_REP
     done
 
     echo "$content"

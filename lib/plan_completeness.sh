@@ -90,8 +90,9 @@ PLAN_SECTION_MIN_LINES="${PLAN_SECTION_MIN_LINES:-5}"
 
 # _score_section_depth — Score section content for structural depth.
 #
-# Returns a score from 0–5 based on:
+# Returns a score from 0–6 based on:
 #   +1  if content has >= PLAN_SECTION_MIN_LINES non-blank lines
+#   +1  if content has >= 3 * PLAN_SECTION_MIN_LINES non-blank lines (prose depth)
 #   +2  if content contains ### sub-headings
 #   +1  if content contains markdown table rows (|...|)
 #   +1  if content contains fenced code blocks (```)
@@ -108,6 +109,12 @@ _score_section_depth() {
     local line_count
     line_count=$(echo "$content" | grep -c '[^[:space:]]' || true)
     if [[ "$line_count" -ge "$PLAN_SECTION_MIN_LINES" ]]; then
+        score=$((score + 1))
+    fi
+
+    # Substantial prose depth — long-form content without sub-headings is still deep
+    local prose_threshold=$(( PLAN_SECTION_MIN_LINES * 3 ))
+    if [[ "$line_count" -ge "$prose_threshold" ]]; then
         score=$((score + 1))
     fi
 

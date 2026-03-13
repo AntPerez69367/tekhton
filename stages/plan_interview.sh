@@ -26,14 +26,16 @@ _PHASE_LABELS=("" "Phase 1: Concept Capture" "Phase 2: System Deep-Dive" "Phase 
 
 # _read_section_answer — Read a multi-line answer from the user.
 #
-# Reads lines from $input_fd until a blank line is entered. Joins lines
-# with spaces. Returns "skip" (with rc=0) if no content entered or EOF.
-# When TEKHTON_TEST_MODE is set, reads from stdin instead of /dev/tty.
+# If VISUAL or EDITOR is set, opens the editor with a temp file containing
+# guidance as comments. The user writes their answer, saves, and exits.
+# Otherwise, reads lines from $input_fd until a blank line.
+# Returns "skip" (with rc=0) if no content entered or EOF.
+# When TEKHTON_TEST_MODE is set, uses the line-by-line fallback via stdin.
 #
 # Arguments:
 #   $1  guidance     — Guidance text to display above the prompt
 #   $2  is_required  — "true" or "false"
-#   $3  input_fd     — File descriptor path for reading user input
+#   $3  input_fd     — File descriptor path for reading user input (fallback)
 #
 # Prints the collected answer to stdout.
 # All prompt/guidance display goes to stderr so it remains visible even when
@@ -43,6 +45,15 @@ _read_section_answer() {
     local is_required="$2"
     local input_fd="$3"
 
+    local editor="${VISUAL:-${EDITOR:-}}"
+
+    # Use editor when available and on a real terminal (not test mode)
+    if [[ -n "$editor" ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
+        _read_section_answer_editor "$guidance" "$is_required" "$editor"
+        return $?
+    fi
+
+    # Fallback: line-by-line read
     echo >&2
     if [[ -n "$guidance" ]]; then
         echo "  ${guidance}" >&2
@@ -70,6 +81,63 @@ _read_section_answer() {
 
     local IFS=" "
     echo "${lines[*]}"
+}
+
+# _read_section_answer_editor — Read answer via $EDITOR.
+#
+# Creates a temp file with guidance as comments, opens the editor, and reads
+# the non-comment content when the user saves and exits.
+#
+# Arguments:
+#   $1  guidance     — Guidance text
+#   $2  is_required  — "true" or "false"
+#   $3  editor       — Editor command to invoke
+_read_section_answer_editor() {
+    local guidance="$1"
+    local is_required="$2"
+    local editor="$3"
+
+    local tmpfile
+    tmpfile=$(mktemp "${TMPDIR:-/tmp}/tekhton_answer.XXXXXX.md")
+
+    # Write guidance as comments the user can read while editing
+    {
+        echo "# Write your answer below. Lines starting with # are ignored."
+        echo "# Save and exit the editor to submit. Empty file = skip."
+        if [[ -n "$guidance" ]]; then
+            echo "#"
+            echo "# Guidance: ${guidance}"
+        fi
+        if [[ "$is_required" != "true" ]]; then
+            echo "# (This section is optional)"
+        fi
+        echo ""
+    } > "$tmpfile"
+
+    echo "  Opening editor for your answer..." >&2
+
+    # Open the editor on the terminal — /dev/tty handles the case where
+    # stdout is captured by $()
+    "$editor" "$tmpfile" < /dev/tty > /dev/tty 2>&1
+
+    # Read back the answer, stripping comment lines
+    local answer=""
+    while IFS= read -r line; do
+        [[ "$line" == "#"* ]] && continue
+        answer+="${line} "
+    done < "$tmpfile"
+
+    rm -f "$tmpfile"
+
+    # Trim trailing whitespace
+    answer="${answer%"${answer##*[![:space:]]}"}"
+
+    if [[ -z "$answer" ]]; then
+        echo "skip"
+        return 0
+    fi
+
+    echo "$answer"
 }
 
 # _build_phase_context — Build a summary of prior phase answers.
