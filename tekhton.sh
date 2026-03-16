@@ -229,7 +229,7 @@ fi
 if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
-    source "${TEKHTON_HOME}/lib/agent.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"

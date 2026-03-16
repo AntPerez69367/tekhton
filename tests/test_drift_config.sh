@@ -40,6 +40,11 @@ for role in coder reviewer tester jr-coder; do
 done
 echo "# Rules" > "${PROJECT_DIR}/CLAUDE.md"
 
+# Clear any environment variables that might leak from a prior pipeline run
+# (declare -gx in _parse_config_file exports config values into the environment)
+unset ARCHITECTURE_LOG_FILE DRIFT_LOG_FILE HUMAN_ACTION_FILE
+unset DRIFT_OBSERVATION_THRESHOLD DRIFT_RUNS_SINCE_AUDIT_THRESHOLD DESIGN_FILE
+
 # Source common + config
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/config.sh"

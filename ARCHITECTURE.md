@@ -7,7 +7,7 @@ Tekhton is structured as a three-layer shell pipeline with a shared library core
 ### Layer 1: Entry Point (`tekhton.sh`)
 - Resolves `TEKHTON_HOME` and `PROJECT_DIR`
 - Handles `--init`, `--status`, `--init-notes`, `--seed-contracts` early-exit commands
-- Handles `--plan` as an early-exit command — sources `common.sh`, `prompts.sh`, `agent.sh`, `plan.sh`, `plan_completeness.sh`, `plan_interview.sh`, and `plan_generate.sh` (bypasses config loading)
+- Handles `--plan` as an early-exit command — sources `common.sh`, `prompts.sh`, `agent.sh`, `plan.sh`, `plan_completeness.sh`, `plan_state.sh`, `plan_interview.sh`, `plan_followup_interview.sh`, and `plan_generate.sh` (bypasses config loading)
 - Sources all libraries and stage files (for execution pipeline)
 - Loads config via `load_config()`
 - Parses arguments, validates prerequisites, drives the three-stage pipeline
@@ -64,6 +64,18 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Output contains: project identity, non-negotiable rules, milestone plan, architecture guidelines, testing strategy
   - Supports re-generation when user selects `[r]` in review UI
 
+- **`stages/cleanup.sh`** → `run_stage_cleanup()`
+  - Post-success debt sweep stage (Milestone 5)
+  - Selects non-blocking items from NON_BLOCKING_LOG.md and addresses them with jr coder
+  - Runs after successful pipeline completion when cleanup conditions are met
+  - Marks resolved items in NON_BLOCKING_LOG.md and defers items requiring architectural changes
+
+- **`stages/plan_followup_interview.sh`** → `run_plan_followup_interview()`
+  - Planning phase follow-up interview (Milestone 4)
+  - Probes for missing depth in incomplete DESIGN.md sections
+  - Expands shallow sections with sub-sections, tables, config examples, edge cases
+  - Supports resume from interruption
+
 ### Layer 3: Libraries (`lib/*.sh`)
 
 - **`lib/common.sh`** — Colors, `log()`, `warn()`, `error()`, `success()`, `header()`, `require_cmd()`
@@ -76,6 +88,11 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/plan.sh`** — Planning phase orchestration. `run_plan()` drives the full `--plan` flow: project type selection menu, template resolution, interview, completeness check, generation, milestone review, and file output. `select_project_type()` presents the 7-option menu. `load_plan_config()` reads planning keys from `pipeline.conf`. Config defaults: `PLAN_INTERVIEW_MODEL`, `PLAN_INTERVIEW_MAX_TURNS`, `PLAN_GENERATION_MODEL`, `PLAN_GENERATION_MAX_TURNS`.
 - **`lib/plan_completeness.sh`** — Design document structural validation. `_extract_required_sections()` parses `<!-- REQUIRED -->` markers from templates. `_is_section_incomplete()` detects empty/placeholder/comment-only content. `check_design_completeness()` validates DESIGN.md against required sections. `run_plan_completeness_loop()` orchestrates multi-pass follow-up interviews for incomplete sections.
 - **`lib/plan_state.sh`** — Planning state persistence for resume support. `write_plan_state(stage, project_type, template_file)` saves session state to `PLAN_STATE_FILE`. `read_plan_state()` restores state variables. `clear_plan_state()` removes the state file. `offer_plan_resume()` detects interrupted sessions and prompts the user to resume or start fresh.
+- **`lib/turns.sh`** — Scout turn-limit recommendation parsing and application. `apply_scout_turn_limits()` reads scout output and calibrates agent turn limits per stage.
+- **`lib/context.sh`** — Token accounting and context budget management (Milestone 1). `measure_context_size()`, `check_context_budget()`, `log_context_report()` provide measurement infrastructure. Context compiler (Milestone 2): `extract_relevant_sections()`, `build_context_packet()` enable task-scoped context assembly when over budget.
+- **`lib/milestones.sh`** — Milestone state machine and auto-advance (Milestone 3). `parse_milestones()`, `check_milestone_acceptance()`, `advance_milestone()`, `write_milestone_disposition()` orchestrate multi-milestone progression with acceptance checking.
+- **`lib/clarify.sh`** — Clarification protocol and replan trigger (Milestone 4). `detect_clarifications()`, `handle_clarifications()`, `trigger_replan()` enable mid-run pauses for blocking questions and scope corrections.
+- **`lib/replan.sh`** — Brownfield replan orchestration (Milestone 6). Supports `--replan` command for delta-based updates to DESIGN.md and CLAUDE.md based on accumulated drift and codebase evolution.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
 
@@ -160,6 +177,11 @@ tekhton.sh --plan (early exit — bypasses config loading)
   │    ├─ check_design_completeness() — grep/awk structural validation
   │    └─ [if incomplete] → follow-up interview for missing sections
   │
+  ├─ run_plan_followup_interview()  [conversational mode, iterative]
+  │    ├─ Probes for depth in incomplete sections
+  │    ├─ Expands with sub-sections, tables, config examples, edge cases
+  │    └─ Writes updated DESIGN.md progressively
+  │
   ├─ run_plan_generate()  [batch mode]
   │    ├─ Reads DESIGN.md → generates CLAUDE.md
   │    └─ write_plan_state("generate") on interruption
@@ -192,6 +214,8 @@ tekhton.sh --plan (early exit — bypasses config loading)
 | `JR_CODER_SUMMARY.md` | PROJECT_DIR | Jr coder output (per-run) |
 | `ARCHITECT_PLAN.md` | PROJECT_DIR | Architect audit output (per-audit) |
 | `HUMAN_NOTES.md` | PROJECT_DIR | Human-written notes for next run |
+| `NON_BLOCKING_LOG.md` | PROJECT_DIR | Non-blocking notes accumulated across runs |
+| `CLARIFICATIONS.md` | PROJECT_DIR | Human answers to blocking agent questions (Milestone 4) |
 | `ARCHITECTURE_LOG.md` | PROJECT_DIR | Architecture Decision Log (accepted ACPs across runs) |
 | `DRIFT_LOG.md` | PROJECT_DIR | Drift observations accumulated across runs |
 | `HUMAN_ACTION_REQUIRED.md` | PROJECT_DIR | Items needing human attention (design doc updates) |
