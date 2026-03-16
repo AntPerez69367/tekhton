@@ -269,6 +269,7 @@ source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
+source "${TEKHTON_HOME}/stages/cleanup.sh"
 
 # Load project config — populates all settings from .claude/pipeline.conf
 load_config
@@ -809,6 +810,14 @@ if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
         write_milestone_disposition "INCOMPLETE_REWORK"
         warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Fix issues and re-run."
     fi
+fi
+
+# --- Autonomous debt sweep (post-success only) --------------------------------
+# Runs after the primary pipeline completes. Never runs during rework cycles.
+# Build gate failure in cleanup logs a warning but does not fail the pipeline.
+
+if [ "${SKIP_FINAL_CHECKS:-false}" != true ] && should_run_cleanup; then
+    run_stage_cleanup
 fi
 
 # --- Final checks ------------------------------------------------------------

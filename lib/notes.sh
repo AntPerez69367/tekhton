@@ -156,3 +156,155 @@ resolve_human_notes() {
         log "HUMAN_NOTES.md — all [~] items reset to [ ] (coder incomplete or missing summary)."
     fi
 }
+
+# =============================================================================
+# CLEANUP BATCH SELECTION (for autonomous debt sweeps — Milestone 5)
+#
+# Functions to select, prioritize, and mark non-blocking notes for cleanup.
+# Operates on NON_BLOCKING_LOG.md (managed by drift.sh).
+# =============================================================================
+
+# count_unresolved_notes — Returns count of open (non-deferred) non-blocking notes.
+# Excludes items marked [x] (resolved) and [DEFERRED].
+count_unresolved_notes() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [ ! -f "$nb_file" ]; then
+        echo "0"
+        return
+    fi
+    local count
+    count=$(awk '/^## Open/{found=1; next} found && /^##/{exit} found && /^- \[ \]/{count++} END{print count+0}' \
+        "$nb_file" 2>/dev/null)
+    echo "$count"
+}
+
+# select_cleanup_batch — Returns up to N open non-blocking notes, prioritized by:
+#   1. Recurring patterns (notes referencing the same file appear most often)
+#   2. Files modified this run (overlap with CODER_SUMMARY.md modified files)
+#   3. Age (oldest first — FIFO)
+#
+# Usage: select_cleanup_batch 5
+# Output: One note per line (full markdown line from NON_BLOCKING_LOG.md)
+select_cleanup_batch() {
+    local batch_size="${1:-5}"
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+
+    if [ ! -f "$nb_file" ]; then
+        return
+    fi
+
+    # Extract all open (non-deferred) notes
+    local open_notes
+    open_notes=$(awk '/^## Open/{found=1; next} found && /^##/{exit} found && /^- \[ \]/{print}' \
+        "$nb_file" 2>/dev/null || true)
+
+    if [ -z "$open_notes" ]; then
+        return
+    fi
+
+    # Extract modified files from CODER_SUMMARY.md (if available)
+    local modified_files=""
+    if [ -f "${PROJECT_DIR}/CODER_SUMMARY.md" ]; then
+        modified_files=$(awk '/^## Files (Created|Modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{print}' \
+            "${PROJECT_DIR}/CODER_SUMMARY.md" 2>/dev/null \
+            | sed 's/^[-*][[:space:]]*//' | sed 's/ .*//' | sort -u || true)
+    fi
+
+    # Score each note: recurrence (how many other open notes reference the same file),
+    # then file-overlap (does CODER_SUMMARY.md mention the same file), then age (line order).
+    local scored_notes
+    scored_notes=$(echo "$open_notes" | awk -v mod_files="$modified_files" '
+    BEGIN {
+        # Build modified-files lookup
+        n = split(mod_files, mf, "\n")
+        for (i = 1; i <= n; i++) {
+            # Extract basename for fuzzy matching
+            sub(/.*\//, "", mf[i])
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", mf[i])
+            if (length(mf[i]) > 0) modified[mf[i]] = 1
+        }
+    }
+    {
+        lines[NR] = $0
+        # Extract file references (backtick-quoted paths like `lib/foo.sh`)
+        match($0, /`[^`]+\.[a-zA-Z]+`/)
+        if (RSTART > 0) {
+            ref = substr($0, RSTART+1, RLENGTH-2)
+            sub(/.*\//, "", ref)  # basename
+            file_refs[NR] = ref
+        } else {
+            file_refs[NR] = ""
+        }
+    }
+    END {
+        # Count recurrence: how many notes reference each file
+        for (i = 1; i <= NR; i++) {
+            if (length(file_refs[i]) > 0) {
+                file_count[file_refs[i]]++
+            }
+        }
+
+        for (i = 1; i <= NR; i++) {
+            score = 0
+            # Recurrence score: notes referencing files that appear in multiple notes
+            if (length(file_refs[i]) > 0 && file_refs[i] in file_count) {
+                score += file_count[file_refs[i]] * 10
+            }
+            # File-overlap score: note references a file modified this run
+            if (length(file_refs[i]) > 0 && file_refs[i] in modified) {
+                score += 100
+            }
+            # Age score: older notes (lower line number) get slight priority
+            score += (NR - i)
+            printf "%06d\t%s\n", score, lines[i]
+        }
+    }' | sort -t$'\t' -k1 -rn | head -n "$batch_size" | cut -f2-)
+
+    echo "$scored_notes"
+}
+
+# mark_note_resolved — Marks a specific open note as [x] in NON_BLOCKING_LOG.md.
+# Usage: mark_note_resolved "partial text to match"
+# Matches the first open note containing the given text.
+mark_note_resolved() {
+    local match_text="$1"
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+
+    if [ ! -f "$nb_file" ]; then
+        return 1
+    fi
+
+    # Escape special regex characters in match text
+    local escaped
+    # shellcheck disable=SC2016
+    escaped=$(printf '%s' "$match_text" | sed 's/[.[\*^$()+?{|/]/\\&/g')
+
+    if grep -q "^- \[ \].*${escaped}" "$nb_file" 2>/dev/null; then
+        sed -i "0,/^- \[ \]\(.*${escaped}\)/s//- [x]\1/" "$nb_file"
+        return 0
+    fi
+    return 1
+}
+
+# mark_note_deferred — Tags an open note as [DEFERRED] in NON_BLOCKING_LOG.md.
+# Deferred notes are excluded from future cleanup batch selection.
+# Usage: mark_note_deferred "partial text to match"
+mark_note_deferred() {
+    local match_text="$1"
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+
+    if [ ! -f "$nb_file" ]; then
+        return 1
+    fi
+
+    # Escape special regex characters in match text
+    local escaped
+    # shellcheck disable=SC2016
+    escaped=$(printf '%s' "$match_text" | sed 's/[.[\*^$()+?{|/]/\\&/g')
+
+    if grep -q "^- \[ \].*${escaped}" "$nb_file" 2>/dev/null; then
+        sed -i "0,/^- \[ \]\(.*${escaped}\)/s//- [DEFERRED]\1/" "$nb_file"
+        return 0
+    fi
+    return 1
+}

@@ -203,6 +203,12 @@ load_config() {
     : "${AUTO_ADVANCE_LIMIT:=3}"
     : "${AUTO_ADVANCE_CONFIRM:=true}"
 
+    # --- Cleanup (autonomous debt sweep) defaults ---
+    : "${CLEANUP_ENABLED:=false}"           # Off by default — opt-in
+    : "${CLEANUP_BATCH_SIZE:=5}"            # Max items per sweep
+    : "${CLEANUP_MAX_TURNS:=15}"            # Turn budget for cleanup agent
+    : "${CLEANUP_TRIGGER_THRESHOLD:=5}"     # Min unresolved items before triggering
+
     # Milestone overrides — defaults to 2x normal if not specified
     : "${MILESTONE_MAX_REVIEW_CYCLES:=$(( MAX_REVIEW_CYCLES * 2 ))}"
     : "${MILESTONE_CODER_MAX_TURNS:=$(( CODER_MAX_TURNS * 2 ))}"
@@ -242,6 +248,9 @@ load_config() {
     _clamp_config_value MILESTONE_REVIEWER_MAX_TURNS 500
     _clamp_config_value MILESTONE_TESTER_MAX_TURNS 500
     _clamp_config_value MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER 10
+    _clamp_config_value CLEANUP_BATCH_SIZE 50
+    _clamp_config_value CLEANUP_MAX_TURNS 500
+    _clamp_config_value CLEANUP_TRIGGER_THRESHOLD 100
 
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     [[ "$PIPELINE_STATE_FILE" != /* ]] && PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"

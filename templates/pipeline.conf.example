@@ -240,6 +240,24 @@ CONTEXT_COMPILER_ENABLED=false
 # Prompt user for confirmation between milestones (true = interactive)
 # AUTO_ADVANCE_CONFIRM=true
 
+# --- Autonomous debt sweep (cleanup) -----------------------------------------
+# After a successful pipeline run, if accumulated non-blocking notes exceed the
+# threshold, a low-cost jr coder agent sweeps through a batch of items.
+# Items requiring architectural changes are tagged [DEFERRED] and excluded from
+# future sweeps. Build gate failure in cleanup is a warning, not a pipeline failure.
+
+# Master toggle for cleanup sweeps (default: false — opt-in)
+# CLEANUP_ENABLED=false
+
+# Maximum items to address per sweep (higher = more turns consumed)
+# CLEANUP_BATCH_SIZE=5
+
+# Turn budget for the cleanup agent (deliberately low — jr coder model)
+# CLEANUP_MAX_TURNS=15
+
+# Minimum unresolved non-blocking notes before a sweep triggers
+# CLEANUP_TRIGGER_THRESHOLD=5
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false

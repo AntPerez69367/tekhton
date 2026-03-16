@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-03-16 | "Implement Milestone 5: Autonomous Debt Sweeps"] `stages/cleanup.sh` and `stages/coder.sh`/`stages/tester.sh` all use the `wc -l | tr -d '[:space:]'` idiom for line counting. If this pattern ever needs to change for portability, it will need coordinated updates across multiple stage files.
+- [2026-03-16 | "Implement Milestone 5: Autonomous Debt Sweeps"] --
 - [2026-03-16 | "Implement Milestone 4: Mid-Run Clarification And Replanning"] `ARCHITECTURE.md` Layer 3 library list and File Ownership table still do not include `lib/clarify.sh`, `lib/replan.sh`, or `CLARIFICATIONS.md`. Both the coder and previous review cycle noted this — it should be a follow-up task.
 - [2026-03-16 | "Implement Milestone 4: Mid-Run Clarification And Replanning"] --
 - [2026-03-16 | "Implement Milestone 1: Token And Context Accounting"] `reviewer.md` architecture boundary check ("No modifications to existing execution pipeline files") conflicts with the 2.0 milestone series, which explicitly authorizes modifications to `stages/*.sh` and `lib/*.sh`. The reviewer role file should clarify that 2.0 feature additions to execution pipeline files are authorized when the CLAUDE.md milestone spec explicitly calls them out. Carry-over from prior cycle.
