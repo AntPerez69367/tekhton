@@ -261,6 +261,8 @@ source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/clarify.sh"
+source "${TEKHTON_HOME}/lib/replan.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"
@@ -914,6 +916,12 @@ echo "────────────────────────�
 echo "$COMMIT_MSG"
 echo "────────────────────────────────────────"
 echo
+
+# Remove lock file BEFORE commit so it isn't staged by git add -A and then
+# deleted by the EXIT trap, leaving an uncommitted deletion in the working tree.
+if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
+    rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
+fi
 
 log "Commit with suggested message? [y/e/n]"
 echo "  y = commit now with this message"
