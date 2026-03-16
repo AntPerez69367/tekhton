@@ -33,7 +33,11 @@
 # old --dangerously-skip-permissions behavior (NOT recommended).
 # -----------------------------------------------------------------------------
 
-# SCOUT: read-only discovery. Finds relevant files, reads headers. No writes.
+# SCOUT: read-only discovery. Finds relevant files, reads headers.
+# NOTE: Write is included because the scout must create SCOUT_REPORT.md.
+# The Claude CLI does not support path-scoped write restrictions, so the scout
+# technically has write access to any file. This is a known least-privilege gap —
+# the scout prompt restricts it to writing only SCOUT_REPORT.md.
 AGENT_TOOLS_SCOUT="Read Glob Grep Bash(find:*) Bash(head:*) Bash(wc:*) Bash(cat:*) Bash(ls:*) Bash(tail:*) Bash(file:*) Write"
 
 # CODER: full implementation agent. Reads, writes, edits code, runs analyze/test.
@@ -63,7 +67,13 @@ AGENT_TOOLS_CLEANUP="Read Write Edit Glob Grep Bash"
 
 # Disallowed tools for ALL agents — destructive operations that must never happen.
 # Applied as --disallowedTools alongside --allowedTools for any agent with Bash.
-AGENT_DISALLOWED_TOOLS="WebFetch WebSearch Bash(git push:*) Bash(git remote:*) Bash(rm -rf /:*) Bash(rm -rf ~:*) Bash(rm -rf .:*) Bash(rm -rf ..:*) Bash(curl:*) Bash(wget:*)"
+#
+# IMPORTANT: --disallowedTools is a BEST-EFFORT denylist. The Claude CLI matches
+# tool invocations by prefix pattern, so agents can bypass these restrictions by
+# using alternative command forms (e.g., /usr/bin/curl, python -c "import urllib",
+# git config alias). The denylist is one layer in a defense-in-depth strategy —
+# the --allowedTools whitelist is the primary security boundary.
+AGENT_DISALLOWED_TOOLS="WebFetch WebSearch Bash(git push:*) Bash(git remote:*) Bash(rm -rf /:*) Bash(rm -rf ~:*) Bash(rm -rf .:*) Bash(rm -rf ..:*) Bash(curl:*) Bash(wget:*) Bash(ssh:*) Bash(scp:*) Bash(nc:*) Bash(ncat:*)"
 
 # --- Timeout --kill-after support detection ----------------------------------
 # GNU coreutils timeout supports --kill-after; macOS/BSD timeout does not.
@@ -99,13 +109,22 @@ _kill_agent_windows() {
     if [ "$_AGENT_WINDOWS_CLAUDE" != true ]; then
         return
     fi
-    # Kill by image name — catches the claude process even if PID tracking fails.
-    # //F = force, //T = kill process tree, //IM = by image name.
+    local _tk=""
     if command -v taskkill.exe &>/dev/null; then
-        taskkill.exe //F //IM claude.exe //T 2>/dev/null || true
+        _tk="taskkill.exe"
     elif command -v taskkill &>/dev/null; then
-        taskkill //F //IM claude.exe //T 2>/dev/null || true
+        _tk="taskkill"
+    else
+        return
     fi
+
+    # Try PID-based kill first (more precise, avoids killing unrelated claude instances)
+    if [ -n "${_TEKHTON_AGENT_PID:-}" ]; then
+        $_tk //F //PID "$_TEKHTON_AGENT_PID" //T 2>/dev/null || true
+    fi
+    # Fall back to image-name kill to catch child processes the PID kill might miss
+    # //F = force, //T = kill process tree, //IM = by image name.
+    $_tk //F //IM claude.exe //T 2>/dev/null || true
 }
 
 # --- Agent exit detection globals --------------------------------------------
@@ -169,10 +188,11 @@ run_agent() {
     # Default: 600 (10 minutes). Set to 0 in pipeline.conf to disable.
     local _activity_timeout="${AGENT_ACTIVITY_TIMEOUT:-600}"
 
-    # Temp files for inter-process communication
-    local _project_slug="${PROJECT_NAME// /_}"
-    local _turns_file="/tmp/tekhton_${_project_slug}_last_turns"
-    local _exit_file="/tmp/tekhton_${_project_slug}_agent_exit"
+    # Temp files for inter-process communication — created inside the per-session
+    # directory (TEKHTON_SESSION_DIR) to avoid predictable /tmp paths (TOCTOU).
+    local _session_dir="${TEKHTON_SESSION_DIR:-/tmp}"
+    local _turns_file="${_session_dir}/agent_last_turns"
+    local _exit_file="${_session_dir}/agent_exit"
     rm -f "$_exit_file" "$_turns_file"
 
     # --- Build permission flags -----------------------------------------------
@@ -222,7 +242,7 @@ run_agent() {
     local _was_activity_timeout=false
 
     if command -v mkfifo &>/dev/null; then
-        local _fifo="/tmp/tekhton_agent_fifo_$$"
+        local _fifo="${_session_dir}/agent_fifo_$$"
         rm -f "$_fifo"
         mkfifo "$_fifo"
 

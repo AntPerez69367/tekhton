@@ -44,9 +44,11 @@ run_stage_coder() {
         # Build architecture block for scout if available
         ARCHITECTURE_BLOCK=""
         if [ -f "${ARCHITECTURE_FILE}" ]; then
+            local _arch_content
+            _arch_content=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
             ARCHITECTURE_BLOCK="
 ## Architecture Map (use this to find files — do NOT explore blindly)
-$(cat "${ARCHITECTURE_FILE}")"
+$(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         fi
 
         SCOUT_PROMPT=$(render_prompt "scout")
@@ -114,9 +116,11 @@ ${BUG_SCOUT_CONTEXT}"
     # Architecture context
     export ARCHITECTURE_BLOCK=""
     if [ -f "${ARCHITECTURE_FILE}" ]; then
+        local _arch_main
+        _arch_main=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
         ARCHITECTURE_BLOCK="
 ## Architecture Map (read FIRST — saves you 10+ turns of exploration)
-$(cat "${ARCHITECTURE_FILE}")"
+$(_wrap_file_content "ARCHITECTURE" "$_arch_main")"
     fi
 
     export GLOSSARY_BLOCK=""
@@ -141,13 +145,15 @@ This is a milestone-sized task. Before writing any code:
     # Prior reviewer context (unresolved blockers from a previous run)
     export PRIOR_REVIEWER_CONTEXT=""
     if [ -f "REVIEWER_REPORT.md" ] && [ "$START_AT" = "coder" ]; then
+        local _reviewer_content
+        _reviewer_content=$(_safe_read_file "REVIEWER_REPORT.md" "REVIEWER_REPORT")
         PRIOR_REVIEWER_CONTEXT="
 ## Prior Reviewer Report (unresolved blockers from last run)
 The previous pipeline run ended with these unresolved items.
 Fix the Complex and Simple Blockers listed below — do not re-implement anything already done.
 Non-Blocking Notes are optional improvements if turns allow.
 
-$(cat REVIEWER_REPORT.md)"
+$(_wrap_file_content "REVIEWER_REPORT" "$_reviewer_content")"
     fi
 
     # Prior progress context (partial git diff from turn-limit resume)
@@ -171,12 +177,14 @@ Pick up from where the previous run left off — read the modified files first t
     # Prior tester bugs
     export PRIOR_TESTER_CONTEXT=""
     if [ -f "TESTER_REPORT.md" ] && grep -q "^### Bugs Found\|^## Bugs\|BUG-" TESTER_REPORT.md 2>/dev/null; then
+        local _tester_content
+        _tester_content=$(_safe_read_file "TESTER_REPORT.md" "TESTER_REPORT")
         PRIOR_TESTER_CONTEXT="
 ## Bugs Found by Tester (must fix)
 The tester identified these bugs in the last run. Fix all BUG-* items before
 doing anything else. Do not re-implement anything already working.
 
-$(cat TESTER_REPORT.md)"
+$(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
     fi
 
     # Accumulated non-blocking notes (injected when above threshold)
@@ -335,7 +343,7 @@ ${GIT_DIFF_STAT}
             BUILD_GATE_RETRY=1
             warn "Invoking coder to fix build errors (1 retry allowed)..."
             export BUILD_ERRORS_CONTENT
-            BUILD_ERRORS_CONTENT=$(cat BUILD_ERRORS.md)
+            BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" "$(_safe_read_file BUILD_ERRORS.md "BUILD_ERRORS")")
             BUILD_FIX_PROMPT=$(render_prompt "build_fix")
 
             run_agent \

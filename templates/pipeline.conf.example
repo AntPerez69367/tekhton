@@ -70,6 +70,7 @@ SEED_CONTRACTS_MAX_TURNS=20
 # MILESTONE_REVIEWER_MAX_TURNS=15
 # MILESTONE_TESTER_MAX_TURNS=60
 # MILESTONE_TESTER_MODEL="claude-sonnet-4-6"
+# MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER=3  # Applied to AGENT_ACTIVITY_TIMEOUT in milestone mode
 
 # --- Review loop -------------------------------------------------------------
 MAX_REVIEW_CYCLES=2

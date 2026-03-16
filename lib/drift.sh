@@ -99,7 +99,7 @@ append_drift_observations() {
 
     # Append each observation bullet to the Unresolved section
     local tmpfile
-    tmpfile=$(mktemp)
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
 
     local awk_prog
     awk_prog=$(_awk_join_bullets \
@@ -138,7 +138,7 @@ resolve_drift_observations() {
     date_tag=$(date +%Y-%m-%d)
 
     local tmpfile
-    tmpfile=$(mktemp)
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     local resolved_lines=""
 
     # Collect patterns into a single grep -E pattern
@@ -209,7 +209,7 @@ increment_runs_since_audit() {
     local new_count=$((current + 1))
 
     local tmpfile
-    tmpfile=$(mktemp)
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     sed "s/Runs since audit: ${current}/Runs since audit: ${new_count}/" "$drift_file" > "$tmpfile"
     mv "$tmpfile" "$drift_file"
 }
@@ -227,7 +227,7 @@ reset_runs_since_audit() {
     current=$(get_runs_since_audit)
 
     local tmpfile
-    tmpfile=$(mktemp)
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     sed -e "s/Runs since audit: ${current}/Runs since audit: 0/" \
         -e "s/Last audit: .*/Last audit: ${date_tag}/" \
         "$drift_file" > "$tmpfile"
@@ -474,7 +474,7 @@ append_nonblocking_notes() {
     local task_desc="${TASK:-unknown}"
 
     local tmpfile
-    tmpfile=$(mktemp)
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
 
     local awk_prog
     awk_prog=$(_awk_join_bullets \
@@ -533,7 +533,7 @@ _resolve_addressed_nonblocking_notes() {
 
     # For each open note, check if any referenced file was modified
     local tmpfile
-    tmpfile=$(mktemp)
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     local resolved=0
     local in_open=false
 

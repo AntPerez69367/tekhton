@@ -29,17 +29,17 @@ run_stage_architect() {
 
     export DRIFT_LOG_CONTENT="(No drift log found)"
     if [ -f "$drift_file" ]; then
-        DRIFT_LOG_CONTENT=$(cat "$drift_file")
+        DRIFT_LOG_CONTENT=$(_wrap_file_content "DRIFT_LOG" "$(_safe_read_file "$drift_file" "DRIFT_LOG")")
     fi
 
     export ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
     if [ -f "$adl_file" ]; then
-        ARCHITECTURE_LOG_CONTENT=$(cat "$adl_file")
+        ARCHITECTURE_LOG_CONTENT=$(_wrap_file_content "ARCHITECTURE_LOG" "$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")")
     fi
 
     export ARCHITECTURE_CONTENT="(No architecture file found)"
     if [ -f "${ARCHITECTURE_FILE}" ]; then
-        ARCHITECTURE_CONTENT=$(cat "${ARCHITECTURE_FILE}")
+        ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
     fi
 
     DRIFT_OBSERVATION_COUNT=$(count_drift_observations)
@@ -47,7 +47,7 @@ run_stage_architect() {
     # Dependency constraints (P5 — optional, may not exist yet)
     export DEPENDENCY_CONSTRAINTS_CONTENT=""
     if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE}" ]; then
-        DEPENDENCY_CONSTRAINTS_CONTENT=$(cat "${DEPENDENCY_CONSTRAINTS_FILE}")
+        DEPENDENCY_CONSTRAINTS_CONTENT=$(_wrap_file_content "DEPENDENCY_CONSTRAINTS" "$(_safe_read_file "${DEPENDENCY_CONSTRAINTS_FILE}" "DEPENDENCY_CONSTRAINTS")")
     fi
 
     # --- Invoke architect agent ----------------------------------------------
@@ -172,7 +172,11 @@ run_stage_architect() {
         log "Running expedited review of architect remediation..."
 
         export ARCHITECTURE_CONTENT
-        ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(not found)")
+        if [ -f "${ARCHITECTURE_FILE}" ]; then
+            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+        else
+            ARCHITECTURE_CONTENT="(not found)"
+        fi
         export PRIOR_BLOCKERS_BLOCK=""
         ARCHITECT_REVIEW_PROMPT=$(render_prompt "architect_review")
 

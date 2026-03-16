@@ -21,12 +21,47 @@ archive_reports() {
     done
 }
 
+# --- Git safety checks -------------------------------------------------------
+
+# _check_gitignore_safety — Warns if .gitignore is missing or lacks common
+# sensitive file patterns. Called before `git add` to prevent accidental commits
+# of credentials, keys, or log files.
+_check_gitignore_safety() {
+    if [ ! -f ".gitignore" ]; then
+        warn "[git] WARNING: No .gitignore found. Sensitive files may be staged."
+        warn "[git] Create a .gitignore with at least: .env *.pem *.key id_rsa .claude/logs/"
+        return
+    fi
+
+    local missing_patterns=()
+    for pattern in ".env" "*.pem" "*.key" "id_rsa"; do
+        if ! grep -qF "$pattern" .gitignore 2>/dev/null; then
+            missing_patterns+=("$pattern")
+        fi
+    done
+
+    if [ ${#missing_patterns[@]} -gt 0 ]; then
+        warn "[git] WARNING: .gitignore may be missing sensitive patterns: ${missing_patterns[*]}"
+        warn "[git] Consider adding them to prevent accidental credential commits."
+    fi
+}
+
+# _sanitize_for_commit — Strips control characters and newlines from a string
+# to prevent commit message injection.
+_sanitize_for_commit() {
+    local input="$1"
+    # Strip control characters (except space/tab), carriage returns, and newlines
+    printf '%s' "$input" | tr -d '\000-\010\013\014\016-\037\177' | tr '\n\r' '  '
+}
+
 # --- Commit message generation -----------------------------------------------
 #
 # Usage:  generate_commit_message "task description"
 # Reads CODER_SUMMARY.md and produces a conventional-commit-style message on stdout.
 generate_commit_message() {
     local task="$1"
+    # Sanitize task string to prevent commit message injection
+    task=$(_sanitize_for_commit "$task")
 
     # All commands in this function must be guarded against pipefail — awk | head
     # can cause SIGPIPE, and grep -q returns non-zero on no match.
@@ -77,7 +112,7 @@ run_final_checks() {
 
     log "Running ${ANALYZE_CMD}..."
     set +e
-    ANALYZE_OUTPUT=$(${ANALYZE_CMD} 2>&1)
+    ANALYZE_OUTPUT=$(bash -c "${ANALYZE_CMD}" 2>&1)
     ANALYZE_EXIT=$?
     set -e
     echo "$ANALYZE_OUTPUT" >> "$log_file"
@@ -121,7 +156,7 @@ run_final_checks() {
 
         # Re-run analyze to confirm cleanup worked
         log "Re-running ${ANALYZE_CMD} after cleanup..."
-        if ${ANALYZE_CMD} 2>&1 | tee -a "$log_file" | grep -qE "^  (error|warning)"; then
+        if bash -c "${ANALYZE_CMD}" 2>&1 | tee -a "$log_file" | grep -qE "^  (error|warning)"; then
             print_run_summary
             error "${ANALYZE_CMD}: warnings or errors remain after cleanup. Review before merging."
             final_result=1
@@ -133,7 +168,7 @@ run_final_checks() {
 
     echo
     log "Running ${TEST_CMD}..."
-    if ${TEST_CMD} 2>&1 | tee -a "$log_file"; then
+    if bash -c "${TEST_CMD}" 2>&1 | tee -a "$log_file"; then
         print_run_summary
         success "${TEST_CMD}: all passing"
     else

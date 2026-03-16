@@ -32,7 +32,11 @@ run_stage_review() {
         # --- Invoke reviewer -------------------------------------------------
 
         export ARCHITECTURE_CONTENT
-        ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(${ARCHITECTURE_FILE} not found)")
+        if [ -f "${ARCHITECTURE_FILE}" ]; then
+            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+        else
+            ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
+        fi
         export PRIOR_BLOCKERS_BLOCK=""
         if [ "$REVIEW_CYCLE" -gt 1 ]; then
             PRIOR_BLOCKERS_BLOCK="yes"
@@ -95,7 +99,7 @@ run_stage_review() {
 
         if [ "$VERDICT" = "CHANGES_REQUIRED" ]; then
             # --- Count blockers ----------------------------------------------
-            TMPDIR_BLOCKS=$(mktemp -d)
+            TMPDIR_BLOCKS=$(mktemp -d "${TEKHTON_SESSION_DIR:-/tmp}/blocks_XXXXXXXX")
             awk '/^## Complex Blockers/{found=1; next} found && /^##/{exit} found{print}' \
                 REVIEWER_REPORT.md > "${TMPDIR_BLOCKS}/complex.txt" 2>/dev/null || true
             awk '/^## Simple Blockers/{found=1; next} found && /^##/{exit} found{print}' \

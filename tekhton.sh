@@ -71,6 +71,14 @@ _tekhton_cleanup() {
             echo -e "\033[0;31m[✗] Reset in-progress [~] human notes back to [ ].\033[0m" >&2
         fi
     fi
+
+    # --- Session cleanup: remove temp directory and lock file -----------------
+    if [ -n "${TEKHTON_SESSION_DIR:-}" ] && [ -d "${TEKHTON_SESSION_DIR}" ]; then
+        rm -rf "${TEKHTON_SESSION_DIR}" 2>/dev/null || true
+    fi
+    if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
+        rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
+    fi
 }
 trap _tekhton_cleanup EXIT
 
@@ -87,6 +95,37 @@ PROJECT_DIR="$(pwd)"
 
 export TEKHTON_HOME
 export PROJECT_DIR
+
+# --- Per-session temp directory -----------------------------------------------
+# All temp files (agent FIFOs, exit codes, turn counts) are created inside this
+# directory instead of predictable /tmp paths. Cleaned up by the EXIT trap.
+TEKHTON_SESSION_DIR=$(mktemp -d "${TMPDIR:-/tmp}/tekhton_session_XXXXXXXX")
+export TEKHTON_SESSION_DIR
+
+# --- Pipeline lock file ------------------------------------------------------
+# Prevents concurrent pipeline runs on the same project directory.
+_TEKHTON_LOCK_FILE="${PROJECT_DIR}/.claude/PIPELINE.lock"
+
+_check_pipeline_lock() {
+    if [ -f "$_TEKHTON_LOCK_FILE" ]; then
+        local lock_pid
+        lock_pid=$(cat "$_TEKHTON_LOCK_FILE" 2>/dev/null || echo "")
+        # Check if the PID from the lock file is still running
+        if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+            echo "[✗] Another tekhton pipeline is already running (PID: ${lock_pid})." >&2
+            echo "    Lock file: ${_TEKHTON_LOCK_FILE}" >&2
+            echo "    If this is stale, remove it: rm ${_TEKHTON_LOCK_FILE}" >&2
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        else
+            # Stale lock — previous run crashed without cleanup
+            rm -f "$_TEKHTON_LOCK_FILE"
+        fi
+    fi
+    # Create lock directory if needed and write our PID
+    mkdir -p "$(dirname "$_TEKHTON_LOCK_FILE")" 2>/dev/null || true
+    echo "$$" > "$_TEKHTON_LOCK_FILE"
+}
 
 # --- Pre-library globals -----------------------------------------------------
 
@@ -202,6 +241,9 @@ if [ "${1:-}" = "--plan" ]; then
     run_plan || true
     exit 0
 fi
+
+# --- Acquire pipeline lock (execution pipeline only) -------------------------
+_check_pipeline_lock
 
 # --- Library sources ---------------------------------------------------------
 
@@ -741,6 +783,7 @@ fi
 # Helper: stage, commit, and log output without printing verbose git details
 _do_git_commit() {
     local msg="$1"
+    _check_gitignore_safety
     git add -A > /dev/null 2>&1
     local git_output
     git_output=$(git commit -m "$msg" 2>&1) || true
@@ -758,7 +801,7 @@ case "$COMMIT_CHOICE" in
         success "Committed. Open a PR and squash-merge to main when ready."
         ;;
     e|E)
-        TMPFILE=$(mktemp /tmp/tekhton-commit-XXXXXX.txt)
+        TMPFILE=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/tekhton-commit-XXXXXX.txt")
         echo "$COMMIT_MSG" > "$TMPFILE"
         ${EDITOR:-nano} "$TMPFILE"
         EDITED_MSG=$(cat "$TMPFILE")

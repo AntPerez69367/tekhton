@@ -17,7 +17,8 @@ run_build_gate() {
     log "Running build gate (${stage_label})..."
 
     # Capture analyze errors only (warnings are ok, errors are not)
-    ANALYZE_OUTPUT=$(${ANALYZE_CMD} 2>&1)
+    # Use bash -c instead of unquoted expansion to avoid word-splitting issues
+    ANALYZE_OUTPUT=$(bash -c "${ANALYZE_CMD}" 2>&1)
     ANALYZE_ERRORS=$(echo "$ANALYZE_OUTPUT" | grep -E "${ANALYZE_ERROR_PATTERN}" || true)
 
     if [ -n "$ANALYZE_ERRORS" ]; then
@@ -46,7 +47,8 @@ EOF
 
     # Also run a quick compile check (no device needed)
     if [ -n "${BUILD_CHECK_CMD}" ]; then
-        COMPILE_OUTPUT=$(eval "${BUILD_CHECK_CMD}")
+        # Use bash -c instead of eval to avoid arbitrary code execution
+        COMPILE_OUTPUT=$(bash -c "${BUILD_CHECK_CMD}" 2>&1)
         if echo "$COMPILE_OUTPUT" | grep -q "${BUILD_ERROR_PATTERN}"; then
             COMPILE_ERRORS=$(echo "$COMPILE_OUTPUT" | grep "${BUILD_ERROR_PATTERN}" | head -20)
             warn "Build gate FAILED (${stage_label}) — compile errors found:"
@@ -75,7 +77,8 @@ EOF
             log "Running dependency constraint validation: ${validation_cmd}"
             local constraint_output=""
             local constraint_exit=0
-            constraint_output=$(eval "$validation_cmd" 2>&1) || constraint_exit=$?
+            # Use bash -c instead of eval to avoid arbitrary code execution
+            constraint_output=$(bash -c "$validation_cmd" 2>&1) || constraint_exit=$?
 
             if [ "$constraint_exit" -ne 0 ]; then
                 warn "Build gate FAILED (${stage_label}) — dependency constraint violations:"

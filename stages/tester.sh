@@ -22,7 +22,11 @@ run_stage_tester() {
         TESTER_PROMPT=$(render_prompt "tester_resume")
     else
         export ARCHITECTURE_CONTENT
-        ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(${ARCHITECTURE_FILE} not found)")
+        if [ -f "${ARCHITECTURE_FILE}" ]; then
+            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+        else
+            ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
+        fi
         TESTER_PROMPT=$(render_prompt "tester")
     fi
 

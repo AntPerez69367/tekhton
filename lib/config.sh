@@ -14,6 +14,81 @@
 # Config lives in the target project: .claude/pipeline.conf
 _CONF_FILE="${PROJECT_DIR}/.claude/pipeline.conf"
 
+# --- Safe config file parser -------------------------------------------------
+# Reads key=value lines from a config file without executing arbitrary code.
+# Handles: bare values, double-quoted, single-quoted, values with = signs, spaces.
+# Rejects values containing dangerous shell metacharacters.
+
+_parse_config_file() {
+    local conf_file="$1"
+    local line_num=0
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_num=$((line_num + 1))
+
+        # Strip \r (CRLF from Windows editors)
+        line="${line//$'\r'/}"
+
+        # Skip empty lines and comments
+        [[ -z "$line" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+        # Must match KEY=VALUE pattern (key starts with letter or underscore)
+        if ! [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*) ]]; then
+            continue
+        fi
+
+        local key="${BASH_REMATCH[1]}"
+        local raw_value="${BASH_REMATCH[2]}"
+
+        # Strip leading/trailing whitespace from the value
+        raw_value="${raw_value#"${raw_value%%[![:space:]]*}"}"
+        raw_value="${raw_value%"${raw_value##*[![:space:]]}"}"
+
+        # Strip surrounding quotes (double or single) if present
+        if [[ "$raw_value" =~ ^\"(.*)\"$ ]]; then
+            raw_value="${BASH_REMATCH[1]}"
+        elif [[ "$raw_value" =~ ^\'(.*)\'$ ]]; then
+            raw_value="${BASH_REMATCH[1]}"
+        fi
+
+        # Strip inline comments: only if preceded by space+# outside quotes
+        # (simple heuristic: strip " #..." suffix)
+        if [[ "$raw_value" =~ ^([^#]*[^[:space:]])[[:space:]]+#.*$ ]]; then
+            raw_value="${BASH_REMATCH[1]}"
+        fi
+
+        # Reject command substitution universally (never legitimate in config values)
+        if [[ "$raw_value" == *'$('* ]] || [[ "$raw_value" == *'`'* ]]; then
+            echo "[✗] pipeline.conf:${line_num}: REJECTED — value for '${key}' contains command substitution." >&2
+            echo "    Dangerous patterns: \$( \`" >&2
+            echo "    Line: ${line}" >&2
+            exit 1
+        fi
+
+        # Reject shell metacharacters in non-command, non-pattern keys.
+        # Command keys (ANALYZE_CMD, TEST_CMD, etc.) may legitimately contain
+        # pipes or redirects. Pattern keys (NOTES_FILTER_CATEGORIES, etc.) may
+        # contain pipes for alternation. All other keys must be clean.
+        case "$key" in
+            *_CMD|*_PATTERN|*_CATEGORIES) ;;  # Allow shell metacharacters
+            *)
+                if [[ "$raw_value" == *';'* ]] || [[ "$raw_value" == *'|'* ]] || \
+                   [[ "$raw_value" == *'&'* ]] || [[ "$raw_value" == *'>'* ]] || \
+                   [[ "$raw_value" == *'<'* ]]; then
+                    echo "[✗] pipeline.conf:${line_num}: REJECTED — value for '${key}' contains shell metacharacters." >&2
+                    echo "    Dangerous characters: ; | & > <" >&2
+                    echo "    Line: ${line}" >&2
+                    exit 1
+                fi
+                ;;
+        esac
+
+        # Safe assignment via declare -gx (global + export)
+        declare -gx "$key=$raw_value"
+    done < "$conf_file"
+}
+
 # --- Loader ------------------------------------------------------------------
 
 load_config() {
@@ -23,9 +98,9 @@ load_config() {
         exit 1
     fi
 
-    # Source the conf file — strip \r in case VS Code saved with CRLF on Windows
-    # shellcheck source=/dev/null
-    source <(sed 's/\r$//' "$_CONF_FILE")
+    # Safe config parser — reads key=value lines without executing arbitrary code.
+    # Rejects values containing dangerous shell metacharacters: $( ` ; | & > <
+    _parse_config_file "$_CONF_FILE"
 
     # --- Validate required keys ---
     local missing=()
@@ -108,6 +183,38 @@ load_config() {
     : "${MILESTONE_TESTER_MAX_TURNS:=$(( TESTER_MAX_TURNS * 2 ))}"
     : "${MILESTONE_TESTER_MODEL:=${CLAUDE_STANDARD_MODEL}}"
 
+    # Milestone activity timeout — multiplier applied to AGENT_ACTIVITY_TIMEOUT
+    # in milestone mode. Large milestones may need longer silent periods
+    # (especially with --output-format json which produces no streaming output).
+    : "${MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER:=3}"
+
+    # --- Hard upper bounds (defense-in-depth) ---
+    # Prevent runaway loops or excessive API costs from misconfigured values.
+    _clamp_config_value() {
+        local key="$1" max="$2"
+        local val="${!key:-0}"
+        if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt "$max" ] 2>/dev/null; then
+            warn "[config] ${key}=${val} exceeds hard cap (${max}). Clamped to ${max}."
+            declare -gx "$key=$max"
+        fi
+    }
+    _clamp_config_value MAX_REVIEW_CYCLES 20
+    _clamp_config_value CODER_MAX_TURNS 500
+    _clamp_config_value JR_CODER_MAX_TURNS 500
+    _clamp_config_value REVIEWER_MAX_TURNS 500
+    _clamp_config_value TESTER_MAX_TURNS 500
+    _clamp_config_value SCOUT_MAX_TURNS 500
+    _clamp_config_value ARCHITECT_MAX_TURNS 500
+    _clamp_config_value CODER_MAX_TURNS_CAP 500
+    _clamp_config_value REVIEWER_MAX_TURNS_CAP 500
+    _clamp_config_value TESTER_MAX_TURNS_CAP 500
+    _clamp_config_value MILESTONE_MAX_REVIEW_CYCLES 40
+    _clamp_config_value MILESTONE_CODER_MAX_TURNS 500
+    _clamp_config_value MILESTONE_JR_CODER_MAX_TURNS 500
+    _clamp_config_value MILESTONE_REVIEWER_MAX_TURNS 500
+    _clamp_config_value MILESTONE_TESTER_MAX_TURNS 500
+    _clamp_config_value MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER 10
+
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     [[ "$PIPELINE_STATE_FILE" != /* ]] && PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
     [[ "$LOG_DIR" != /* ]] && LOG_DIR="${PROJECT_DIR}/${LOG_DIR}"
@@ -122,4 +229,8 @@ apply_milestone_overrides() {
     REVIEWER_MAX_TURNS="$MILESTONE_REVIEWER_MAX_TURNS"
     TESTER_MAX_TURNS="$MILESTONE_TESTER_MAX_TURNS"
     export CLAUDE_TESTER_MODEL="$MILESTONE_TESTER_MODEL"
+
+    # Scale activity timeout for milestone mode (long-running agent calls)
+    local base_timeout="${AGENT_ACTIVITY_TIMEOUT:-600}"
+    AGENT_ACTIVITY_TIMEOUT=$(( base_timeout * MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER ))
 }

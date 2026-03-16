@@ -178,6 +178,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `METRICS_ENABLED` | Enable run metrics collection (default: true) |
 | `METRICS_MIN_RUNS` | Min runs before adaptive calibration (default: 5) |
 | `METRICS_ADAPTIVE_TURNS` | Use history for turn calibration (default: true) |
+| `MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER` | Multiplier for AGENT_ACTIVITY_TIMEOUT in milestone mode (default: 3) |
 
 ## Testing
 
@@ -581,6 +582,60 @@ Seeds Forward:
   benefits from the anti-injection directives already being in place
 - Milestone 7 (Specialists) adds specialist_security.prompt.md which builds on the
   prompt injection mitigations established here
+
+#### Milestone 0.5: Agent Output Monitoring And Null-Run Detection
+Harden the FIFO-based agent monitoring to handle `--output-format json` non-streaming
+behavior and prevent false null-run declarations when agents complete work silently.
+The current monitoring relies exclusively on FIFO output for activity detection, but
+JSON output mode produces no streaming output — causing the activity timeout to kill
+healthy agents and discard completed work.
+
+Files to modify:
+- `lib/agent.sh` — add file-change activity detection as a secondary signal in the
+  FIFO monitoring loop. Before killing an agent on activity timeout, check
+  `git status --porcelain` for working-tree changes since the last check. If files
+  changed, reset the activity timer and continue. After agent completion or kill,
+  check for file changes before declaring null_run. Add `CODER_SUMMARY.md` existence
+  check as a completion signal.
+- `lib/agent.sh` — add polling-based activity detection for JSON output mode: check
+  (1) agent PID still running, (2) file changes since last check, (3) JSON output
+  file size growth. Retain FIFO for text-mode backward compatibility.
+- `lib/agent.sh` — in null-run detection, parse `git diff --stat` to estimate scope
+  of completed work when turns cannot be extracted from output. If files were modified,
+  the run is NOT null regardless of FIFO status.
+
+Files to create:
+- None — all changes are in `lib/agent.sh`
+
+Acceptance criteria:
+- Agent running with `--output-format json` for 100+ turns is NOT killed by activity
+  timeout if it is actively modifying files
+- After activity timeout fires, pipeline checks `git status --porcelain` before
+  killing. If files changed in the last timeout window, timer resets.
+- After killing an agent or normal completion, null-run detection checks for file
+  modifications. If files were modified, run is classified as productive (not null).
+- Text-mode FIFO monitoring continues to work identically to 1.0 behavior
+- `CODER_SUMMARY.md` existence after completion prevents null-run classification
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` and `shellcheck` pass on `lib/agent.sh`
+
+Watch For:
+- `git status --porcelain` may be slow in large repos — consider caching or using
+  `find -newer` against a timestamp marker file as an alternative
+- The FIFO subshell must not interfere with the new polling logic — they are
+  complementary signals, not replacements
+- On Windows (Git Bash / MSYS2), `git status` behavior and file timestamps may
+  differ from Linux/macOS. Test both paths.
+- The `MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER` (default 3×, already in lib/config.sh)
+  is the stop-gap mitigation; this milestone is the proper fix
+
+Seeds Forward:
+- Milestone 1 (Token Accounting) benefits from accurate turn counts that this
+  milestone ensures
+- Milestone 3 (Auto-Advance) depends on reliable completion detection to know
+  when to advance to the next milestone
+- Milestone 8 (Metrics) records turn counts and outcomes — false null-runs would
+  corrupt the metrics dataset
 
 #### Milestone 1: Token And Context Accounting
 Add measurement infrastructure so the pipeline knows how much context it's injecting
