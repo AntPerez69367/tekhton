@@ -236,9 +236,12 @@ _append_specialist_notes() {
         insert_block="${insert_block}- [ ] [${date_tag} | specialist:${spec_name}] ${text}"$'\n'
     done <<< "$notes"
 
-    # Insert the block after "## Open" using awk (literal text, no escape interpretation)
-    awk -v block="$insert_block" '/^## Open$/{print; printf "%s", block; next} {print}' \
+    # Insert the block after "## Open" using awk with ENVIRON to avoid escape interpretation.
+    # awk -v interprets C-style escapes (\n, \U, etc.) — ENVIRON passes the value literally.
+    export _SPECIALIST_INSERT_BLOCK="$insert_block"
+    awk '/^## Open$/{print; printf "%s", ENVIRON["_SPECIALIST_INSERT_BLOCK"]; next} {print}' \
         "$nb_file" > "$tmpfile"
+    unset _SPECIALIST_INSERT_BLOCK
 
     mv "$tmpfile" "$nb_file"
     local note_count
