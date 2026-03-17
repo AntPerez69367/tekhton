@@ -200,6 +200,10 @@ load_config() {
     : "${CLARIFICATION_ENABLED:=true}"     # Allow agents to pause for questions
     : "${REPLAN_ENABLED:=true}"            # Allow mid-run replan triggers
 
+    # --- Brownfield replan defaults (--replan command) ---
+    : "${REPLAN_MODEL:=${PLAN_GENERATION_MODEL:-${CLAUDE_PLAN_MODEL:-opus}}}"
+    : "${REPLAN_MAX_TURNS:=${PLAN_GENERATION_MAX_TURNS:-50}}"
+
     # --- Auto-advance defaults ---
     : "${AUTO_ADVANCE_ENABLED:=false}"
     : "${AUTO_ADVANCE_LIMIT:=3}"

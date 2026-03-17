@@ -224,6 +224,17 @@ CHARS_PER_TOKEN=4
 # When enabled, reviewers can issue REPLAN_REQUIRED verdict to trigger a replan menu.
 # REPLAN_ENABLED=true
 
+# --- Brownfield replan (--replan) ---------------------------------------------
+# The --replan command updates existing DESIGN.md and CLAUDE.md based on
+# accumulated drift observations, architecture decisions, and codebase changes.
+# It produces a delta document for human review before applying changes.
+
+# Model for the replan agent (defaults to PLAN_GENERATION_MODEL)
+# REPLAN_MODEL="opus"
+
+# Max turns for the replan agent (defaults to PLAN_GENERATION_MAX_TURNS)
+# REPLAN_MAX_TURNS=50
+
 # --- Context compiler (task-scoped context assembly) -------------------------
 # When enabled, agents receive only the sections of large artifacts relevant
 # to their current task, instead of full-file injection. Uses keyword extraction
