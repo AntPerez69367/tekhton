@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
-# =============================================================================
 # notes.sh — Human notes management (three-state tracking)
-#
-# Sourced by tekhton.sh — do not run directly.
-# Expects: NOTES_FILTER, LOG_DIR, TIMESTAMP (set by caller)
-# Expects: log() from common.sh
-#
-# Note states:
-#   [ ] — not started, available for work
-#   [~] — in scope for this pipeline run (transient, never persists between runs)
-#   [x] — completed
-# =============================================================================
+# Sourced by tekhton.sh. Expects: NOTES_FILTER, LOG_DIR, TIMESTAMP, log()
+# States: [ ] not started, [~] in-scope this run (transient), [x] completed
 
 # Reads HUMAN_NOTES.md and returns unchecked items count
 count_human_notes() {
@@ -157,12 +148,7 @@ resolve_human_notes() {
     fi
 }
 
-# =============================================================================
-# CLEANUP BATCH SELECTION (for autonomous debt sweeps — Milestone 5)
-#
-# Functions to select, prioritize, and mark non-blocking notes for cleanup.
-# Operates on NON_BLOCKING_LOG.md (managed by drift.sh).
-# =============================================================================
+# --- Cleanup batch selection (Milestone 5) — operates on NON_BLOCKING_LOG.md ---
 
 # count_unresolved_notes — Returns count of open (non-deferred) non-blocking notes.
 # Excludes items marked [x] (resolved) and [DEFERRED].
@@ -206,7 +192,7 @@ select_cleanup_batch() {
     fi
 
     # Score each note: recurrence (how many other open notes reference the same file),
-    # then file-overlap (does CODER_SUMMARY.md mention the same file), then age (line order).
+    # then file-overlap (files modified this run, passed by caller), then age (line order).
     local scored_notes
     scored_notes=$(echo "$open_notes" | awk -v mod_files="$modified_files" '
     BEGIN {
