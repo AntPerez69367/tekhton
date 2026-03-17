@@ -46,7 +46,7 @@ _filter_block() {
     # Only use filtered version if it actually reduced content
     if [[ "$filtered_lines" -lt "$orig_lines" ]]; then
         log "[context-compiler] ${var_name}: filtered from ${orig_lines} to ${filtered_lines} lines"
-        declare -x "$var_name=$filtered"
+        export "$var_name=$filtered"
     fi
 }
 
@@ -129,7 +129,7 @@ _compress_if_over_budget() {
             local compressed_with_note
             compressed_with_note="[Context compressed: ${var_name} reduced from $(echo "$val" | count_lines) to $(echo "$compressed" | count_lines) lines]
 ${compressed}"
-            declare -x "$var_name=$compressed_with_note"
+            export "$var_name=$compressed_with_note"
         fi
 
         # Re-check budget

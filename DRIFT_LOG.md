@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-03-16 | "Implement Milestone 5: Autonomous Debt Sweeps"] `stages/cleanup.sh` and `stages/coder.sh`/`stages/tester.sh` all use the `wc -l | tr -d '[:space:]'` idiom for line counting. If this pattern ever needs to change for portability, it will need coordinated updates across multiple stage files.
