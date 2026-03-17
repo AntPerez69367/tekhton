@@ -157,7 +157,10 @@ estimate_post_coder_turns() {
             CODER_SUMMARY.md 2>/dev/null || echo "0")
     fi
 
-    # Count git diff stat lines
+    # Count git diff stat lines (insertions + deletions)
+    # Note: when grep finds no match (no insertions/deletions), the pipeline fails
+    # and the || echo "0" fallback fires correctly. When grep matches, tr strips
+    # non-digits to extract the number. The ${var:-0} in arithmetic handles empty strings.
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
         diff_lines=$(git diff --stat HEAD 2>/dev/null | tail -1 | grep -o '[0-9]* insertion' | tr -dc '0-9' || echo "0")
         local del_lines

@@ -326,6 +326,10 @@ ${nb_notes}"
             print_run_summary
             success "Post-clarification coder finished."
 
+            # Update actual coder turns to reflect post-clarification run
+            # so reviewer/tester recalibration uses the most recent data
+            export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
+
             # --- Null run detection for post-clarification run ---
             if was_null_run; then
                 error "Post-clarification coder was a null run — produced no meaningful work."
