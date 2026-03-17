@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: lib/context.sh — Context compiler functions (Milestone 2)
+# Test: lib/context_compiler.sh — Context compiler functions (Milestone 2)
 # Tests: _extract_keywords, extract_relevant_sections, compress_context,
 #        build_context_packet, _filter_block
 set -euo pipefail
