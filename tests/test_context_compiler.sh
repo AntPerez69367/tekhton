@@ -17,6 +17,8 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/context.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/context_compiler.sh"
 
 # Create a temp directory for test fixtures
 TEST_TMPDIR=$(mktemp -d)

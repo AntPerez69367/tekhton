@@ -23,3 +23,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-16
 - **Rationale**: - ACP: lib/clarify.sh sourced in execution pipeline — **ACCEPT** — Milestone 4 is part of v2.0 Adaptive Pipeline, not the planning initiative. Backward compatible: zero behavioral change when no a
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-5: Split `lib/context.sh` into `context.sh` + `context_compiler.sh` (Task: "Continue working your way through the NON_BLOCKING_LOG.md file and begin by implementing the first 2 items.")
+- **Date**: 2026-03-16
+- **Rationale**: - ACP: Split `lib/context.sh` into `context.sh` + `context_compiler.sh` — **ACCEPT** — The 300-line Non-Negotiable Rule supersedes the historical Milestone 2 "no new files" note. The split is clea
+- **Source**: Accepted ACP from pipeline run
