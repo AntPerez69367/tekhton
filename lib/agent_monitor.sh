@@ -301,6 +301,6 @@ _count_changed_files_since() {
         -not -path '*/.git' \
         -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
         -not -path "${log_dir}/*" \
-        -type f 2>/dev/null | wc -l | tr -d '[:space:]')
+        -type f 2>/dev/null | count_lines)
     echo "${count:-0}"
 }

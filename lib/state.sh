@@ -60,7 +60,7 @@ ${milestone_num:-none}
 
 ## Files Present
 $(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md; do
-    [ -f "$f" ] && echo "- $f ($(wc -l < "$f" | tr -d '[:space:]') lines)" || echo "- $f (missing)"
+    [ -f "$f" ] && echo "- $f ($(count_lines < "$f") lines)" || echo "- $f (missing)"
 done)
 EOF
 

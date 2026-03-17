@@ -180,13 +180,13 @@ _extract_keywords() {
     keywords="${task_words}"
 
     # Extract file paths from reference file (scout report or coder summary)
-    if [ -n "$ref_file" ] && [ -f "$ref_file" ]; then
+    if [[ -n "$ref_file" ]] && [[ -f "$ref_file" ]]; then
         local file_words
         # Match paths like lib/foo.sh, stages/bar.sh, src/component.ts
         file_words=$(grep -oE '[a-zA-Z0-9_/.-]+\.[a-z]{1,4}' "$ref_file" 2>/dev/null | \
             sed 's|.*/||' | sed 's/\.[^.]*$//' | tr '[:upper:]' '[:lower:]' | \
             sort -u || true)
-        if [ -n "$file_words" ]; then
+        if [[ -n "$file_words" ]]; then
             keywords="${keywords}
 ${file_words}"
         fi
@@ -212,7 +212,7 @@ extract_relevant_sections() {
     local content="$1"
     local keywords="$2"
 
-    if [ -z "$content" ] || [ -z "$keywords" ]; then
+    if [[ -z "$content" ]] || [[ -z "$keywords" ]]; then
         echo "$content"
         return
     fi
@@ -220,7 +220,7 @@ extract_relevant_sections() {
     # Build a grep -i pattern from keywords (pipe-separated)
     local pattern
     pattern=$(echo "$keywords" | tr '\n' '|' | sed 's/|$//')
-    if [ -z "$pattern" ]; then
+    if [[ -z "$pattern" ]]; then
         echo "$content"
         return
     fi
@@ -344,16 +344,16 @@ build_context_packet() {
 
     # Extract keywords from task and available reference files
     local ref_file=""
-    if [ -f "SCOUT_REPORT.md" ]; then
+    if [[ -f "SCOUT_REPORT.md" ]]; then
         ref_file="SCOUT_REPORT.md"
-    elif [ -f "CODER_SUMMARY.md" ]; then
+    elif [[ -f "CODER_SUMMARY.md" ]]; then
         ref_file="CODER_SUMMARY.md"
     fi
 
     local keywords
     keywords=$(_extract_keywords "$task" "$ref_file")
 
-    if [ -z "$keywords" ]; then
+    if [[ -z "$keywords" ]]; then
         log "[context-compiler] No keywords extracted — using full context (1.0 fallback)"
         return
     fi
@@ -394,7 +394,7 @@ _filter_block() {
     local keywords="$2"
 
     local original="${!var_name:-}"
-    if [ -z "$original" ]; then
+    if [[ -z "$original" ]]; then
         return
     fi
 
@@ -416,8 +416,8 @@ _filter_block() {
     fi
 
     local orig_lines filtered_lines
-    orig_lines=$(echo "$original" | wc -l | tr -d '[:space:]')
-    filtered_lines=$(echo "$filtered" | wc -l | tr -d '[:space:]')
+    orig_lines=$(echo "$original" | count_lines)
+    filtered_lines=$(echo "$filtered" | count_lines)
 
     # Only use filtered version if it actually reduced content
     if [[ "$filtered_lines" -lt "$orig_lines" ]]; then
@@ -476,7 +476,7 @@ _compress_if_over_budget() {
 
     for var_name in "${compress_priority[@]}"; do
         local val="${!var_name:-}"
-        if [ -z "$val" ]; then
+        if [[ -z "$val" ]]; then
             continue
         fi
 
@@ -489,7 +489,7 @@ _compress_if_over_budget() {
         if [[ "$saved" -gt 0 ]]; then
             log "[context-compiler] Compressed ${var_name}: saved ~$(( saved / cpt )) tokens"
             # Inject compression note
-            export "$var_name=[Context compressed: ${var_name} reduced from $(echo "$val" | wc -l | tr -d '[:space:]') to $(echo "$compressed" | wc -l | tr -d '[:space:]') lines]
+            export "$var_name=[Context compressed: ${var_name} reduced from $(echo "$val" | count_lines) to $(echo "$compressed" | count_lines) lines]
 ${compressed}"
         fi
 

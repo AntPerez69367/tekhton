@@ -22,6 +22,15 @@ warn()   { echo -e "${YELLOW}[!]${NC} $*"; }
 error()  { echo -e "${RED}[✗]${NC} $*"; }
 header() { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"; echo -e "${BOLD}${CYAN}  $*${NC}"; echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"; }
 
+# --- Line counting (portable) ------------------------------------------------
+
+# count_lines — Reads stdin and prints the line count with no leading whitespace.
+# Usage: echo "$var" | count_lines
+#        count_lines < "$file"
+count_lines() {
+    wc -l | tr -d '[:space:]'
+}
+
 # --- Prerequisite check ------------------------------------------------------
 
 require_cmd() {

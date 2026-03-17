@@ -65,7 +65,7 @@ run_stage_cleanup() {
     fi
 
     local batch_count
-    batch_count=$(echo "$batch" | wc -l | tr -d '[:space:]')
+    batch_count=$(echo "$batch" | count_lines)
     log "Selected ${batch_count} item(s) for cleanup sweep."
 
     # Strip the checkbox prefix for the prompt (agent sees just the note text)

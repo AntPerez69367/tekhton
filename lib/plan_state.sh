@@ -44,8 +44,8 @@ ${project_type}
 ${template_file}
 
 ## Files Present
-$([ -f "${PROJECT_DIR}/DESIGN.md" ] && echo "- DESIGN.md ($(wc -l < "${PROJECT_DIR}/DESIGN.md" | tr -d '[:space:]') lines)" || echo "- DESIGN.md (missing)")
-$([ -f "${PROJECT_DIR}/CLAUDE.md" ] && echo "- CLAUDE.md ($(wc -l < "${PROJECT_DIR}/CLAUDE.md" | tr -d '[:space:]') lines)" || echo "- CLAUDE.md (missing)")
+$([ -f "${PROJECT_DIR}/DESIGN.md" ] && echo "- DESIGN.md ($(count_lines < "${PROJECT_DIR}/DESIGN.md") lines)" || echo "- DESIGN.md (missing)")
+$([ -f "${PROJECT_DIR}/CLAUDE.md" ] && echo "- CLAUDE.md ($(count_lines < "${PROJECT_DIR}/CLAUDE.md") lines)" || echo "- CLAUDE.md (missing)")
 EOF
 
     if mv -f "$tmp_state" "$PLAN_STATE_FILE" 2>/dev/null; then

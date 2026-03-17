@@ -126,7 +126,7 @@ run_plan_followup_interview() {
                     echo "    ${eline}"
                 done
                 local total_lines
-                total_lines=$(echo "$existing_content" | wc -l | tr -d '[:space:]')
+                total_lines=$(echo "$existing_content" | count_lines)
                 if [[ "$total_lines" -gt 15 ]]; then
                     echo "    ... (${total_lines} lines total, showing first 15)"
                 fi
@@ -177,7 +177,7 @@ run_plan_followup_interview() {
     if [[ -n "$updated_content" ]]; then
         printf '%s\n' "$updated_content" > "$design_file"
         local line_count
-        line_count=$(wc -l < "$design_file" | tr -d '[:space:]')
+        line_count=$(count_lines < "$design_file")
         design_status="exists (${line_count} lines)"
     fi
 

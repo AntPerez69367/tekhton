@@ -53,10 +53,10 @@ detect_clarifications() {
     local blocking_count=0
     local nonblocking_count=0
     if [[ -s "$blocking_file" ]]; then
-        blocking_count=$(wc -l < "$blocking_file" | tr -d '[:space:]')
+        blocking_count=$(count_lines < "$blocking_file")
     fi
     if [[ -s "$nonblocking_file" ]]; then
-        nonblocking_count=$(wc -l < "$nonblocking_file" | tr -d '[:space:]')
+        nonblocking_count=$(count_lines < "$nonblocking_file")
     fi
 
     if [[ "$blocking_count" -eq 0 ]] && [[ "$nonblocking_count" -eq 0 ]]; then
@@ -95,7 +95,7 @@ handle_clarifications() {
     fi
 
     local blocking_count
-    blocking_count=$(wc -l < "$blocking_file" | tr -d '[:space:]')
+    blocking_count=$(count_lines < "$blocking_file")
 
     echo
     header "Clarification Required — ${blocking_count} Blocking Question(s)"

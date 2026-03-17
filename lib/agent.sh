@@ -169,7 +169,7 @@ run_agent() {
     if [ -f "$_summary_path" ] && [ -f "$_prerun_marker" ]; then
         if [ "$_summary_path" -nt "$_prerun_marker" ]; then
             local _summary_lines
-            _summary_lines=$(wc -l < "$_summary_path" 2>/dev/null | tr -d '[:space:]')
+            _summary_lines=$(count_lines < "$_summary_path" 2>/dev/null)
             if [ "${_summary_lines:-0}" -ge 3 ]; then
                 _has_summary=true
             fi
@@ -251,7 +251,7 @@ check_agent_output() {
     fi
 
     local line_count
-    line_count=$(wc -l < "$expected_file" | tr -d '[:space:]')
+    line_count=$(count_lines < "$expected_file")
     if [ "$line_count" -lt 3 ]; then
         warn "[$label] Output file '${expected_file}' has only ${line_count} line(s) — likely a stub."
         return 1

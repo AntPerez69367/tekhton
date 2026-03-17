@@ -1,19 +1,8 @@
 #!/usr/bin/env bash
-# =============================================================================
 # replan.sh — Mid-run replanning when task scope breaks
-#
-# Sourced by tekhton.sh — do not run directly.
-# Expects: log(), warn(), error(), header() from common.sh
-# Expects: write_pipeline_state() from state.sh
-# Expects: _call_planning_batch() from plan.sh
-# Expects: render_prompt() from prompts.sh
-# =============================================================================
+# Sourced by tekhton.sh. Expects: common.sh, state.sh, plan.sh, prompts.sh
 
-# detect_replan_required — Check if the reviewer verdict is REPLAN_REQUIRED.
-#
-# Returns 0 if REPLAN_REQUIRED found, 1 otherwise.
-#
-# Usage: detect_replan_required "REVIEWER_REPORT.md"
+# detect_replan_required — Returns 0 if REPLAN_REQUIRED found, 1 otherwise.
 detect_replan_required() {
     local report_file="$1"
 
@@ -32,16 +21,8 @@ detect_replan_required() {
     return 1
 }
 
-# trigger_replan — Display replan rationale and present the replan menu.
-#
-# Extracts the rationale from the reviewer report, shows it to the user,
-# and presents a menu: [r] Replan, [s] Split, [c] Continue, [a] Abort.
-#
-# Returns:
-#   0 — user chose to continue (either after replan or skipping)
-#   1 — user chose to abort
-#
-# Usage: trigger_replan "REVIEWER_REPORT.md"
+# trigger_replan — Show rationale, present menu: [r] Replan [s] Split [c] Continue [a] Abort.
+# Returns 0 on continue, 1 on abort/split.
 trigger_replan() {
     local report_file="$1"
 
@@ -119,12 +100,8 @@ trigger_replan() {
     esac
 }
 
-# _run_replan — Execute a single-milestone replan using the planning batch call.
-#
-# Reads DESIGN.md and CLAUDE.md, calls _call_planning_batch() with the replan
-# prompt, writes the delta to REPLAN_DELTA.md, and presents an approval menu.
-#
-# Returns 0 on success (user approved or continued), 1 on abort.
+# _run_replan — Execute single-milestone replan via _call_planning_batch().
+# Writes delta to REPLAN_DELTA.md and presents approval menu.
 _run_replan() {
     local rationale="${1:-}"
 
@@ -259,10 +236,7 @@ Output the result as a markdown document showing what should change."
     esac
 }
 
-# _apply_replan_delta — Merge the replan delta into CLAUDE.md.
-#
-# For single-milestone replans, this appends a "Replan Note" section to
-# CLAUDE.md with the delta content, preserving the existing file.
+# _apply_replan_delta — Append replan delta as a note section in CLAUDE.md.
 _apply_replan_delta() {
     local delta_file="$1"
     local claude_file="${PROJECT_DIR}/CLAUDE.md"
