@@ -236,6 +236,87 @@ run_stage_review() {
         fi
     done
 
+    # --- Specialist reviews (after main reviewer approves) --------------------
+    if [ "$VERDICT" = "APPROVED" ] || [ "$VERDICT" = "APPROVED_WITH_NOTES" ]; then
+        if ! run_specialist_reviews; then
+            # Specialist(s) found blockers — route to rework
+            warn "Specialist blocker(s) detected. Routing to senior coder rework."
+
+            # Write specialist blockers into REVIEWER_REPORT.md so the rework
+            # coder can see them in the same place it reads reviewer blockers.
+            if has_specialist_blockers; then
+                {
+                    echo ""
+                    echo "## Specialist Blockers"
+                    echo "$SPECIALIST_BLOCKERS"
+                } >> "REVIEWER_REPORT.md"
+            fi
+
+            VERDICT="CHANGES_REQUIRED"
+
+            # Re-enter the review loop if we have cycles remaining
+            if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
+                REWORK_PROMPT=$(render_prompt "coder_rework")
+                run_agent \
+                    "Coder (specialist rework)" \
+                    "$CLAUDE_CODER_MODEL" \
+                    "$CODER_MAX_TURNS" \
+                    "$REWORK_PROMPT" \
+                    "$LOG_FILE" \
+                    "$AGENT_TOOLS_CODER"
+                print_run_summary
+                success "Specialist rework finished."
+
+                if ! run_build_gate "post-specialist-rework"; then
+                    error "Build gate failed after specialist rework."
+                    BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
+                    run_agent \
+                        "Coder (post-specialist build fix)" \
+                        "$CLAUDE_CODER_MODEL" \
+                        "$((CODER_MAX_TURNS / 3))" \
+                        "$BUILD_FIX_PROMPT" \
+                        "$LOG_FILE" \
+                        "$AGENT_TOOLS_BUILD_FIX"
+                    if ! run_build_gate "post-specialist-retry"; then
+                        error "Build gate failed again after specialist rework."
+                        write_pipeline_state "review" "specialist_build_failure" \
+                            "${MILESTONE_MODE:+--milestone }--start-at review" \
+                            "$TASK" "Build broken after specialist rework. See BUILD_ERRORS.md."
+                        exit 1
+                    fi
+                fi
+
+                # Re-run main reviewer to verify specialist fixes
+                REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
+                log "Re-running reviewer to verify specialist fixes (cycle ${REVIEW_CYCLE})..."
+
+                REVIEWER_PROMPT=$(render_prompt "reviewer")
+                run_agent \
+                    "Reviewer (post-specialist cycle ${REVIEW_CYCLE})" \
+                    "$CLAUDE_REVIEWER_MODEL" \
+                    "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
+                    "$REVIEWER_PROMPT" \
+                    "$LOG_FILE" \
+                    "$AGENT_TOOLS_REVIEWER"
+                print_run_summary
+
+                if [ -f "REVIEWER_REPORT.md" ]; then
+                    VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+                    if [ -z "$VERDICT" ] || [ "$VERDICT" = "##Verdict" ]; then
+                        VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
+                    fi
+                    log "Post-specialist reviewer verdict: ${BOLD}${VERDICT}${NC}"
+                fi
+            else
+                error "Specialist blockers found but no review cycles remain."
+                write_pipeline_state "review" "specialist_blockers" \
+                    "${MILESTONE_MODE:+--milestone }--start-at review" \
+                    "$TASK" "Specialist reviewers found blockers. See SPECIALIST_REPORT.md."
+                exit 1
+            fi
+        fi
+    fi
+
     print_run_summary
     success "Review passed (verdict: ${VERDICT})."
 }
