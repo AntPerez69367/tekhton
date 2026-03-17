@@ -51,14 +51,14 @@ _filter_block() {
 }
 
 # --- _estimate_block_tokens — Estimates total token count for a set of block variables ---
+# Accepts variable names as positional arguments (not a nameref) for bash 4.0+ compat.
 # Sums character counts and converts to tokens using CHARS_PER_TOKEN.
 
 _estimate_block_tokens() {
-    local -n block_vars_ref="$1"
     local total_chars=0
-    local i
-    for i in "${!block_vars_ref[@]}"; do
-        local val="${!block_vars_ref[$i]:-}"
+    local var_name
+    for var_name in "$@"; do
+        local val="${!var_name:-}"
         total_chars=$(( total_chars + ${#val} ))
     done
     local cpt="${CHARS_PER_TOKEN:-4}"
@@ -76,21 +76,17 @@ _compress_if_over_budget() {
     local stage="$1"
     local model="$2"
 
-    # Estimate current total
-    # shellcheck disable=SC2034  # block_vars is passed to _estimate_block_tokens via nameref
+    # Estimate current total — block_vars elements are passed as arguments to _estimate_block_tokens
     local -a block_vars
 
     case "$stage" in
         coder)
-            # shellcheck disable=SC2034
             block_vars=("ARCHITECTURE_BLOCK" "GLOSSARY_BLOCK" "MILESTONE_BLOCK" "HUMAN_NOTES_BLOCK" "PRIOR_REVIEWER_CONTEXT" "PRIOR_PROGRESS_CONTEXT" "PRIOR_TESTER_CONTEXT" "NON_BLOCKING_CONTEXT" "BUG_SCOUT_CONTEXT")
             ;;
         review)
-            # shellcheck disable=SC2034
             block_vars=("ARCHITECTURE_CONTENT")
             ;;
         tester)
-            # shellcheck disable=SC2034
             block_vars=("ARCHITECTURE_CONTENT")
             ;;
         *)
@@ -100,7 +96,7 @@ _compress_if_over_budget() {
 
     local cpt="${CHARS_PER_TOKEN:-4}"
     local total_tokens
-    total_tokens=$(_estimate_block_tokens block_vars)
+    total_tokens=$(_estimate_block_tokens "${block_vars[@]}")
 
     if check_context_budget "$total_tokens" "$model"; then
         return  # Under budget — no compression needed
@@ -133,7 +129,7 @@ ${compressed}"
         fi
 
         # Re-check budget
-        total_tokens=$(_estimate_block_tokens block_vars)
+        total_tokens=$(_estimate_block_tokens "${block_vars[@]}")
 
         if check_context_budget "$total_tokens" "$model"; then
             log "[context-compiler] Under budget after compressing ${var_name}"

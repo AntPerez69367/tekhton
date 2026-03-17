@@ -50,8 +50,13 @@ print_run_summary() {
     echo "  ──────────────────────────────────"
     echo "  Total turns: ${TOTAL_TURNS}"
     echo "  Total time:  ${total_mins}m${total_secs}s"
-    # LAST_CONTEXT_TOKENS = most recent stage only (by design; per-stage details in log)
-    if [ -n "${LAST_CONTEXT_TOKENS:-}" ] && [ "${LAST_CONTEXT_TOKENS:-0}" -gt 0 ]; then
+    # LAST_CONTEXT_TOKENS reflects the most recently completed stage only (by design).
+    # Each stage calls log_context_report() which resets and re-exports LAST_CONTEXT_TOKENS.
+    # The final summary therefore shows the tester's context, not the coder's (typically
+    # largest). Per-stage context breakdowns are logged individually during each stage.
+    # This is intentional: the run summary is a snapshot, not an aggregate. Detailed
+    # per-stage context data is available in the run log output.
+    if [[ -n "${LAST_CONTEXT_TOKENS:-}" ]] && [[ "${LAST_CONTEXT_TOKENS:-0}" -gt 0 ]]; then
         local ctx_k=$(( LAST_CONTEXT_TOKENS / 1000 ))
         echo "  Context:     ~${ctx_k}k tokens (${LAST_CONTEXT_PCT:-0}% of window)"
     fi
