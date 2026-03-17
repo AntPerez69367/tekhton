@@ -269,7 +269,7 @@ _resolve_cleanup_by_file_changes() {
             [ -z "$mod_file" ] && continue
             local basename_mod
             basename_mod=$(basename "$mod_file" 2>/dev/null || echo "$mod_file")
-            if echo "$note_line" | grep -q "$basename_mod" 2>/dev/null; then
+            if echo "$note_line" | grep -qF "$basename_mod" 2>/dev/null; then
                 # Extract enough text to match in the log file
                 local match_text
                 # shellcheck disable=SC2001
