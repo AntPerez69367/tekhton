@@ -1,28 +1,19 @@
 #!/usr/bin/env bash
-# =============================================================================
-# agent_monitor.sh — Agent monitoring, activity detection, and process management
-#
-# Sourced by agent.sh — do not run directly.
-# Provides: _invoke_and_monitor(), _detect_file_changes(),
-#           _count_changed_files_since(), _kill_agent_windows()
-# Expects: log(), warn() from common.sh
-# =============================================================================
+# agent_monitor.sh — Agent monitoring, activity detection, process management
+# Sourced by agent.sh. Provides: _invoke_and_monitor(), _detect_file_changes(),
+# _count_changed_files_since(), _kill_agent_windows()
 
-# --- File scan depth for change detection (configurable via pipeline.conf) ----
+# File scan depth for change detection (configurable via pipeline.conf)
 : "${AGENT_FILE_SCAN_DEPTH:=8}"
 
-# --- Timeout --kill-after support detection ----------------------------------
-# GNU coreutils timeout supports --kill-after; macOS/BSD timeout does not.
-# Detect once at source time so every run_agent() call can use it.
+# GNU coreutils timeout supports --kill-after; macOS/BSD does not. Detect once.
 _TIMEOUT_KILL_AFTER_FLAG=""
 if command -v timeout &>/dev/null && timeout --help 2>&1 | grep -q 'kill-after'; then
     _TIMEOUT_KILL_AFTER_FLAG="--kill-after=60"
 fi
 
-# --- Windows-native claude detection (for taskkill cleanup) ------------------
-# A Windows-native claude.exe does NOT receive POSIX signals properly from
-# MSYS2/MinGW (Git Bash) or WSL interop. When detected, the abort handler
-# uses taskkill.exe to forcefully terminate the process.
+# Windows-native claude.exe doesn't receive POSIX signals from MSYS2/WSL interop.
+# When detected, the abort handler uses taskkill.exe to terminate the process.
 _AGENT_WINDOWS_CLAUDE=false
 _claude_path="$(command -v claude 2>/dev/null || true)"
 
@@ -38,9 +29,7 @@ elif uname -s 2>/dev/null | grep -qiE 'MINGW|MSYS'; then
     fi
 fi
 
-# --- Windows process kill helper ---------------------------------------------
-# taskkill.exe reliably terminates Windows-native processes that ignore POSIX
-# signals. Used by the abort handler when _AGENT_WINDOWS_CLAUDE is true.
+# taskkill.exe reliably terminates Windows-native processes ignoring POSIX signals.
 _kill_agent_windows() {
     if [ "$_AGENT_WINDOWS_CLAUDE" != true ]; then
         return
@@ -63,8 +52,7 @@ _kill_agent_windows() {
     $_tk //F //IM claude.exe //T 2>/dev/null || true
 }
 
-# _invoke_and_monitor — FIFO-monitored claude invocation. Sets _MONITOR_EXIT_CODE.
-# Caller must set _IM_PERM_FLAGS=() before calling.
+# FIFO-monitored claude invocation. Sets _MONITOR_EXIT_CODE. Caller sets _IM_PERM_FLAGS.
 _invoke_and_monitor() {
     local _invoke="$1"
     local model="$2"
@@ -258,26 +246,15 @@ _invoke_and_monitor() {
     fi
 }
 
-# =============================================================================
-# FILE-CHANGE DETECTION HELPERS
-# Used by the FIFO monitoring loop and null-run detection to check whether
-# the agent is actively modifying files, even when producing no FIFO output
-# (e.g., --output-format json which is non-streaming).
-# =============================================================================
+# --- File-change detection helpers (FIFO loop + null-run detection) -----------
 
-# _detect_file_changes — checks if any tracked or untracked files changed since
-# the marker was last touched. Uses `find -newer` on PROJECT_DIR for speed
-# (avoids full `git status` which can be slow in large repos).
-# Returns 0 if changes detected, 1 if no changes.
+# _detect_file_changes — 0 if files changed since marker, 1 otherwise.
 _detect_file_changes() {
     local marker="$1"
     local project_dir="${PROJECT_DIR:-.}"
     local log_dir="${LOG_DIR:-${project_dir}/.claude/logs}"
 
-    # Check for any file newer than the marker in the project directory.
-    # Exclude .git, session temp dir, and pipeline log directory (logs are
-    # written by the FIFO reader, not the agent — they're not agent work).
-    # Limit to 1 match — we only need to know if ANY file changed.
+    # Exclude .git, session temp, and log dir. Limit to 1 match.
     local changed
     changed=$(find "$project_dir" -maxdepth "$AGENT_FILE_SCAN_DEPTH" -newer "$marker" \
         -not -path '*/.git/*' \
@@ -292,8 +269,7 @@ _detect_file_changes() {
     return 1
 }
 
-# _count_changed_files_since — returns the count of files modified since a
-# marker file's timestamp. Uses `find -newer` for speed.
+# _count_changed_files_since — count of files modified since marker timestamp.
 _count_changed_files_since() {
     local marker="$1"
     local project_dir="${PROJECT_DIR:-.}"
