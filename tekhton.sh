@@ -416,7 +416,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         --metrics)
-            summarize_metrics
+            summarize_metrics "$@"
             exit 0
             ;;
         --start-at)
