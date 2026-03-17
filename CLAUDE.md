@@ -17,6 +17,7 @@ tekhton/
 │   ├── common.sh           # Colors, logging, prerequisite checks
 │   ├── config.sh           # Config loader + validation
 │   ├── agent.sh            # Agent wrapper, metrics, run_agent()
+│   ├── agent_monitor.sh    # Agent monitoring, activity detection, process management
 │   ├── gates.sh            # Build gate + completion gate
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── notes.sh            # Human notes management

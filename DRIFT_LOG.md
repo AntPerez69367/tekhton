@@ -2,13 +2,13 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
-- [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] `lib/agent.sh:1` — file is now 678 lines (down from 711 after dead-code removal), still more than double the 300-line ceiling in the Code Quality checklist. Pre-existing condition; flagging again for a future refactor pass to split helper sections into a companion file (e.g., `lib/agent_monitor.sh`).
-- [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] --
 
 ## Resolved
+- [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] `lib/agent.sh:1` — file is now 678 lines (down from 711 after dead-code removal), still more than double the 300-line ceiling in the Code Quality checklist. Pre-existing condition; flagging again for a future refactor pass to split helper sections into a companion file (e.g., `lib/agent_monitor.sh`). **Resolved: lib/agent.sh was split into lib/agent.sh (276 lines) + lib/agent_monitor.sh (309 lines), both under the 300-line ceiling.**
+- [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] Empty placeholder entry (`--`) — removed as no actionable content.
 - [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 5: Autonomous Debt Sweeps"] `stages/cleanup.sh` and `stages/coder.sh`/`stages/tester.sh` all use the `wc -l | tr -d '[:space:]'` idiom for line counting — already resolved: all stage files now use the shared `count_lines` helper from `lib/common.sh`. No inline `wc -l` usage remains in any stage file.
 - [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 5: Autonomous Debt Sweeps"] Empty placeholder entry (`--`) — removed as no actionable content.
 - [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 4: Mid-Run Clarification And Replanning"] `ARCHITECTURE.md` missing `lib/clarify.sh`, `lib/replan.sh`, `CLARIFICATIONS.md` — verified present in ARCHITECTURE.md (lines 94, 95, 218).
