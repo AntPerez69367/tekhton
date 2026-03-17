@@ -227,8 +227,8 @@ _invoke_and_monitor() {
             -p "$prompt" \
             < /dev/null \
             2>&1 | tee -a "$log_file" | (
-                local turns=0
-                local last_line=""
+                turns=0
+                last_line=""
                 while IFS= read -r line; do
                     if echo "$line" | grep -q '"type":"text"'; then
                         echo "$line" | python3 -c \
