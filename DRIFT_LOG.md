@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-16 | "Ensure that Milestone 5 has been completely implemented. If anything is incomplete, finish implementing it."] `stages/cleanup.sh:86` — `pre_cleanup_files=$(git diff --name-only 2>/dev/null || true)` captures unstaged changes at the point cleanup starts. If the primary pipeline left uncommitted changes, those would be in this snapshot and would be protected from revert. This is correct behavior but undocumented in the function comment — a one-line note would help future readers understand why pre-cleanup state is snapshotted.

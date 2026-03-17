@@ -24,7 +24,7 @@ should_run_cleanup() {
     unresolved=$(count_unresolved_notes)
     local threshold="${CLEANUP_TRIGGER_THRESHOLD:-5}"
 
-    if [ "$unresolved" -le "$threshold" ] 2>/dev/null; then
+    if [ "$unresolved" -le "$threshold" ]; then
         return 1
     fi
 
