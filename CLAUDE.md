@@ -182,6 +182,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `METRICS_ADAPTIVE_TURNS` | Use history for turn calibration (default: true) |
 | `MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER` | Multiplier for AGENT_ACTIVITY_TIMEOUT in milestone mode (default: 3) |
 | `MILESTONE_TAG_ON_COMPLETE` | Create git tag on milestone completion (default: false) |
+| `MILESTONE_ARCHIVE_FILE` | Path to milestone archive (default: MILESTONE_ARCHIVE.md) |
 | `MILESTONE_SPLIT_ENABLED` | Enable pre-flight milestone splitting (default: true) |
 | `MILESTONE_SPLIT_MODEL` | Model for splitting agent (default: CLAUDE_CODER_MODEL) |
 | `MILESTONE_SPLIT_MAX_TURNS` | Turn limit for splitting agent (default: 15) |
@@ -1150,12 +1151,23 @@ Seeds Forward:
   pre-flight gate; reviewer/tester are no longer relevant at that stage since
   they'll be recalibrated anyway
 
-#### Milestone 10: Milestone Commit Signatures And Completion Signaling
+#### Milestone 10: Milestone Commit Signatures, Completion Signaling, And Archival
 Add structured milestone completion signaling to commit messages and pipeline
 output so that milestone boundaries are unambiguous in git history. When
 `check_milestone_acceptance()` passes, the commit message and pipeline output
 must clearly indicate that the milestone is signed off. When a run ends in a
 partial state, the commit message must indicate continuation is expected.
+
+Additionally, archive completed milestone definitions out of CLAUDE.md into a
+separate `MILESTONE_ARCHIVE.md` file to prevent CLAUDE.md from growing beyond
+its ~40K character context limit. Each completed milestone is replaced in
+CLAUDE.md with a one-line summary (`#### [DONE] Milestone N: Title`) while the
+full definition (description, files, acceptance criteria, Watch For, Seeds
+Forward) is appended to the archive. This is essential for long-running projects
+where the rolling design process continuously adds new milestones — without
+archival, CLAUDE.md bloats until agents can no longer read the full file.
+
+**Phase 1 — Commit Signatures:**
 
 Files to modify:
 - `lib/hooks.sh` — modify `generate_commit_message()` to accept milestone state
@@ -1176,6 +1188,66 @@ Files to modify:
 - `templates/pipeline.conf.example` — add `MILESTONE_TAG_ON_COMPLETE` with comment
   explaining the worktree/branch merge workflow it enables
 
+**Phase 2 — Milestone Archival:**
+
+Files to modify:
+- `lib/milestones.sh` — add `archive_completed_milestone(milestone_num, claude_md_path)`:
+  1. Extract the full milestone definition block from CLAUDE.md (from
+     `#### Milestone N:` or `#### [DONE] Milestone N:` heading to the next
+     milestone heading or end of milestones section)
+  2. Append the extracted block to `MILESTONE_ARCHIVE.md` with a timestamp
+     header: `## Archived: YYYY-MM-DD` and the initiative name
+  3. Replace the full block in CLAUDE.md with a single summary line:
+     `#### [DONE] Milestone N: <title>` (no body — just the heading)
+  4. Return 0 on success, 1 if the milestone was not found or already archived
+     (one-line summary = already archived)
+- `lib/milestones.sh` — add `archive_all_completed_milestones(claude_md_path)`:
+  Iterates all `[DONE]` milestones in CLAUDE.md and archives any that still
+  have full definitions (more than one line). Called at pipeline startup to
+  retroactively archive milestones completed in previous runs.
+- `tekhton.sh` — after sourcing `lib/milestones.sh` and before the main pipeline
+  loop, call `archive_all_completed_milestones()` if CLAUDE.md exists and
+  milestone mode is active. This ensures stale completed milestones from
+  previous sessions are cleaned up even if the previous run didn't archive
+  (crash, manual completion, etc.).
+- `lib/hooks.sh` — in the post-commit finalization path, after
+  `tag_milestone_complete()`, call `archive_completed_milestone()` for the
+  just-completed milestone. The archive happens after commit so the full
+  milestone definition is part of the commit that completed it.
+
+`MILESTONE_ARCHIVE.md` format:
+```markdown
+# Milestone Archive
+
+Completed milestone definitions archived from CLAUDE.md.
+See git history for the commit that completed each milestone.
+
+---
+
+## Archived: 2026-03-15 — Adaptive Pipeline 2.0
+
+#### Milestone 0: Security Hardening
+[full original milestone definition preserved verbatim]
+
+---
+
+## Archived: 2026-03-17 — Adaptive Pipeline 2.0
+
+#### Milestone 9: Post-Coder Turn Recalibration
+[full original milestone definition preserved verbatim]
+```
+
+After archival, the milestone plan section of CLAUDE.md for completed work
+looks like:
+```markdown
+#### [DONE] Milestone 0: Security Hardening
+#### [DONE] Milestone 0.5: Agent Output Monitoring And Null-Run Detection
+#### [DONE] Milestone 1: Token And Context Accounting
+...
+#### Milestone 10: Milestone Commit Signatures, Completion Signaling, And Archival
+[full definition — this is the current milestone]
+```
+
 Acceptance criteria:
 - Milestone-complete commits are prefixed with `[MILESTONE N ✓]`
 - Partial-completion commits are prefixed with `[MILESTONE N — partial]`
@@ -1185,6 +1257,15 @@ Acceptance criteria:
 - Tagging is off by default
 - Pipeline final output banner distinguishes complete vs partial milestone state
 - `git log --oneline` shows clear milestone boundaries
+- After milestone completion and commit, the full milestone definition is moved
+  from CLAUDE.md to `MILESTONE_ARCHIVE.md`
+- CLAUDE.md retains only `#### [DONE] Milestone N: <title>` for archived milestones
+- `MILESTONE_ARCHIVE.md` preserves the full definition verbatim with a timestamp
+- `archive_all_completed_milestones()` at startup retroactively archives any
+  completed milestones that still have full definitions in CLAUDE.md
+- Archival is idempotent: running it twice on the same milestone produces no
+  duplicate entries in the archive
+- CLAUDE.md size decreases measurably after archiving completed milestones
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on modified files
 
@@ -1197,6 +1278,27 @@ Watch For:
 - The `[MILESTONE N ✓]` prefix must survive the user's "edit commit message" flow
   (`e` option at the commit prompt). Place it as the first line so editing the body
   doesn't accidentally remove it.
+- Milestone extraction must handle varied heading formats: `#### Milestone N:`,
+  `#### [DONE] Milestone N:`, `#### Milestone N.1:` (sub-milestones from
+  splitting). Use a regex that matches on the `#### ` prefix + `Milestone` keyword.
+- The "next milestone heading" boundary detection must handle both same-level
+  (`####`) and parent-level (`###`, `##`) headings as terminators. Do not
+  accidentally include the next milestone's content in the extracted block.
+- Archive AFTER commit, not before. The commit should contain the full milestone
+  definition so `git show` on that commit shows what was completed. The archival
+  is a cleanup step for the next run.
+- `MILESTONE_ARCHIVE.md` should be committed in the NEXT run's commit (or a
+  separate housekeeping commit), not retroactively amended into the completion
+  commit.
+- The startup `archive_all_completed_milestones()` call handles the gap: if the
+  pipeline crashed or the user committed manually, stale [DONE] milestones are
+  still cleaned up on next invocation.
+- Idempotency is critical. The archive function must detect whether a milestone
+  is already archived (single summary line in CLAUDE.md, entry already exists
+  in MILESTONE_ARCHIVE.md) and skip silently.
+- The Planning initiative's [DONE] milestones (1–5) should also be archivable.
+  The function must handle milestones from any initiative section, not just
+  the current one.
 
 What NOT To Do:
 - Do NOT change the commit message format for non-milestone runs. This is additive.
@@ -1205,12 +1307,30 @@ What NOT To Do:
   Keep it human-readable — a single line is enough.
 - Do NOT gate committing on milestone acceptance. The pipeline always offers to
   commit, even on partial completion. The prefix tells the human the state.
+- Do NOT delete completed milestones without archiving. The full definition has
+  historical value — it records what was planned, what the acceptance criteria
+  were, and what the implementation constraints were.
+- Do NOT archive milestones that are not marked `[DONE]`. Only completed milestones
+  are eligible. Partial or in-progress milestones stay in CLAUDE.md in full.
+- Do NOT modify the archived content. The archive is append-only and verbatim.
+  No summarization, no reformatting, no selective omission.
+- Do NOT archive into `.claude/logs/` or the timestamped log directory. The
+  archive is a project-level document (like DRIFT_LOG.md or ARCHITECTURE_LOG.md),
+  not a per-run artifact.
 
 Seeds Forward:
 - Milestone 11 (Pre-Flight Sizing) benefits from clear git history: the splitter
   can inspect `git log` for `[MILESTONE N ✓]` to know what's already complete
 - Worktree-based parallel milestone development uses the tag as a merge-readiness
   signal
+- Archival keeps CLAUDE.md under the context window limit, enabling the rolling
+  design process: new milestones can be added via `--replan` (Milestone 6) or
+  milestone splitting (Milestone 11) without worrying about file size
+- The `MILESTONE_ARCHIVE.md` file becomes a valuable input for `--replan`:
+  the replan prompt can reference archived milestones to understand what was
+  already built and what constraints were established
+- Future 3.0 metric dashboards can cross-reference archived milestone definitions
+  with metrics.jsonl to show planning accuracy (estimated scope vs actual effort)
 
 #### Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split
 Add two interlocking capabilities: (1) a pre-flight sizing check that detects

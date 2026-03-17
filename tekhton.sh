@@ -668,15 +668,20 @@ else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
 fi
 
-# --- Auto-advance: initialize milestone state if needed ----------------------
+# --- Milestone number parsing ------------------------------------------------
+# Parse milestone number from task for both --milestone and --auto-advance modes.
+# This enables commit signatures in single-run --milestone mode, not just auto-advance.
 
 _CURRENT_MILESTONE=""
-if [ "$AUTO_ADVANCE" = true ]; then
-    # Parse milestone number from task if it matches "Implement Milestone N" pattern
+if [ "$MILESTONE_MODE" = true ]; then
     if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
     fi
+fi
 
+# --- Auto-advance: initialize milestone state if needed ----------------------
+
+if [ "$AUTO_ADVANCE" = true ]; then
     if [ -n "$_CURRENT_MILESTONE" ]; then
         _total_milestones=$(get_milestone_count "CLAUDE.md")
         init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
@@ -687,6 +692,12 @@ if [ "$AUTO_ADVANCE" = true ]; then
         warn "Falling back to single-run mode."
         AUTO_ADVANCE=false
     fi
+elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
+    # Single-run milestone mode: initialize state for commit signatures
+    # and acceptance checking (no auto-advance loop)
+    _total_milestones=$(get_milestone_count "CLAUDE.md")
+    init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
+    log "Milestone mode: targeting milestone ${_CURRENT_MILESTONE}"
 fi
 
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
