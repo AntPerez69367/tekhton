@@ -248,6 +248,9 @@ ${nb_notes}"
     print_run_summary
     success "Coder agent finished."
 
+    # Export actual coder turns for post-coder recalibration (Milestone 9)
+    export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
+
     # --- Null run detection ---------------------------------------------------
 
     if was_null_run; then

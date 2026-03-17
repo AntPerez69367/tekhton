@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-17 | "Implement Milestone 9: Post-Coder Turn Recalibration"] `lib/turns.sh`: File lacks `set -euo pipefail` at the top (only `#!/usr/bin/env bash` is present). This is a pre-existing condition on this sourced library — not introduced by this milestone. All other `.sh` files in the project should follow the rule. Surfacing here so it accumulates toward an audit pass.
 (none)
 
 ## Resolved
