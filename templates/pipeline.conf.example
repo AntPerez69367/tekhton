@@ -305,6 +305,20 @@ CONTEXT_COMPILER_ENABLED=false
 # SPECIALIST_CUSTOM_MYCHECK_MODEL="claude-sonnet-4-6"
 # SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
 
+# --- Run metrics (workflow learning) -----------------------------------------
+# Collects per-run JSONL metrics to .claude/logs/metrics.jsonl. Enables adaptive
+# turn calibration that adjusts scout recommendations based on historical accuracy.
+# View the dashboard with: tekhton --metrics
+
+# Master toggle for metrics collection (default: true)
+# METRICS_ENABLED=true
+
+# Minimum completed runs before adaptive calibration kicks in (default: 5)
+# METRICS_MIN_RUNS=5
+
+# Use historical accuracy to adjust scout turn recommendations (default: true)
+# METRICS_ADAPTIVE_TURNS=true
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false

@@ -104,19 +104,25 @@ apply_scout_turn_limits() {
     log "  Interconnected:  ${SCOUT_INTERCONNECTED}"
     log "  Recommended:     coder=${SCOUT_REC_CODER_TURNS}, reviewer=${SCOUT_REC_REVIEWER_TURNS}, tester=${SCOUT_REC_TESTER_TURNS}"
 
-    # Apply scout recommendation, clamped to configured bounds
+    # Apply scout recommendation, with adaptive calibration, clamped to bounds
     if [ "${SCOUT_REC_CODER_TURNS:-0}" -gt 0 ] 2>/dev/null; then
-        ADJUSTED_CODER_TURNS=$(clamp_turns "$SCOUT_REC_CODER_TURNS" "$CODER_MIN_TURNS" "$CODER_MAX_TURNS_CAP")
+        local calibrated_coder
+        calibrated_coder=$(calibrate_turn_estimate "$SCOUT_REC_CODER_TURNS" "coder")
+        ADJUSTED_CODER_TURNS=$(clamp_turns "$calibrated_coder" "$CODER_MIN_TURNS" "$CODER_MAX_TURNS_CAP")
         log "Coder turns: ${CODER_MAX_TURNS} (configured) → ${ADJUSTED_CODER_TURNS} (scout-adjusted)"
     fi
 
     if [ "${SCOUT_REC_REVIEWER_TURNS:-0}" -gt 0 ] 2>/dev/null; then
-        ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$SCOUT_REC_REVIEWER_TURNS" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
+        local calibrated_reviewer
+        calibrated_reviewer=$(calibrate_turn_estimate "$SCOUT_REC_REVIEWER_TURNS" "reviewer")
+        ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$calibrated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
         log "Reviewer turns: ${REVIEWER_MAX_TURNS} (configured) → ${ADJUSTED_REVIEWER_TURNS} (scout-adjusted)"
     fi
 
     if [ "${SCOUT_REC_TESTER_TURNS:-0}" -gt 0 ] 2>/dev/null; then
-        ADJUSTED_TESTER_TURNS=$(clamp_turns "$SCOUT_REC_TESTER_TURNS" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+        local calibrated_tester
+        calibrated_tester=$(calibrate_turn_estimate "$SCOUT_REC_TESTER_TURNS" "tester")
+        ADJUSTED_TESTER_TURNS=$(clamp_turns "$calibrated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
         log "Tester turns: ${TESTER_MAX_TURNS} (configured) → ${ADJUSTED_TESTER_TURNS} (scout-adjusted)"
     fi
 }
