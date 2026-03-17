@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
+- [2026-03-16 | "Ensure that Milestone 5 has been completely implemented. If anything is incomplete, finish implementing it."] `stages/cleanup.sh:86` — `pre_cleanup_files=$(git diff --name-only 2>/dev/null || true)` captures unstaged changes at the point cleanup starts. If the primary pipeline left uncommitted changes, those would be in this snapshot and would be protected from revert. This is correct behavior but undocumented in the function comment — a one-line note would help future readers understand why pre-cleanup state is snapshotted.
 
 ## Resolved
 - [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] `lib/agent.sh:1` — file is now 678 lines (down from 711 after dead-code removal), still more than double the 300-line ceiling in the Code Quality checklist. Pre-existing condition; flagging again for a future refactor pass to split helper sections into a companion file (e.g., `lib/agent_monitor.sh`). **Resolved: lib/agent.sh was split into lib/agent.sh (276 lines) + lib/agent_monitor.sh (309 lines), both under the 300-line ceiling.**
