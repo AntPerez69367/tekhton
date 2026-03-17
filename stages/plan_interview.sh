@@ -352,7 +352,7 @@ run_plan_interview() {
     if [[ -n "$design_content" ]]; then
         printf '%s\n' "$design_content" > "$design_file"
         local line_count
-        line_count=$(wc -l < "$design_file" | tr -d ' ')
+        line_count=$(wc -l < "$design_file" | tr -d '[:space:]')
         design_status="exists (${line_count} lines)"
     fi
 

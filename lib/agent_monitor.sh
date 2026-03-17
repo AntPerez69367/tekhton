@@ -60,11 +60,8 @@ _kill_agent_windows() {
     $_tk //F //IM claude.exe //T 2>/dev/null || true
 }
 
-# --- _invoke_and_monitor — run claude with FIFO monitoring or direct fallback -
+# _invoke_and_monitor — FIFO-monitored claude invocation. Sets _MONITOR_EXIT_CODE.
 # Caller must set _IM_PERM_FLAGS=() before calling.
-# Args: invoke_cmd model max_turns prompt log_file activity_timeout
-#       session_dir exit_file turns_file
-# Sets: _MONITOR_EXIT_CODE, _MONITOR_WAS_ACTIVITY_TIMEOUT
 _invoke_and_monitor() {
     local _invoke="$1"
     local model="$2"
@@ -79,17 +76,13 @@ _invoke_and_monitor() {
     _MONITOR_EXIT_CODE=1
     _MONITOR_WAS_ACTIVITY_TIMEOUT=false
 
-    # FIFO-isolated invocation: Claude runs in a background subshell writing to
-    # a named pipe. The foreground reads from it. This enables reliable Ctrl+C,
-    # activity timeout detection, and Windows compatibility (taskkill cleanup).
-
+    # FIFO: claude in bg subshell → pipe → foreground reader (ctrl+c, activity timeout)
     if command -v mkfifo &>/dev/null; then
         local _fifo="${_session_dir}/agent_fifo_$$"
         rm -f "$_fifo"
         mkfifo "$_fifo"
 
-        # Background subshell: run claude, write output to FIFO.
-        # stdin is /dev/null so piped input doesn't leak into claude.
+        # Background: run claude, write to FIFO (stdin=/dev/null)
         (
             $_invoke claude \
                 --model "$model" \
@@ -103,9 +96,7 @@ _invoke_and_monitor() {
         ) &
         _TEKHTON_AGENT_PID=$!
 
-        # Trap: kill background subshell + Windows claude if applicable.
-        # The foreground read loop sees EOF when the FIFO write-end closes
-        # (background subshell dies → fd closes → reader unblocks).
+        # Trap: kill bg + Windows claude; reader gets EOF when fd closes
         _run_agent_abort() {
             trap - INT TERM
             _TEKHTON_CLEAN_EXIT=true
@@ -118,9 +109,7 @@ _invoke_and_monitor() {
         }
         trap '_run_agent_abort' INT TERM
 
-        # Foreground: read FIFO, log lines, parse JSON, detect silence.
-        # File-change detection resets the activity timer when the agent
-        # modifies files despite producing no FIFO output (JSON mode).
+        # Foreground: read FIFO, log, parse JSON, detect silence + file changes
         (
             exec 3>>"$log_file"
             _last_activity=$(date +%s)
@@ -128,7 +117,6 @@ _invoke_and_monitor() {
             _read_interval="${AGENT_ACTIVITY_POLL:-30}"
             [ "$_activity_timeout" -le 0 ] 2>/dev/null && _read_interval=0
 
-            # Create activity marker for file-change detection
             _activity_marker="${_session_dir}/activity_marker"
             touch "$_activity_marker"
 
@@ -157,7 +145,7 @@ _invoke_and_monitor() {
                             # may be actively writing files. If so, reset the timer.
                             _files_changed=false
                             if [ -f "$_activity_marker" ]; then
-                                _changed_file=$(find "${PROJECT_DIR:-.}" -maxdepth 4 \
+                                _changed_file=$(find "${PROJECT_DIR:-.}" -maxdepth 8 \
                                     -newer "$_activity_marker" \
                                     -not -path '*/.git/*' \
                                     -not -path '*/.git' \
@@ -288,7 +276,7 @@ _detect_file_changes() {
     # written by the FIFO reader, not the agent — they're not agent work).
     # Limit to 1 match — we only need to know if ANY file changed.
     local changed
-    changed=$(find "$project_dir" -maxdepth 4 -newer "$marker" \
+    changed=$(find "$project_dir" -maxdepth 8 -newer "$marker" \
         -not -path '*/.git/*' \
         -not -path '*/.git' \
         -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
@@ -308,7 +296,7 @@ _count_changed_files_since() {
     local project_dir="${PROJECT_DIR:-.}"
     local log_dir="${LOG_DIR:-${project_dir}/.claude/logs}"
     local count
-    count=$(find "$project_dir" -maxdepth 4 -newer "$marker" \
+    count=$(find "$project_dir" -maxdepth 8 -newer "$marker" \
         -not -path '*/.git/*' \
         -not -path '*/.git' \
         -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \

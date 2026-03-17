@@ -346,7 +346,10 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
 
     case "$RESUME_CHOICE" in
         y|Y)
-            exec "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
+            # Remove lock before exec — exec replaces the process (same PID),
+            # so the EXIT trap never fires. The resumed invocation recreates it.
+            rm -f "$_TEKHTON_LOCK_FILE" 2>/dev/null || true
+            exec bash "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
             ;;
         fresh)
             clear_pipeline_state

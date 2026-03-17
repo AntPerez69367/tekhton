@@ -79,6 +79,12 @@ DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=10
 DESIGN_FILE="docs/design.md"
 EOF
 
+# Clear variables before reloading so each test starts from a clean slate.
+# Without this, a future Test 3 re-verifying defaults would see stale values
+# from Test 2's pipeline.conf (same class of bug as the original unset fix).
+unset ARCHITECTURE_LOG_FILE DRIFT_LOG_FILE HUMAN_ACTION_FILE
+unset DRIFT_OBSERVATION_THRESHOLD DRIFT_RUNS_SINCE_AUDIT_THRESHOLD DESIGN_FILE
+
 # Reload config with custom values
 load_config
 

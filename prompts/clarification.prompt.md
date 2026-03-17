@@ -1,3 +1,9 @@
+<!-- This template is NOT currently rendered via render_prompt("clarification").
+     Post-clarification coder re-runs use render_prompt("coder") which already
+     includes the {{IF:CLARIFICATIONS_CONTENT}} block. This file is retained as
+     a standalone reference template for future use cases where clarification
+     context needs to be injected independently of the coder prompt. -->
+
 ## Human Clarifications
 
 The pipeline paused to collect answers to blocking questions from a previous agent run.

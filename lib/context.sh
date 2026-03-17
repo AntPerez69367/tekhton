@@ -71,7 +71,7 @@ _add_context_component() {
     local content="$2"
 
     local chars=${#content}
-    if [ "$chars" -eq 0 ]; then
+    if [[ "$chars" -eq 0 ]]; then
         return
     fi
 
@@ -80,14 +80,14 @@ _add_context_component() {
 
     _CONTEXT_TOTAL_CHARS=$(( _CONTEXT_TOTAL_CHARS + chars ))
     _CONTEXT_TOTAL_TOKENS=$(( _CONTEXT_TOTAL_TOKENS + tokens ))
-    _CONTEXT_REPORT="${_CONTEXT_REPORT}    ${name}: ${chars} chars (~${tokens} tokens)\n"
+    _CONTEXT_REPORT="${_CONTEXT_REPORT}    ${name}: ${chars} chars (~${tokens} tokens)"$'\n'
 }
 
 log_context_report() {
     local stage="$1"
     local model="$2"
 
-    if [ "${CONTEXT_BUDGET_ENABLED:-true}" != "true" ]; then
+    if [[ "${CONTEXT_BUDGET_ENABLED:-true}" != "true" ]]; then
         _CONTEXT_TOTAL_CHARS=0
         _CONTEXT_TOTAL_TOKENS=0
         _CONTEXT_REPORT=""
@@ -100,19 +100,19 @@ log_context_report() {
     local budget_tokens=$(( window * budget_pct / 100 ))
 
     local pct_used=0
-    if [ "$window" -gt 0 ]; then
+    if [[ "$window" -gt 0 ]]; then
         pct_used=$(( _CONTEXT_TOTAL_TOKENS * 100 / window ))
     fi
 
     log "[context] ${stage} context breakdown:"
-    if [ -n "${_CONTEXT_REPORT}" ]; then
-        echo -e "${_CONTEXT_REPORT}" | while IFS= read -r line; do
-            if [ -n "$line" ]; then log "$line"; fi
-        done
+    if [[ -n "${_CONTEXT_REPORT}" ]]; then
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && log "$line"
+        done <<< "${_CONTEXT_REPORT}"
     fi
     log "  Total: ${_CONTEXT_TOTAL_CHARS} chars (~${_CONTEXT_TOTAL_TOKENS} tokens, ${pct_used}% of ${window} window)"
 
-    if [ "$_CONTEXT_TOTAL_TOKENS" -gt "$budget_tokens" ]; then
+    if [[ "$_CONTEXT_TOTAL_TOKENS" -gt "$budget_tokens" ]]; then
         warn "[context] Over budget: ${_CONTEXT_TOTAL_TOKENS} tokens > ${budget_tokens} budget (${budget_pct}% of ${window})"
     fi
 
@@ -136,7 +136,7 @@ check_context_budget() {
     local total_tokens="$1"
     local model="$2"
 
-    if [ "${CONTEXT_BUDGET_ENABLED:-true}" != "true" ]; then
+    if [[ "${CONTEXT_BUDGET_ENABLED:-true}" != "true" ]]; then
         return 0
     fi
 
@@ -145,7 +145,7 @@ check_context_budget() {
     local budget_pct="${CONTEXT_BUDGET_PCT:-50}"
     local budget_tokens=$(( window * budget_pct / 100 ))
 
-    if [ "$total_tokens" -gt "$budget_tokens" ]; then
+    if [[ "$total_tokens" -gt "$budget_tokens" ]]; then
         return 1
     fi
     return 0
@@ -227,9 +227,13 @@ extract_relevant_sections() {
 
     # Use awk to split on ## headings and filter sections
     local filtered
-    filtered=$(echo "$content" | awk -v pat="$pattern" '
+    # Convert pattern to lowercase for case-insensitive matching (portable —
+    # avoids gawk-only IGNORECASE extension).
+    local lc_pattern
+    lc_pattern=$(echo "$pattern" | tr '[:upper:]' '[:lower:]')
+
+    filtered=$(echo "$content" | awk -v pat="$lc_pattern" '
     BEGIN {
-        IGNORECASE = 1
         section = ""
         header = ""
         in_section = 0
@@ -240,7 +244,7 @@ extract_relevant_sections() {
     }
     /^## / {
         # Process previous section
-        if (in_section && (header ~ pat || section ~ pat)) {
+        if (in_section && (tolower(header) ~ pat || tolower(section) ~ pat)) {
             result = result header section
         }
         header = $0 "\n"
@@ -258,7 +262,7 @@ extract_relevant_sections() {
     }
     END {
         # Process last section
-        if (in_section && (header ~ pat || section ~ pat)) {
+        if (in_section && (tolower(header) ~ pat || tolower(section) ~ pat)) {
             result = result header section
         }
         # Always include preamble (title, intro text)
@@ -290,7 +294,7 @@ compress_context() {
             local line_count
             line_count=$(echo "$content" | wc -l)
             line_count=$(echo "$line_count" | tr -d '[:space:]')
-            if [ "$line_count" -gt "$max_lines" ]; then
+            if [[ "$line_count" -gt "$max_lines" ]]; then
                 echo "$content" | head -n "$max_lines"
                 echo "[... truncated from ${line_count} to ${max_lines} lines]"
             else
@@ -334,7 +338,7 @@ build_context_packet() {
     local task="$2"
     local model="$3"
 
-    if [ "${CONTEXT_COMPILER_ENABLED:-false}" != "true" ]; then
+    if [[ "${CONTEXT_COMPILER_ENABLED:-false}" != "true" ]]; then
         return
     fi
 
@@ -397,7 +401,7 @@ _filter_block() {
     local filtered
     filtered=$(extract_relevant_sections "$original" "$keywords")
 
-    if [ -z "$filtered" ] || [ "$filtered" = "$original" ]; then
+    if [[ -z "$filtered" ]] || [[ "$filtered" = "$original" ]]; then
         return  # No change or empty result — keep original
     fi
 
@@ -407,7 +411,7 @@ _filter_block() {
     local orig_has_headings filtered_has_headings
     orig_has_headings=$(echo "$original" | grep -c '^## ' || true)
     filtered_has_headings=$(echo "$filtered" | grep -c '^## ' || true)
-    if [ "$orig_has_headings" -gt 0 ] && [ "$filtered_has_headings" -eq 0 ]; then
+    if [[ "$orig_has_headings" -gt 0 ]] && [[ "$filtered_has_headings" -eq 0 ]]; then
         return  # Preamble-only result — keep original
     fi
 
@@ -416,7 +420,7 @@ _filter_block() {
     filtered_lines=$(echo "$filtered" | wc -l | tr -d '[:space:]')
 
     # Only use filtered version if it actually reduced content
-    if [ "$filtered_lines" -lt "$orig_lines" ]; then
+    if [[ "$filtered_lines" -lt "$orig_lines" ]]; then
         log "[context-compiler] ${var_name}: filtered from ${orig_lines} to ${filtered_lines} lines"
         export "$var_name=$filtered"
     fi
@@ -479,11 +483,10 @@ _compress_if_over_budget() {
         local orig_chars=${#val}
         local compressed
         compressed=$(compress_context "$val" "truncate" 50)
-        export "$var_name=$compressed"
 
         local new_chars=${#compressed}
         local saved=$(( orig_chars - new_chars ))
-        if [ "$saved" -gt 0 ]; then
+        if [[ "$saved" -gt 0 ]]; then
             log "[context-compiler] Compressed ${var_name}: saved ~$(( saved / cpt )) tokens"
             # Inject compression note
             export "$var_name=[Context compressed: ${var_name} reduced from $(echo "$val" | wc -l | tr -d '[:space:]') to $(echo "$compressed" | wc -l | tr -d '[:space:]') lines]
@@ -492,6 +495,7 @@ ${compressed}"
 
         # Re-check budget
         total_chars=0
+        local j
         for j in "${!block_vars[@]}"; do
             local v="${!block_vars[$j]:-}"
             total_chars=$(( total_chars + ${#v} ))

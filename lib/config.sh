@@ -118,6 +118,8 @@ load_config() {
     : "${REVIEWER_MAX_TURNS:=15}"
     : "${TESTER_MAX_TURNS:=30}"
     : "${MAX_REVIEW_CYCLES:=3}"
+    # Defaults to `true` (no-op) — intentional for projects without a test suite.
+    # Projects with tests MUST set TEST_CMD in pipeline.conf.
     : "${TEST_CMD:=true}"
     : "${PIPELINE_STATE_FILE:=.claude/PIPELINE_STATE.md}"
     : "${LOG_DIR:=.claude/logs}"

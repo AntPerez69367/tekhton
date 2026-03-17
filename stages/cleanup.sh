@@ -46,9 +46,18 @@ run_stage_cleanup() {
     log "Unresolved non-blocking notes: ${unresolved} (threshold: ${CLEANUP_TRIGGER_THRESHOLD:-5})"
     log "Selecting up to ${batch_size} items for cleanup..."
 
+    # Extract modified files from the primary pipeline's CODER_SUMMARY.md (if available)
+    # so that select_cleanup_batch can prioritize notes overlapping with this run's work.
+    local modified_files=""
+    if [ -f "${PROJECT_DIR}/CODER_SUMMARY.md" ]; then
+        modified_files=$(awk '/^## Files (Created|Modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{print}' \
+            "${PROJECT_DIR}/CODER_SUMMARY.md" 2>/dev/null \
+            | sed 's/^[-*][[:space:]]*//' | sed 's/ .*//' | sort -u || true)
+    fi
+
     # Select prioritized batch
     local batch
-    batch=$(select_cleanup_batch "$batch_size")
+    batch=$(select_cleanup_batch "$batch_size" "$modified_files")
 
     if [ -z "$batch" ]; then
         warn "No eligible notes for cleanup sweep."
@@ -174,6 +183,13 @@ _process_cleanup_results() {
 #   - <note text excerpt>
 #   ## Deferred
 #   - [DEFERRED] <note text excerpt>: <reason>
+#   ## Not Attempted
+#   - <note text excerpt>
+#
+# NOTE: The "## Not Attempted" section is deliberately NOT parsed here.
+# Items the agent did not attempt remain as open `[ ]` entries in
+# NON_BLOCKING_LOG.md — no state change is needed. They will be
+# re-selected in future cleanup sweeps.
 _parse_cleanup_report() {
     local batch="$1"
     local report="CLEANUP_REPORT.md"

@@ -180,13 +180,16 @@ count_unresolved_notes() {
 
 # select_cleanup_batch — Returns up to N open non-blocking notes, prioritized by:
 #   1. Recurring patterns (notes referencing the same file appear most often)
-#   2. Files modified this run (overlap with CODER_SUMMARY.md modified files)
+#   2. Files modified this run (passed via $2 by the caller)
 #   3. Age (oldest first — FIFO)
 #
-# Usage: select_cleanup_batch 5
+# Usage: select_cleanup_batch 5 "$modified_files"
+# Args:  $1 = batch size (default: 5)
+#        $2 = newline-separated list of modified file paths (optional, from caller)
 # Output: One note per line (full markdown line from NON_BLOCKING_LOG.md)
 select_cleanup_batch() {
     local batch_size="${1:-5}"
+    local modified_files="${2:-}"
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
 
     if [ ! -f "$nb_file" ]; then
@@ -200,14 +203,6 @@ select_cleanup_batch() {
 
     if [ -z "$open_notes" ]; then
         return
-    fi
-
-    # Extract modified files from CODER_SUMMARY.md (if available)
-    local modified_files=""
-    if [ -f "${PROJECT_DIR}/CODER_SUMMARY.md" ]; then
-        modified_files=$(awk '/^## Files (Created|Modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{print}' \
-            "${PROJECT_DIR}/CODER_SUMMARY.md" 2>/dev/null \
-            | sed 's/^[-*][[:space:]]*//' | sed 's/ .*//' | sort -u || true)
     fi
 
     # Score each note: recurrence (how many other open notes reference the same file),
