@@ -21,6 +21,7 @@
 #   --start-at review     Skip coder; requires CODER_SUMMARY.md
 #   --start-at tester     Resume tester from existing TESTER_REPORT.md
 #   --start-at test       Skip coder + reviewer; requires REVIEWER_REPORT.md
+#   --metrics             Print run metrics dashboard and exit
 #   --notes-filter X      Inject only [X] notes (BUG, FEAT, POLISH)
 #   --init-notes          Create blank HUMAN_NOTES.md template
 #   --skip-audit          Skip architect audit even if threshold is reached
@@ -283,6 +284,7 @@ source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
+source "${TEKHTON_HOME}/lib/metrics.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"
@@ -304,6 +306,7 @@ usage() {
     echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
     echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
     echo "  --status                  Print saved pipeline state and exit (no run)"
+    echo "  --metrics                 Print run metrics dashboard and exit"
     echo "  --version                 Print version and exit"
     echo "  --help, -h                Show this help and exit"
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
@@ -410,6 +413,10 @@ while [[ $# -gt 0 ]]; do
             echo "  — or —"
             echo "  $0   (interactive resume prompt)"
             echo
+            exit 0
+            ;;
+        --metrics)
+            summarize_metrics
             exit 0
             ;;
         --start-at)
@@ -697,6 +704,9 @@ _tekhton_sigint_handler() {
             "$_CURRENT_MILESTONE"
         log "Milestone state preserved. Resume with: $0 --auto-advance \"${TASK}\""
     fi
+    # Record metrics on interruption so partial run data is captured
+    VERDICT="${VERDICT:-interrupted}"
+    record_run_metrics
     _TEKHTON_CLEAN_EXIT=true
     exit 130
 }
@@ -855,6 +865,9 @@ if [ "${SKIP_FINAL_CHECKS:-false}" = true ]; then
     warn "Skipping final checks — a stage had a null run (agent died without doing work)."
     warn "Fix the underlying issue and re-run before running analyze/test."
 
+    # Record metrics even on early exit so null-run data is captured
+    record_run_metrics
+
     # Archive whatever reports exist so they aren't lost
     archive_reports "$LOG_DIR" "$TIMESTAMP"
     print_run_summary
@@ -872,6 +885,10 @@ fi
 # --- Drift artifact processing -----------------------------------------------
 
 process_drift_artifacts
+
+# --- Record run metrics ------------------------------------------------------
+
+record_run_metrics
 
 # --- Archive reports ---------------------------------------------------------
 

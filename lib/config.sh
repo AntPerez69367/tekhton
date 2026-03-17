@@ -216,6 +216,11 @@ load_config() {
     : "${CLEANUP_MAX_TURNS:=15}"            # Turn budget for cleanup agent
     : "${CLEANUP_TRIGGER_THRESHOLD:=5}"     # Min unresolved items before triggering
 
+    # --- Metrics defaults ---
+    : "${METRICS_ENABLED:=true}"            # Enable run metrics collection
+    : "${METRICS_MIN_RUNS:=5}"              # Min runs before adaptive calibration
+    : "${METRICS_ADAPTIVE_TURNS:=true}"     # Use history for turn calibration
+
     # --- Specialist reviewer defaults ---
     : "${SPECIALIST_SECURITY_ENABLED:=false}"
     : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"
@@ -272,6 +277,7 @@ load_config() {
     _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
     _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
     _clamp_config_value SPECIALIST_API_MAX_TURNS 50
+    _clamp_config_value METRICS_MIN_RUNS 100
 
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     [[ "$PIPELINE_STATE_FILE" != /* ]] && PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"

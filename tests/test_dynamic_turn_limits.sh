@@ -47,6 +47,7 @@ STAGE_SUMMARY=""
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
+source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 
 cd "$TMPDIR"
