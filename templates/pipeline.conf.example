@@ -160,6 +160,10 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 # "null run" (died during discovery without doing productive work).
 # AGENT_NULL_RUN_THRESHOLD=2
 
+# Max directory depth for file-change detection (find -maxdepth). Increase for
+# deeply nested project structures. Default 8 works for most projects.
+# AGENT_FILE_SCAN_DEPTH=8
+
 # --- Dynamic turn limits ----------------------------------------------------
 # When enabled, the scout estimates task complexity and adjusts turn limits
 # for coder, reviewer, and tester stages. Recommended values are clamped to

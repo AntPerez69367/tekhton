@@ -8,6 +8,9 @@
 # Expects: log(), warn() from common.sh
 # =============================================================================
 
+# --- File scan depth for change detection (configurable via pipeline.conf) ----
+: "${AGENT_FILE_SCAN_DEPTH:=8}"
+
 # --- Timeout --kill-after support detection ----------------------------------
 # GNU coreutils timeout supports --kill-after; macOS/BSD timeout does not.
 # Detect once at source time so every run_agent() call can use it.
@@ -145,7 +148,7 @@ _invoke_and_monitor() {
                             # may be actively writing files. If so, reset the timer.
                             _files_changed=false
                             if [ -f "$_activity_marker" ]; then
-                                _changed_file=$(find "${PROJECT_DIR:-.}" -maxdepth 8 \
+                                _changed_file=$(find "${PROJECT_DIR:-.}" -maxdepth "$AGENT_FILE_SCAN_DEPTH" \
                                     -newer "$_activity_marker" \
                                     -not -path '*/.git/*' \
                                     -not -path '*/.git' \
@@ -276,7 +279,7 @@ _detect_file_changes() {
     # written by the FIFO reader, not the agent — they're not agent work).
     # Limit to 1 match — we only need to know if ANY file changed.
     local changed
-    changed=$(find "$project_dir" -maxdepth 8 -newer "$marker" \
+    changed=$(find "$project_dir" -maxdepth "$AGENT_FILE_SCAN_DEPTH" -newer "$marker" \
         -not -path '*/.git/*' \
         -not -path '*/.git' \
         -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
@@ -296,7 +299,7 @@ _count_changed_files_since() {
     local project_dir="${PROJECT_DIR:-.}"
     local log_dir="${LOG_DIR:-${project_dir}/.claude/logs}"
     local count
-    count=$(find "$project_dir" -maxdepth 8 -newer "$marker" \
+    count=$(find "$project_dir" -maxdepth "$AGENT_FILE_SCAN_DEPTH" -newer "$marker" \
         -not -path '*/.git/*' \
         -not -path '*/.git' \
         -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
