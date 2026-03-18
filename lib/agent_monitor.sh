@@ -83,7 +83,10 @@ _invoke_and_monitor() {
         rm -f "$_fifo"
         mkfifo "$_fifo"
 
-        # Background: run claude, write to FIFO (stdin=/dev/null)
+        # Background: run claude, write stdout to FIFO, tee stderr to
+        # both a dedicated file and the FIFO (for existing monitoring).
+        local _stderr_file="${_session_dir}/agent_stderr.txt"
+        : > "$_stderr_file"
         (
             $_invoke claude \
                 --model "$model" \
@@ -92,7 +95,7 @@ _invoke_and_monitor() {
                 --output-format json \
                 -p "$prompt" \
                 < /dev/null \
-                > "$_fifo" 2>&1
+                > "$_fifo" 2> >(tee -a "$_stderr_file" >&1)
             echo "$?" > "$_exit_file"
         ) &
         _TEKHTON_AGENT_PID=$!

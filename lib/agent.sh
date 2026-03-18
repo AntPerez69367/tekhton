@@ -172,7 +172,8 @@ run_agent() {
                 _fc=$(_count_changed_files_since "$_prerun_marker")
             fi
 
-            # If API error was detected in stream, create a synthetic stderr hint
+            # If API error was detected in stream but stderr file is still empty
+            # (e.g., mkfifo fallback path), create a synthetic hint for classification
             if [[ "$_API_ERROR_DETECTED" = true ]] && [[ ! -s "$_stderr_file" ]]; then
                 echo "API error detected in stream: ${_API_ERROR_TYPE}" > "$_stderr_file"
             fi

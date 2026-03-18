@@ -71,17 +71,30 @@ report_error() {
         _transient_label="TRANSIENT (safe to retry)"
     fi
 
+    # _box_line: prints a content line with left/right borders and padded interior.
+    # Usage: _box_line "content" or _box_line "" for an empty separator line.
+    # Content is indented 2 spaces; padded to _box_w chars total between borders.
+    _box_line() {
+        local _content="$1"
+        if [[ -n "$_content" ]]; then
+            printf '%s  %-*s%s\n' "$_box_v" "$((_box_w - 2))" "$_content" "$_box_v" 2>/dev/null || \
+                echo "${_box_v}  ${_content}"
+        else
+            printf '%s%-*s%s\n' "$_box_v" "$_box_w" "" "$_box_v" 2>/dev/null || \
+                echo "${_box_v}"
+        fi
+    }
+
     {
         echo
         echo "${_box_tl}${_hline}${_box_tr}"
-        echo "${_box_v}  ERROR: ${category}/${subcategory}"
-        printf '%s  %-*s%s\n' "$_box_v" "$_box_w" "$_transient_label" "$_box_v" 2>/dev/null || \
-            echo "${_box_v}  ${_transient_label}"
-        echo "${_box_v}"
-        echo "${_box_v}  ${message}"
+        _box_line "ERROR: ${category}/${subcategory}"
+        _box_line "$_transient_label"
+        _box_line ""
+        _box_line "${message}"
         if [[ -n "$recovery" ]]; then
-            echo "${_box_v}"
-            echo "${_box_v}  Recovery: ${recovery}"
+            _box_line ""
+            _box_line "Recovery: ${recovery}"
         fi
         echo "${_box_bl}${_hline}${_box_br}"
         echo
