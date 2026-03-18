@@ -257,7 +257,7 @@ classify_error() {
             return 0
         fi
         # Check for any API-like content we might have missed
-        if _match_pattern "$combined" 'anthropic\|claude\|api\.anthropic'; then
+        if _match_pattern "$combined" 'anthropic|claude|api\.anthropic'; then
             echo "UPSTREAM|api_unknown|true|Unrecognized API-related error (exit ${exit_code})"
             return 0
         fi
@@ -428,6 +428,6 @@ redact_sensitive() {
         -e 's/sk-ant-[A-Za-z0-9_-]*/[REDACTED_API_KEY]/g' \
         -e 's/ANTHROPIC_API_KEY=[^ ]*/ANTHROPIC_API_KEY=[REDACTED]/g' \
         -e 's/api[_-]key[[:space:]]*=[[:space:]]*[^ ]*/api_key=[REDACTED]/g' \
-        -e 's/bearer [A-Za-z0-9_.-]*/bearer [REDACTED]/gI' \
+        -e 's/[Bb][Ee][Aa][Rr][Ee][Rr] [A-Za-z0-9_.-]*/bearer [REDACTED]/g' \
         -e "s/${_req_placeholder}//g"
 }

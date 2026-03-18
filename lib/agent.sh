@@ -37,6 +37,12 @@ LAST_AGENT_EXIT_CODE=0     # claude CLI exit code
 LAST_AGENT_ELAPSED=0       # Wall-clock seconds
 LAST_AGENT_NULL_RUN=false  # true if agent likely died without doing work
 
+# --- Error classification globals (12.2 — set after classify_error()) --------
+AGENT_ERROR_CATEGORY=""
+AGENT_ERROR_SUBCATEGORY=""
+AGENT_ERROR_TRANSIENT=""
+AGENT_ERROR_MESSAGE=""
+
 # --- Run summary -------------------------------------------------------------
 
 print_run_summary() {
@@ -171,11 +177,60 @@ run_agent() {
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))
     STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label}: ${turns_display} turns, ${mins}m${secs}s"
 
+    # --- Error classification (12.2) ------------------------------------------
+    # Classify the agent exit using the error taxonomy. UPSTREAM errors bypass
+    # null-run classification entirely — an API 500 is never a "null run".
+    AGENT_ERROR_CATEGORY=""
+    AGENT_ERROR_SUBCATEGORY=""
+    AGENT_ERROR_TRANSIENT=""
+    AGENT_ERROR_MESSAGE=""
+
+    if [[ "$agent_exit" -ne 0 ]] || [[ "$_API_ERROR_DETECTED" = true ]]; then
+        # classify_error is from lib/errors.sh — guard for tests that source agent.sh directly
+        if command -v classify_error &>/dev/null; then
+            local _stderr_file="${_session_dir}/agent_stderr.txt"
+            local _last_output_file="${_session_dir}/agent_last_output.txt"
+            local _fc=0
+            if [[ -f "$_prerun_marker" ]] && _detect_file_changes "$_prerun_marker"; then
+                _fc=$(_count_changed_files_since "$_prerun_marker")
+            fi
+
+            # If API error was detected in stream, create a synthetic stderr hint
+            if [[ "$_API_ERROR_DETECTED" = true ]] && [[ ! -s "$_stderr_file" ]]; then
+                echo "API error detected in stream: ${_API_ERROR_TYPE}" > "$_stderr_file"
+            fi
+
+            local _error_record
+            _error_record=$(classify_error "$agent_exit" "$_stderr_file" "$_last_output_file" "$_fc" "$turns_used")
+
+            AGENT_ERROR_CATEGORY=$(echo "$_error_record" | cut -d'|' -f1)
+            AGENT_ERROR_SUBCATEGORY=$(echo "$_error_record" | cut -d'|' -f2)
+            AGENT_ERROR_TRANSIENT=$(echo "$_error_record" | cut -d'|' -f3)
+            AGENT_ERROR_MESSAGE=$(echo "$_error_record" | cut -d'|' -f4-)
+        fi
+    fi
+
     # --- Null run detection (file changes override FIFO-based heuristic) ------
     export LAST_AGENT_TURNS="$turns_used"
     export LAST_AGENT_EXIT_CODE="$agent_exit"
     export LAST_AGENT_ELAPSED="$elapsed"
     LAST_AGENT_NULL_RUN=false
+
+    # UPSTREAM errors bypass null-run classification — API failures are not scope issues
+    if [[ "$AGENT_ERROR_CATEGORY" = "UPSTREAM" ]]; then
+        warn "[$label] API error detected (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
+        if command -v suggest_recovery &>/dev/null; then
+            local _recovery
+            _recovery=$(suggest_recovery "$AGENT_ERROR_CATEGORY" "$AGENT_ERROR_SUBCATEGORY")
+            warn "[$label] Recovery: ${_recovery}"
+            if command -v report_error &>/dev/null; then
+                report_error "$AGENT_ERROR_CATEGORY" "$AGENT_ERROR_SUBCATEGORY" \
+                    "$AGENT_ERROR_TRANSIENT" "$AGENT_ERROR_MESSAGE" "$_recovery"
+            fi
+        fi
+        # Do NOT classify as null run — this was an API failure, not a scope issue
+        return
+    fi
 
     # Check for file changes since agent start (secondary productivity signal)
     local _has_file_changes=false
@@ -246,6 +301,75 @@ run_agent() {
             warn "[$label] NULL RUN DETECTED — agent used 0 turns."
         fi
     fi
+
+    # --- Structured agent run summary block (12.3) ----------------------------
+    # Appended to the end of the log file so `tail -20 <logfile>` diagnoses failures.
+    _append_agent_summary "$label" "$model" "$turns_used" "$max_turns" \
+        "$mins" "$secs" "$agent_exit" "$_changed_count" "$log_file"
+}
+
+# --- Structured agent run summary (12.3) — appended to log file end ----------
+_append_agent_summary() {
+    local label="$1" model="$2" turns_used="$3" max_turns="$4"
+    local mins="$5" secs="$6" exit_code="$7" files_changed="$8"
+    local log_file="$9"
+
+    # Detect Unicode for consistent rendering with report_error
+    local _sep="═══"
+    if ! echo "${LANG:-}${LC_ALL:-}" | grep -qi 'utf-\?8' 2>/dev/null; then
+        _sep="==="
+    fi
+
+    local _class="SUCCESS"
+    if [[ "$exit_code" -ne 0 ]]; then
+        if [[ -n "$AGENT_ERROR_CATEGORY" ]]; then
+            _class="${AGENT_ERROR_CATEGORY}/${AGENT_ERROR_SUBCATEGORY}"
+        elif [[ "$LAST_AGENT_NULL_RUN" = true ]]; then
+            _class="NULL_RUN"
+        else
+            _class="FAILED (exit ${exit_code})"
+        fi
+    fi
+
+    # Count created files (heuristic: new untracked files since prerun marker)
+    local _created=0
+    local _modified="${files_changed}"
+    if command -v git &>/dev/null; then
+        _created=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d '[:space:]')
+        _created="${_created:-0}"
+    fi
+
+    local _summary_block
+    _summary_block=$(cat <<AGENTSUMMARY
+
+${_sep} Agent Run Summary ${_sep}
+Agent:     ${label} (${model})
+Turns:     ${turns_used} / ${max_turns}
+Duration:  ${mins}m ${secs}s
+Exit Code: ${exit_code}
+Class:     ${_class}
+Files:     ${_modified} modified, ${_created} created
+AGENTSUMMARY
+)
+
+    # Add error details on failure
+    if [[ "$_class" != "SUCCESS" ]] && [[ -n "$AGENT_ERROR_CATEGORY" ]]; then
+        local _recovery
+        _recovery=$(suggest_recovery "$AGENT_ERROR_CATEGORY" "$AGENT_ERROR_SUBCATEGORY")
+        _summary_block="${_summary_block}
+Error:     ${AGENT_ERROR_MESSAGE}
+Recovery:  ${_recovery}"
+    fi
+
+    _summary_block="${_summary_block}
+${_sep}${_sep}${_sep}${_sep}${_sep}${_sep}"
+
+    # Redact sensitive data before writing to log
+    if command -v redact_sensitive &>/dev/null; then
+        _summary_block=$(redact_sensitive "$_summary_block")
+    fi
+
+    echo "$_summary_block" >> "$log_file"
 }
 
 # --- Null run detection helpers (call after run_agent()) --------------------

@@ -2,14 +2,16 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 5
+- Runs since audit: 1
 
 ## Unresolved Observations
-- [2026-03-18 | "Continue Implementing Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split"] `lib/milestone_split.sh:42` — `local threshold=$((...))` uses arithmetic expansion inside a `local` declaration. SC2155 applies technically; shellcheck may or may not flag depending on version. Low risk given constant arithmetic with defaults, but inconsistent with the defensive style the rest of the file uses.
-- [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `tekhton.sh:1073` — The commit-skip path echoes `${COMMIT_MSG%%$' '*}` (first line of commit msg) for the manual git command. When a milestone prefix like `[MILESTONE 10 ✓]` is present, this is fine. But the `%%` strip on a multi-line string may behave differently across bash versions — worth watching if users report truncated suggestions.
+- [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent.sh:319` and `lib/common.sh:50` — Unicode/ASCII terminal detection (`grep -qi 'utf-?8'` against `LANG/LC_ALL`) is duplicated between `_append_agent_summary` and `report_error`. A shared `_is_utf8_terminal()` helper in `lib/common.sh` would guarantee visual consistency. (carry-forward from cycle 1)
+- [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent_monitor.sh` — Comment exists at lines 55–60 explaining the subshell variable isolation (API error flags written to file for parent to read), but there is no equivalent comment near the ring buffer dump block (lines 232–245) explaining why the dump uses a `{...}` compound group rather than a function call. Future contributors may wonder why `_ring_buffer_add`-style functions were not used. A brief inline comment would close the gap.
 (none)
 
 ## Resolved
+- [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split"] `lib/milestone_split.sh:42` — SC2155 observation was inaccurate. The `local threshold` declaration (line 42) is separate from the arithmetic assignment (line 43). SC2155 does not apply.
+- [RESOLVED 2026-03-18] [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `tekhton.sh:1087` — The pattern is `%%$'\n'*` (strip from first newline), not `%%$' '*` (strip from first space) as the drift observation described. The newline-strip correctly extracts the first line of the commit message. The drift observation described a pattern that does not exist in the code.
 - [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11"] `stages/coder.sh` `_first_sub` duplication across three auto-split paths. **Resolved: Extracted `_switch_to_sub_milestone()` helper function that encapsulates the repeated pattern (compute `.1` sub-milestone, fetch title, update state). All three call sites now use the helper.**
 - [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11"] `lib/milestone_split.sh` and `lib/milestone_archival.sh` missing `set -euo pipefail`. **Resolved: Both files now have `set -euo pipefail` on line 2, immediately after the shebang. This is defense-in-depth — they still inherit it from `tekhton.sh` when sourced, but are now safe if sourced independently (e.g., from test harnesses).**
 - [RESOLVED 2026-03-18] [2026-03-17 | "Implement fixes for the next two items in the NON_BLOCKING_LOG.md"] NON_BLOCKING_LOG.md duplicate milestones.sh entries. **Resolved: The three duplicate entries were already consolidated into a single resolved entry in NON_BLOCKING_LOG.md (see Resolved section). No open duplicates remain.**

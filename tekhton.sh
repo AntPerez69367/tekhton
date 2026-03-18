@@ -61,6 +61,13 @@ _tekhton_cleanup() {
         echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
         echo >&2
 
+        # --- Record metrics on crash (12.3) -----------------------------------
+        # Ensure metrics are captured even on unexpected crashes.
+        if command -v record_run_metrics &>/dev/null 2>&1; then
+            VERDICT="${VERDICT:-crashed}"
+            record_run_metrics 2>/dev/null || true
+        fi
+
         # --- Crash cleanup: archive transient artifacts -----------------------
         # ARCHITECT_PLAN.md is a single-run artifact — archive it if it exists
         if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ] && [ -f "ARCHITECT_PLAN.md" ]; then
