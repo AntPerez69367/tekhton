@@ -73,6 +73,21 @@ run_agent() {
     local log_file="$5"
     local allowed_tools="${6:-$AGENT_TOOLS_CODER}"  # default: coder-level access
 
+    # Sanitize max_turns — must be a bare integer. Adaptive calibration log
+    # messages can leak into ADJUSTED_*_TURNS via $() capture of functions
+    # that call log() (which writes to stdout).
+    if ! [[ "$max_turns" =~ ^[0-9]+$ ]]; then
+        local _clean_turns
+        _clean_turns=$(echo "$max_turns" | grep -oE '[0-9]+' | tail -1)
+        if [[ -n "$_clean_turns" ]]; then
+            warn "[$label] max_turns contained non-numeric content, extracted: ${_clean_turns}"
+            max_turns="$_clean_turns"
+        else
+            warn "[$label] max_turns was not numeric ('${max_turns:0:40}...'), using CODER_MAX_TURNS=${CODER_MAX_TURNS:-100}"
+            max_turns="${CODER_MAX_TURNS:-100}"
+        fi
+    fi
+
     local start_time
     start_time=$(date +%s)
 

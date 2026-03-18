@@ -141,6 +141,12 @@ apply_scout_turn_limits() {
             log "Tester turns: ${TESTER_MAX_TURNS} (configured) → ${ADJUSTED_TESTER_TURNS} (scout-adjusted)"
         fi
     fi
+
+    # Final sanitization — ensure all ADJUSTED_*_TURNS are bare integers.
+    # Defense against log() stdout leaking into $() captures.
+    [[ "$ADJUSTED_CODER_TURNS" =~ ^[0-9]+$ ]]    || ADJUSTED_CODER_TURNS="$CODER_MAX_TURNS"
+    [[ "$ADJUSTED_REVIEWER_TURNS" =~ ^[0-9]+$ ]]  || ADJUSTED_REVIEWER_TURNS="$REVIEWER_MAX_TURNS"
+    [[ "$ADJUSTED_TESTER_TURNS" =~ ^[0-9]+$ ]]    || ADJUSTED_TESTER_TURNS="$TESTER_MAX_TURNS"
 }
 
 # --- Post-coder turn recalibration -------------------------------------------
