@@ -288,6 +288,7 @@ source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"

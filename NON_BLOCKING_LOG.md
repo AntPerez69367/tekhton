@@ -5,6 +5,11 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-18 | "Implement Milestone 12.1: Error Taxonomy, Classification Engine & Redaction"] `lib/errors.sh:120–122` — The standalone `"status".*502` check is still dead code: the `50[023]` regex at line 116 already matches 500, 502, and 503. No runtime impact; safe to remove in a cleanup pass.
+- [ ] [2026-03-18 | "Implement Milestone 12.1: Error Taxonomy, Classification Engine & Redaction"] `lib/errors.sh:134` — `s` inside `grep -qiE` is a GNU extension, not POSIX ERE. Use `[[:space:]]` for portability: `connection.*timed?[[:space:]]*out`.
+- [ ] [2026-03-18 | "Implement Milestone 12.1: Error Taxonomy, Classification Engine & Redaction"] `lib/errors.sh:260` — `|` inside `grep -qiE` is non-standard (GNU BRE alternation; in ERE the bare `|` is the alternation operator). Change `'anthropic|claude|api.anthropic'` to `'anthropic|claude|api.anthropic'`.
+- [ ] [2026-03-18 | "Implement Milestone 12.1: Error Taxonomy, Classification Engine & Redaction"] `lib/errors.sh:277` — By convention, internal helper `_match_pattern` should be defined before `classify_error` which calls it. No runtime impact but makes the file harder to read top-to-bottom.
+- [ ] [2026-03-18 | "Implement Milestone 12.1: Error Taxonomy, Classification Engine & Redaction"] `lib/errors.sh:227,233` — The check at line 227 (turns ≤ 2, exit ≠ 0, files = 0) and the fixed check at line 233 (turns = 0, files = 0) have some overlap. A future cleanup could consolidate them: `if [[ "$turns" -le 2 ]] && [[ "$file_changes" -eq 0 ]] && ([[ "$exit_code" -ne 0 ]] || [[ "$turns" -eq 0 ]]); then`.
 ## Resolved
 - [x] [2026-03-18] `split_milestone()` in `lib/milestone_split.sh` — changed `export` to plain shell variable assignment for `MILESTONE_DEFINITION`, `SCOUT_ESTIMATE`, `TURN_CAP`, `PRIOR_RUN_HISTORY`. `render_prompt()` reads these via `${!var_name}` indirect expansion in the same shell scope, so export was unnecessary environment bloat.
 - [x] [2026-03-18] `lib/milestone_archival.sh` now explicitly listed in CODER_SUMMARY.md Files Modified section. Process tracking issue resolved.
