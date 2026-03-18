@@ -533,6 +533,7 @@ find_next_milestone() {
                 break
             fi
         fi
+    # sort -n handles decimals (e.g., 0.5 sorts before 1) on both GNU and BSD sort
     done < <(echo "$all_ms" | sort -t'|' -k1 -n)
 
     echo "$next"

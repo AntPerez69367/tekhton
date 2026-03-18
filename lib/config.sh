@@ -94,6 +94,19 @@ _parse_config_file() {
     done < "$conf_file"
 }
 
+# --- Hard upper bounds (defense-in-depth) ------------------------------------
+# Prevent runaway loops or excessive API costs from misconfigured values.
+# Defined at module scope so load_config() can call it without nesting.
+
+_clamp_config_value() {
+    local key="$1" max="$2"
+    local val="${!key:-0}"
+    if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt "$max" ] 2>/dev/null; then
+        warn "[config] ${key}=${val} exceeds hard cap (${max}). Clamped to ${max}."
+        declare -gx "$key=$max"
+    fi
+}
+
 # --- Loader ------------------------------------------------------------------
 
 load_config() {
@@ -256,16 +269,7 @@ load_config() {
     # (especially with --output-format json which produces no streaming output).
     : "${MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER:=3}"
 
-    # --- Hard upper bounds (defense-in-depth) ---
-    # Prevent runaway loops or excessive API costs from misconfigured values.
-    _clamp_config_value() {
-        local key="$1" max="$2"
-        local val="${!key:-0}"
-        if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt "$max" ] 2>/dev/null; then
-            warn "[config] ${key}=${val} exceeds hard cap (${max}). Clamped to ${max}."
-            declare -gx "$key=$max"
-        fi
-    }
+    # --- Clamp values to hard upper bounds ---
     _clamp_config_value MAX_REVIEW_CYCLES 20
     _clamp_config_value CODER_MAX_TURNS 500
     _clamp_config_value JR_CODER_MAX_TURNS 500
