@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # milestone_archival.sh — Milestone archival (CLAUDE.md → MILESTONE_ARCHIVE.md)
 #
@@ -31,7 +32,7 @@ _extract_milestone_block() {
     local line_count=0
 
     while IFS= read -r line; do
-        if [[ "$in_block" = false ]] && [[ "$line" =~ ^(#{1,5})[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-] ]]; then
+        if [[ "$in_block" = false ]] && [[ "$line" =~ ^(#{1,5})[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*([:.\ -]|—) ]]; then
             heading_level=${#BASH_REMATCH[1]}
             in_block=true
             block="${line}"
@@ -76,7 +77,7 @@ _get_initiative_name() {
             current_initiative="${BASH_REMATCH[2]}"
             current_initiative="${current_initiative%"${current_initiative##*[![:space:]]}"}"
         fi
-        if [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-] ]]; then
+        if [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*([:.\ -]|—) ]]; then
             echo "${current_initiative:-Unknown Initiative}"
             return 0
         fi
@@ -96,7 +97,8 @@ _milestone_in_archive() {
     fi
 
     local num_pattern="${num//./\\.}"
-    grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-]" "$archive_file" 2>/dev/null
+    # Match milestone heading with portable delimiter pattern (avoids em-dash in char class)
+    grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*([:.\-]|—)" "$archive_file" 2>/dev/null
 }
 
 # archive_completed_milestone MILESTONE_NUM CLAUDE_MD_PATH
@@ -158,7 +160,7 @@ ARCHIVE_HEADER
         safe_num = num
         gsub(/\./, "\\.", safe_num)
 
-        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[:.—-]") {
+        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*([:. -]|—)") {
             heading_level = RLENGTH
             in_block = 1
             print summary
@@ -220,7 +222,7 @@ _replace_milestone_block() {
         gsub(/\./, "\\.", safe_num)
     }
     {
-        if (!in_block && match($0, /^#{1,5}/) && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[:.—-]") {
+        if (!in_block && match($0, /^#{1,5}/) && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*([:. -]|—)") {
             heading_level = RLENGTH
             in_block = 1
             matched = 1
@@ -246,12 +248,16 @@ _replace_milestone_block() {
         print
     }
     END { exit (matched ? 0 : 1) }
-    ' "$claude_md" > "$tmp_file"
-    local awk_rc=$?
+    ' "$claude_md" > "$tmp_file" || {
+        # awk exits 1 when the heading was not matched (END { exit (matched ? 0 : 1) }).
+        # Clean up temp files before propagating the error.
+        rm -f "$tmp_file" "$rep_file"
+        return 1
+    }
 
     mv -f "$tmp_file" "$claude_md"
     rm -f "$rep_file"
-    return "$awk_rc"
+    return 0
 }
 
 # archive_all_completed_milestones CLAUDE_MD_PATH

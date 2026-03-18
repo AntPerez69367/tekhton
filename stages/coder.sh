@@ -6,6 +6,30 @@
 # Expects all pipeline globals to be set (TASK, LOG_FILE, TIMESTAMP, etc.)
 # =============================================================================
 
+# _switch_to_sub_milestone — After a milestone split, update state to target
+# the first sub-milestone (N.1). Sets _CURRENT_MILESTONE, TASK, and milestone
+# state. Must be called in the same scope (not a subshell) so variable
+# assignments propagate to the caller.
+#
+# Arguments:
+#   $1 — current milestone number (the one that was just split)
+#   $2 — path to CLAUDE.md
+_switch_to_sub_milestone() {
+    local _ms_num="$1"
+    local _claude_md="$2"
+    local _first_sub="${_ms_num}.1"
+    # Title may be empty if the split agent used a heading format that
+    # get_milestone_title doesn't match — task still proceeds with the number alone.
+    local _first_title
+    _first_title=$(get_milestone_title "$_first_sub" "$_claude_md" 2>/dev/null) || true
+
+    _CURRENT_MILESTONE="$_first_sub"
+    TASK="Implement Milestone ${_first_sub}: ${_first_title}"
+    log "Task updated: ${TASK}"
+
+    init_milestone_state "$_first_sub" "$(get_milestone_count "$_claude_md")"
+}
+
 # run_stage_coder — Runs the full coder stage including:
 #   1. Optional scout sub-agent (for BUG/FEAT notes)
 #   2. Context block construction (architecture, glossary, milestone, prior reports)
@@ -81,22 +105,13 @@ $(cat SCOUT_REPORT.md)
 
                     if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         # Update to target the first sub-milestone
-                        local _first_sub="${_CURRENT_MILESTONE}.1"
-                        local _first_title
-                        _first_title=$(get_milestone_title "$_first_sub" "CLAUDE.md" 2>/dev/null) || true
-
-                        _CURRENT_MILESTONE="$_first_sub"
-                        TASK="Implement Milestone ${_first_sub}: ${_first_title}"
-                        log "Task updated: ${TASK}"
-
-                        # Update milestone state
-                        init_milestone_state "$_first_sub" "$(get_milestone_count "CLAUDE.md")"
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
 
                         # Archive original scout report and re-scout narrower scope
                         cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
                         rm "SCOUT_REPORT.md"
 
-                        log "Re-running scout for narrower sub-milestone ${_first_sub}..."
+                        log "Re-running scout for narrower sub-milestone ${_CURRENT_MILESTONE}..."
 
                         SCOUT_PROMPT=$(render_prompt "scout")
                         run_agent \
@@ -326,25 +341,13 @@ ${nb_notes}"
         if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
             if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                 # Split succeeded — update state and re-run from scout
-                local _first_sub="${_CURRENT_MILESTONE}.1"
-                local _first_title
-                # get_milestone_title may return empty if the splitting agent's heading
-                # format doesn't exactly match parse_milestones' regex. The task still
-                # proceeds correctly with an empty title — it's cosmetic only.
-                _first_title=$(get_milestone_title "$_first_sub" "CLAUDE.md" 2>/dev/null) || true
-
-                _CURRENT_MILESTONE="$_first_sub"
-                TASK="Implement Milestone ${_first_sub}: ${_first_title}"
-                log "Task updated after auto-split: ${TASK}"
-
-                # Update milestone state
-                init_milestone_state "$_first_sub" "$(get_milestone_count "CLAUDE.md")"
+                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
 
                 # Recursive call to run_stage_coder creates nested call frames up to
                 # MILESTONE_MAX_SPLIT_DEPTH deep. With default of 3, this is safe.
                 local _depth
-                _depth=$(get_split_depth "$_first_sub")
-                warn "Auto-split complete — re-running coder stage for milestone ${_first_sub} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                 run_stage_coder
                 return
             fi
@@ -462,18 +465,11 @@ ${nb_notes}"
             # Try auto-split in milestone mode before falling back to save-and-exit
             if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
                 if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                    local _first_sub="${_CURRENT_MILESTONE}.1"
-                    local _first_title
-                    _first_title=$(get_milestone_title "$_first_sub" "CLAUDE.md" 2>/dev/null) || true
-
-                    _CURRENT_MILESTONE="$_first_sub"
-                    TASK="Implement Milestone ${_first_sub}: ${_first_title}"
-                    log "Task updated after auto-split: ${TASK}"
-                    init_milestone_state "$_first_sub" "$(get_milestone_count "CLAUDE.md")"
+                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
 
                     local _depth
-                    _depth=$(get_split_depth "$_first_sub")
-                    warn "Auto-split complete — re-running coder stage for milestone ${_first_sub} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                    _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                    warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                     run_stage_coder
                     return
                 fi

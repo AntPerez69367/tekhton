@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # milestone_split.sh — Pre-flight milestone sizing and null-run auto-split
 #
@@ -231,8 +232,9 @@ handle_null_run_split() {
 
     # Check for substantive partial work.
     # We use `git diff --quiet` (unstaged) and `git diff --cached --quiet` (staged)
-    # as the activation condition, then `git diff --stat HEAD` to measure scope.
-    # `git diff HEAD` captures both staged and unstaged changes correctly.
+    # as the activation condition. Then `git diff --stat HEAD` measures scope —
+    # `git diff HEAD` (not bare `git diff`) is intentional because it captures
+    # both staged and unstaged changes in a single pass.
     local has_substantive_work=false
     local diff_stat=""
     local summary_lines=0
