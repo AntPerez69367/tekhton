@@ -212,6 +212,7 @@ load_config() {
 
     # --- Milestone commit signatures ---
     : "${MILESTONE_TAG_ON_COMPLETE:=false}"  # Create git tag on milestone completion
+    : "${MILESTONE_ARCHIVE_FILE:=MILESTONE_ARCHIVE.md}"  # Archive file for completed milestones
 
     # --- Cleanup (autonomous debt sweep) defaults ---
     : "${CLEANUP_ENABLED:=false}"           # Off by default — opt-in

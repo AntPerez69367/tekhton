@@ -700,6 +700,14 @@ elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
     log "Milestone mode: targeting milestone ${_CURRENT_MILESTONE}"
 fi
 
+# --- Startup archival: clean up completed milestones from previous runs ------
+# Archive [DONE] milestones that still have full definitions in CLAUDE.md.
+# This handles cases where the previous run completed a milestone but crashed
+# before archival, or where milestones were manually marked [DONE].
+if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
+    archive_all_completed_milestones "CLAUDE.md"
+fi
+
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
 
 _tekhton_sigint_handler() {
@@ -1033,10 +1041,11 @@ _do_git_commit() {
 case "$COMMIT_CHOICE" in
     y|Y)
         _do_git_commit "$COMMIT_MSG"
-        # Tag milestone completion after successful commit
+        # Tag milestone completion and archive after successful commit
         if [ -n "$_MS_COMMIT_NUM" ]; then
             if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
                 tag_milestone_complete "$_MS_COMMIT_NUM"
+                archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
             fi
         fi
         print_run_summary
@@ -1049,10 +1058,11 @@ case "$COMMIT_CHOICE" in
         EDITED_MSG=$(cat "$TMPFILE")
         rm "$TMPFILE"
         _do_git_commit "$EDITED_MSG"
-        # Tag milestone completion after successful commit
+        # Tag milestone completion and archive after successful commit
         if [ -n "$_MS_COMMIT_NUM" ]; then
             if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
                 tag_milestone_complete "$_MS_COMMIT_NUM"
+                archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
             fi
         fi
         print_run_summary
