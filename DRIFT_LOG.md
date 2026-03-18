@@ -2,13 +2,13 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
-- [2026-03-18 | "Correct the next 2 items in the DRIFT_LOG.md file."] `lib/agent_monitor.sh:237` — `local _rb_total=...` inside a `{...}` compound group (not a function) is invalid bash; as noted above, this likely silently disables the ring buffer dump on every run. The comment accurately describes the design intent but the implementation has a latent correctness bug.
 (none)
 
 ## Resolved
+- [RESOLVED 2026-03-18] [2026-03-18 | "Correct the next 2 items in the DRIFT_LOG.md file."] `lib/agent_monitor.sh:237` — `local _rb_total=...` inside a `{...}` compound group (not a function) is invalid bash. **Resolved: The `local` keyword was already removed in the implementation. Lines 239-249 use plain assignments (`_rb_total=`, `_rb_start=`, `_j=`), which are valid inside compound groups. The comment on lines 236-237 documents this design decision. The observation was stale — the code was correct when inspected.**
 - [RESOLVED 2026-03-18] [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent.sh:319` and `lib/common.sh:50` — Unicode/ASCII terminal detection duplicated between `_append_agent_summary` and `report_error`. **Resolved: Extracted `_is_utf8_terminal()` helper in `lib/common.sh`. Both `report_error` and `_append_agent_summary` now call the shared helper instead of inline `grep -qi 'utf-\?8'`.**
 - [RESOLVED 2026-03-18] [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent_monitor.sh` — Ring buffer dump block (lines 232–245) lacked a comment explaining why it uses a `{...}` compound group rather than a function call. **Resolved: Added inline comment explaining the compound group is necessary because `_rb[]` and `_rb_idx` are local subshell variables that cannot be portably passed to a function by reference in bash 4.**
 - [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split"] `lib/milestone_split.sh:42` — SC2155 observation was inaccurate. The `local threshold` declaration (line 42) is separate from the arithmetic assignment (line 43). SC2155 does not apply.
