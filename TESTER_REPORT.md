@@ -1,5 +1,5 @@
 ## Planned Tests
-- [x] Full suite regression — verify all 57 existing tests pass after the two implementation changes
+- [x] `tests/test_milestone_archival.sh` — extend with mktemp fallback test when TEKHTON_SESSION_DIR is missing
 
 ## Test Run Results
 Passed: 57  Failed: 0
@@ -8,4 +8,4 @@ Passed: 57  Failed: 0
 None
 
 ## Files Modified
-- [x] `TESTER_REPORT.md`
+- [x] `tests/test_milestone_archival.sh`
