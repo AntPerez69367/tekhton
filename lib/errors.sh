@@ -117,11 +117,6 @@ classify_error() {
         echo "UPSTREAM|api_500|true|API server error (HTTP 5xx)"
         return 0
     fi
-    if _match_pattern "$combined" '"status"[[:space:]]*:[[:space:]]*502'; then
-        echo "UPSTREAM|api_500|true|API server error (HTTP 502)"
-        return 0
-    fi
-
     # Authentication error
     if _match_pattern "$combined" 'authentication_error' \
         || _match_pattern "$combined" 'invalid.api.key' \

@@ -318,7 +318,6 @@ ${nb_notes}"
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
     print_run_summary
-    success "Coder agent finished."
 
     # Export actual coder turns for post-coder recalibration (Milestone 9)
     export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
@@ -337,6 +336,8 @@ ${nb_notes}"
         error "State saved. This was an API failure, not a scope issue. Re-run the same command."
         exit 1
     fi
+
+    success "Coder agent finished."
 
     # --- Null run detection ---------------------------------------------------
 
