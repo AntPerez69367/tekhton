@@ -94,6 +94,22 @@ record_run_metrics() {
     # Context size
     local context_tokens="${LAST_CONTEXT_TOKENS:-0}"
 
+    # Sanitize all numeric fields — strip any non-numeric content that may leak
+    # from log() output captured via $() subshells
+    total_turns=$(echo "$total_turns" | grep -oE '[0-9]+' | tail -1); total_turns="${total_turns:-0}"
+    total_time=$(echo "$total_time" | grep -oE '[0-9]+' | tail -1); total_time="${total_time:-0}"
+    coder_turns=$(echo "$coder_turns" | grep -oE '[0-9]+' | tail -1); coder_turns="${coder_turns:-0}"
+    reviewer_turns=$(echo "$reviewer_turns" | grep -oE '[0-9]+' | tail -1); reviewer_turns="${reviewer_turns:-0}"
+    tester_turns=$(echo "$tester_turns" | grep -oE '[0-9]+' | tail -1); tester_turns="${tester_turns:-0}"
+    scout_turns=$(echo "$scout_turns" | grep -oE '[0-9]+' | tail -1); scout_turns="${scout_turns:-0}"
+    scout_est_coder=$(echo "$scout_est_coder" | grep -oE '[0-9]+' | tail -1); scout_est_coder="${scout_est_coder:-0}"
+    scout_est_reviewer=$(echo "$scout_est_reviewer" | grep -oE '[0-9]+' | tail -1); scout_est_reviewer="${scout_est_reviewer:-0}"
+    scout_est_tester=$(echo "$scout_est_tester" | grep -oE '[0-9]+' | tail -1); scout_est_tester="${scout_est_tester:-0}"
+    adjusted_coder=$(echo "$adjusted_coder" | grep -oE '[0-9]+' | tail -1); adjusted_coder="${adjusted_coder:-0}"
+    adjusted_reviewer=$(echo "$adjusted_reviewer" | grep -oE '[0-9]+' | tail -1); adjusted_reviewer="${adjusted_reviewer:-0}"
+    adjusted_tester=$(echo "$adjusted_tester" | grep -oE '[0-9]+' | tail -1); adjusted_tester="${adjusted_tester:-0}"
+    context_tokens=$(echo "$context_tokens" | grep -oE '[0-9]+' | tail -1); context_tokens="${context_tokens:-0}"
+
     # Outcome
     local outcome="unknown"
     case "$verdict" in
