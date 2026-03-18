@@ -84,7 +84,7 @@ _invoke_and_monitor() {
         mkfifo "$_fifo"
 
         # Background: run claude, write stdout to FIFO, tee stderr to
-        # both a dedicated file and the FIFO (for existing monitoring).
+        # a dedicated file and the caller's stdout (not the FIFO).
         local _stderr_file="${_session_dir}/agent_stderr.txt"
         : > "$_stderr_file"
         (

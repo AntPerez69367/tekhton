@@ -178,8 +178,16 @@ run_agent() {
                 echo "API error detected in stream: ${_API_ERROR_TYPE}" > "$_stderr_file"
             fi
 
+            # Check for CODER_SUMMARY.md presence (used by no_summary classification)
+            local _has_summary_flag=0
+            local _summary_check_path="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
+            if [[ -f "$_summary_check_path" ]] && [[ -f "$_prerun_marker" ]] \
+                && [[ "$_summary_check_path" -nt "$_prerun_marker" ]]; then
+                _has_summary_flag=1
+            fi
+
             local _error_record
-            _error_record=$(classify_error "$agent_exit" "$_stderr_file" "$_last_output_file" "$_fc" "$turns_used")
+            _error_record=$(classify_error "$agent_exit" "$_stderr_file" "$_last_output_file" "$_fc" "$turns_used" "$_has_summary_flag")
 
             AGENT_ERROR_CATEGORY=$(echo "$_error_record" | cut -d'|' -f1)
             AGENT_ERROR_SUBCATEGORY=$(echo "$_error_record" | cut -d'|' -f2)

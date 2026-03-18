@@ -34,14 +34,14 @@ source "${TEKHTON_HOME:?}/lib/errors_helpers.sh"
 _match_pattern() {
     local text="$1"
     local pattern="$2"
-    echo "$text" | grep -qiE "$pattern" 2>/dev/null
+    printf '%s\n' "$text" | grep -qiE "$pattern" 2>/dev/null
 }
 
 # --- classify_error ---------------------------------------------------------
 # Analyzes exit code, stderr content, and last output to produce a structured
 # error record.
 #
-# Usage: classify_error EXIT_CODE [STDERR_FILE] [LAST_OUTPUT_FILE] [FILE_CHANGES] [TURNS]
+# Usage: classify_error EXIT_CODE [STDERR_FILE] [LAST_OUTPUT_FILE] [FILE_CHANGES] [TURNS] [HAS_SUMMARY]
 # Output: CATEGORY|SUBCATEGORY|TRANSIENT|MESSAGE (printed to stdout)
 #
 # Parameters:
@@ -50,6 +50,7 @@ _match_pattern() {
 #   LAST_OUTPUT_FILE - Path to last agent output lines (optional, "" to skip)
 #   FILE_CHANGES     - Count of files changed (optional, default 0)
 #   TURNS            - Turn count from agent (optional, default 0)
+#   HAS_SUMMARY      - Whether CODER_SUMMARY.md was produced (0=no, 1=yes, default 0)
 
 classify_error() {
     local exit_code="${1:?classify_error requires exit_code}"
@@ -57,10 +58,12 @@ classify_error() {
     local last_output_file="${3:-}"
     local file_changes="${4:-0}"
     local turns="${5:-0}"
+    local has_summary="${6:-0}"
 
     # Ensure numeric defaults
     [[ "$file_changes" =~ ^[0-9]+$ ]] || file_changes=0
     [[ "$turns" =~ ^[0-9]+$ ]] || turns=0
+    [[ "$has_summary" =~ ^[01]$ ]] || has_summary=0
 
     # Read stderr and output content for pattern matching
     local stderr_content=""
@@ -111,11 +114,11 @@ classify_error() {
         echo "UPSTREAM|api_500|true|API server error (HTTP 5xx)"
         return 0
     fi
-    # Authentication error
+    # Authentication error — permanent: won't self-resolve on retry
     if _match_pattern "$combined" 'authentication_error' \
         || _match_pattern "$combined" 'invalid.api.key' \
         || _match_pattern "$combined" 'invalid.*x-api-key'; then
-        echo "UPSTREAM|api_auth|true|API authentication error"
+        echo "UPSTREAM|api_auth|false|API authentication error"
         return 0
     fi
 
@@ -225,9 +228,9 @@ classify_error() {
         return 0
     fi
 
-    # Successful exit but no summary
-    if [[ "$exit_code" -eq 0 ]] && [[ "$turns" -gt 0 ]] && [[ "$file_changes" -eq 0 ]]; then
-        echo "AGENT_SCOPE|no_summary|false|Agent completed but produced no file changes"
+    # Successful exit but no summary file produced
+    if [[ "$exit_code" -eq 0 ]] && [[ "$turns" -gt 0 ]] && [[ "$has_summary" -eq 0 ]]; then
+        echo "AGENT_SCOPE|no_summary|false|Agent completed but produced no summary"
         return 0
     fi
 
@@ -266,7 +269,11 @@ is_transient() {
 
     case "$category" in
         UPSTREAM)
-            # All upstream errors are transient
+            # Most upstream errors are transient — except auth failures,
+            # which won't self-resolve on retry and need human action.
+            if [[ "$subcategory" == "api_auth" ]]; then
+                return 1
+            fi
             return 0
             ;;
         ENVIRONMENT)
