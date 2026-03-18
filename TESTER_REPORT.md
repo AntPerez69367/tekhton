@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_milestones.sh` — verify milestone_ops.sh split and existing milestone tests pass
+- [ ] `tests/test_coder_prompt_scope.sh` — verify coder.prompt.md has Scope Adherence section and USER TASK delimiters
 
 ## Test Run Results
-Passed: 57  Failed: 0
+Passed: 0  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_milestones.sh`
+- [ ] `tests/test_coder_prompt_scope.sh`

@@ -196,10 +196,11 @@ $(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
         local nb_notes
         nb_notes=$(get_open_nonblocking_notes)
         NON_BLOCKING_CONTEXT="
-## Accumulated Tech Debt (${nb_count} items — address what you can)
+## Accumulated Tech Debt (${nb_count} items)
 These are non-blocking reviewer notes that have accumulated over multiple runs.
-Address as many as your remaining turns allow. For each item you address,
-note the file and what you changed. Items you cannot reach are fine to skip.
+If your task specifies which items to address, follow the task scope exactly.
+Otherwise, address as many as your remaining turns allow. For each item you
+address, note the file and what you changed. Items you cannot reach are fine to skip.
 
 ${nb_notes}"
         warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
