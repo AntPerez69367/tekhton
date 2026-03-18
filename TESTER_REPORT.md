@@ -1,5 +1,5 @@
 ## Planned Tests
-- [x] Spot-check verification of 8 "already resolved" claims from coder audit
+- [x] `tests/test_milestones.sh` — verify milestone_ops.sh split and existing milestone tests pass
 
 ## Test Run Results
 Passed: 57  Failed: 0
@@ -8,4 +8,4 @@ Passed: 57  Failed: 0
 None
 
 ## Files Modified
-- [x] (spot-check only — no new test files required)
+- [x] `tests/test_milestones.sh`

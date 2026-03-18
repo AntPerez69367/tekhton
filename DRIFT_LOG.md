@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-03-17 | "Implement fixes for the next two items in the NON_BLOCKING_LOG.md"] NON_BLOCKING_LOG.md now contains three separate entries (lines 12, 16, 19) that all describe the same issue: milestones.sh exceeding the 300-line guideline. Having duplicate open items for the same concern will cause repeated selection in future cleanup passes. A consolidation pass on the log would improve hygiene.

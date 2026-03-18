@@ -27,6 +27,7 @@ source "${TEKHTON_HOME}/lib/state.sh"
 run_build_gate() { return 0; }
 
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
 # cd to TMPDIR so relative CLAUDE.md paths resolve correctly (matches production behavior)
 cd "$TMPDIR"
@@ -403,6 +404,7 @@ git -C "$GIT_REPO_DIR" commit -q -m "init"
     MILESTONE_TAG_ON_COMPLETE=true
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
+    source "${TEKHTON_HOME}/lib/milestone_ops.sh" 2>/dev/null || true
     tag_milestone_complete 7
 )
 tag_exists=$(git -C "$GIT_REPO_DIR" tag -l "milestone-7-complete")
@@ -414,6 +416,7 @@ assert "tag_milestone_complete creates tag when enabled" "$([ "$tag_exists" = "m
     MILESTONE_TAG_ON_COMPLETE=true
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
+    source "${TEKHTON_HOME}/lib/milestone_ops.sh" 2>/dev/null || true
     tag_milestone_complete 7
 ) 2>/dev/null
 assert "tag_milestone_complete handles duplicate tag gracefully (no error)" "$([ $? -eq 0 ] && echo 0 || echo 1)"
