@@ -406,6 +406,33 @@ archive_all_completed_milestones "${TMPDIR_BASE}/nonexistent.md"
 assert "archive_all_completed_milestones returns 0 for missing CLAUDE.md" $?
 
 # =============================================================================
+# Tests: archive_completed_milestone — mktemp fallback when session dir missing
+# =============================================================================
+
+echo "--- archive_completed_milestone (mktemp fallback) ---"
+
+FALLBACK_MD="${TMPDIR_BASE}/fallback_claude.md"
+FALLBACK_ARCHIVE="${TMPDIR_BASE}/fallback_archive.md"
+rm -f "$FALLBACK_ARCHIVE"
+MILESTONE_ARCHIVE_FILE="$FALLBACK_ARCHIVE"
+make_claude_md "$FALLBACK_MD"
+
+# Test 37: archival succeeds when TEKHTON_SESSION_DIR points to a non-existent directory
+TEKHTON_SESSION_DIR="${TMPDIR_BASE}/nonexistent_session_dir"
+archive_completed_milestone "1" "$FALLBACK_MD"
+assert "archive_completed_milestone succeeds with missing TEKHTON_SESSION_DIR (fallback to claude_md dir)" $?
+
+# Test 38: archive file is populated even with session dir fallback
+assert "archive_completed_milestone writes archive when using fallback tmp dir" \
+    "$(grep -q "Token Accounting" "$FALLBACK_ARCHIVE" && echo 0 || echo 1)"
+
+# Test 39: CLAUDE.md is correctly modified even with session dir fallback
+assert "archive_completed_milestone removes block from CLAUDE.md when using fallback tmp dir" \
+    "$(grep -q 'Files to modify:' "$FALLBACK_MD" && echo 1 || echo 0)"
+
+unset TEKHTON_SESSION_DIR
+
+# =============================================================================
 # Summary
 # =============================================================================
 

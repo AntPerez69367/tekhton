@@ -171,9 +171,11 @@ ARCHIVE_HEADER
 
     # Use awk to replace the block in CLAUDE.md
     local tmp_file
-    # Use session temp dir if available, else fall back to the directory containing CLAUDE.md
+    # Use session temp dir if available, else fall back to the directory containing CLAUDE.md.
+    # If session dir fails (e.g., cleaned up), retry with CLAUDE.md's directory.
     local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
-    tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX")"
+    tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX" 2>/dev/null)" \
+        || tmp_file="$(mktemp "$(dirname "$claude_md")/archival_XXXXXX")"
 
     awk -v num="$num" -v summary="$summary_line" '
     BEGIN { in_block = 0; heading_level = 0 }
@@ -184,6 +186,9 @@ ARCHIVE_HEADER
 
         # Match the target milestone heading
         if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[:.—-]") {
+            # RLENGTH here counts only '#' chars (no trailing space in the regex).
+            # Compare with this_level below, which uses /^#{1,5}[[:space:]]/ and
+            # subtracts 1 to strip the matched space — yielding the same metric.
             heading_level = RLENGTH
             in_block = 1
             print summary
