@@ -39,7 +39,8 @@ check_milestone_size() {
     local threshold_pct="${MILESTONE_SPLIT_THRESHOLD_PCT:-120}"
 
     # Calculate threshold: cap * threshold_pct / 100
-    local threshold=$(( turn_cap * threshold_pct / 100 ))
+    local threshold
+    threshold=$(( turn_cap * threshold_pct / 100 ))
 
     if [[ "${scout_estimate:-0}" -gt "$threshold" ]] 2>/dev/null; then
         warn "Milestone ${milestone_num} estimated at ${scout_estimate} turns (cap: ${turn_cap}, threshold: ${threshold})"
