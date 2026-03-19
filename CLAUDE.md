@@ -200,6 +200,8 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `AUTONOMOUS_TIMEOUT` | Wall-clock timeout for --complete in seconds (default: 7200) |
 | `MAX_AUTONOMOUS_AGENT_CALLS` | Max total agent invocations in --complete mode (default: 20) |
 | `AUTONOMOUS_PROGRESS_CHECK` | Enable stuck-detection between loop iterations (default: true) |
+| `HUMAN_MODE` | Set by `--human` flag (default: false) |
+| `HUMAN_NOTES_TAG` | Optional tag filter for `--human` (BUG, FEAT, POLISH) |
 
 ## Testing
 
@@ -328,12 +330,14 @@ NON_BLOCKING_LOG `## Resolved` growth, and AUTO_COMMIT defaulting to `false` in
 milestone mode. Each fix is self-contained and leaves the codebase in a working state.
 
 **Files to modify:**
-- `lib/notes.sh` — Add `should_claim_notes(task)` that returns 0 (true) only if
-  the task text matches `[Hh]uman.?[Nn]otes` or `HUMAN_NOTES` or if a global
-  `WITH_NOTES=true` flag is set. Remove the `HUMAN_NOTES_ALL_ADDRESSED` export
-  from `resolve_human_notes()` (no longer needed when claiming is gated).
+- `lib/notes.sh` — Simplify `should_claim_notes()` to be flag-only: returns
+  0 (true) only if `HUMAN_MODE=true` or `WITH_NOTES=true`. Remove ALL
+  task-text pattern matching (`human.?notes`, `HUMAN_NOTES` regex). Notes
+  injection is now 100% explicit opt-in via `--human` or `--with-notes` flags.
+  Remove the `HUMAN_NOTES_ALL_ADDRESSED` export from `resolve_human_notes()`
+  (no longer needed when claiming is gated).
 - `stages/coder.sh` — Gate `claim_human_notes()` call (line ~342) behind
-  `should_claim_notes "$TASK"`. Remove the `COMPLETE→IN PROGRESS` downgrade
+  `should_claim_notes`. Remove the `COMPLETE→IN PROGRESS` downgrade
   block (lines ~444-452) that forces rework when notes aren't addressed. Ensure
   `HUMAN_NOTES_BLOCK` is set to empty string (not undefined) when notes are not
   claimed, so `{{IF:HUMAN_NOTES_BLOCK}}` simply doesn't render.
@@ -346,12 +350,15 @@ milestone mode. Each fix is self-contained and leaves the codebase in a working 
   `true` when `MILESTONE_MODE=true`, `false` otherwise. Explicit user config
   in pipeline.conf still overrides.
 - `tekhton.sh` — Add `--with-notes` flag parsing that sets `WITH_NOTES=true`.
+  Add `--human [TAG]` flag parsing that sets `HUMAN_MODE=true` and optionally
+  `HUMAN_NOTES_TAG=BUG|FEAT|POLISH`.
 
 **Acceptance criteria:**
-- `should_claim_notes "implement auth module"` returns 1 (false)
-- `should_claim_notes "address HUMAN_NOTES items"` returns 0 (true)
-- `should_claim_notes "fix human notes"` returns 0 (true)
-- `WITH_NOTES=true should_claim_notes "any task"` returns 0 (true)
+- `should_claim_notes` returns 1 (false) when neither flag is set, regardless
+  of task text
+- `HUMAN_MODE=true should_claim_notes` returns 0 (true)
+- `WITH_NOTES=true should_claim_notes` returns 0 (true)
+- Task text matching ("human notes", "HUMAN_NOTES") no longer triggers claiming
 - Coder prompt has empty `HUMAN_NOTES_BLOCK` when notes are not claimed
 - `{{IF:HUMAN_NOTES_BLOCK}}` section does not render when notes are not claimed
 - `COMPLETE→IN PROGRESS` downgrade no longer exists in coder.sh
@@ -360,6 +367,8 @@ milestone mode. Each fix is self-contained and leaves the codebase in a working 
 - `AUTO_COMMIT` defaults to `true` in milestone mode, `false` otherwise
 - Explicit `AUTO_COMMIT=false` in pipeline.conf overrides the milestone default
 - `--with-notes` flag is accepted without error
+- `--human` flag is accepted and sets `HUMAN_MODE=true`
+- `--human BUG` sets `HUMAN_NOTES_TAG=BUG`
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on all modified files
 
@@ -378,6 +387,7 @@ milestone mode. Each fix is self-contained and leaves the codebase in a working 
 - Milestone 15.2 depends on the `AUTO_COMMIT` conditional default for
   auto-commit integration in `finalize_run()`.
 - Milestone 15.3 calls `clear_resolved_nonblocking_notes()` from `finalize_run()`.
+- Milestone 15.4 builds the `--human` workflow on top of flag-only gating.
 
 #### Milestone 15.2: Milestone Marking, Archival Cleanup, and [DONE] Migration
 
@@ -521,6 +531,111 @@ finalization sequence.
   know about individual bookkeeping steps.
 - Auto-commit in milestone mode (from 15.1's config change, wired here)
   eliminates the interactive prompt that would block the autonomous loop.
+- Milestone 15.4 (`--human --complete`) reuses `finalize_run()` as its
+  per-note post-pipeline hook.
+
+#### Milestone 15.4: Human Notes Workflow (`--human` Flag)
+
+Add `--human` as a first-class workflow that processes human notes one at a time
+with explicit control. Notes are never auto-injected based on task text. The
+`--human` flag makes notes THE task; `--with-notes` injects notes alongside
+another task. Combined with `--complete` (M16), `--human --complete` chains
+through all unchecked notes until done.
+
+**Files to modify:**
+- `lib/notes.sh` — Add:
+  - `pick_next_note(tag_filter)` — Returns the next unchecked note by priority
+    order: BUG > FEAT > POLISH. If `tag_filter` is set (e.g., "BUG"), only
+    considers notes with that tag. Returns the full note line (e.g.,
+    `- [ ] [BUG] Fix the thing`). Returns empty string if no unchecked notes
+    remain.
+  - `claim_single_note(note_line)` — Marks exactly ONE note from `[ ]` to `[~]`.
+    The `note_line` is matched literally in HUMAN_NOTES.md. Only the first
+    match is marked (handles duplicate text safely). Archives pre-run snapshot.
+  - `resolve_single_note(note_line, exit_code)` — Resolves a single `[~]` note:
+    if `exit_code=0`, mark `[~]` → `[x]`. If non-zero, mark `[~]` → `[ ]`.
+    Returns 0 if the note was found and resolved, 1 if not found.
+  - `extract_note_text(note_line)` — Strips the checkbox and tag prefix,
+    returning the bare task description for use as TASK.
+  - `count_unchecked_notes(tag_filter)` — Returns count of remaining `[ ]`
+    notes, optionally filtered by tag.
+- `tekhton.sh` — Add `--human` mode orchestration:
+  - Parse `--human [TAG]` flag. TAG is optional, one of: BUG, FEAT, POLISH.
+  - When `--human` is set without `--complete`:
+    1. Call `pick_next_note "$HUMAN_NOTES_TAG"`
+    2. If no note found, log "No unchecked notes" and exit 0
+    3. Set `TASK` to the extracted note text
+    4. Set `HUMAN_MODE=true` (so `should_claim_notes` returns true)
+    5. Call `claim_single_note` for that one note
+    6. Run `_run_pipeline_stages()` normally
+    7. `finalize_run()` handles resolution via exit code
+  - When `--human --complete` is set:
+    1. Outer loop: while `count_unchecked_notes` > 0:
+       a. `pick_next_note` → set TASK → `claim_single_note`
+       b. Run `_run_pipeline_stages()`
+       c. `finalize_run()` resolves the note
+       d. If note is still `[ ]` after resolution → break (failed)
+       e. If note is `[x]` → continue to next note
+    2. Respect `MAX_PIPELINE_ATTEMPTS` and `AUTONOMOUS_TIMEOUT` from M16
+       config as safety bounds
+    3. Each note iteration auto-commits (via `finalize_run()` with
+       `AUTO_COMMIT=true`)
+- `lib/hooks.sh` — In `finalize_run()`, detect `HUMAN_MODE=true` and call
+  `resolve_single_note()` instead of `resolve_human_notes_with_exit_code()`.
+  The single-note path is simpler and more reliable: one note, binary outcome.
+
+**Acceptance criteria:**
+- `--human` with no unchecked notes exits 0 with "No unchecked notes" message
+- `--human` picks the highest-priority unchecked note (BUG > FEAT > POLISH)
+- `--human BUG` only picks `[BUG]` notes, ignoring FEAT and POLISH
+- `--human FEAT` only picks `[FEAT]` notes
+- `pick_next_note` returns empty when all notes of the filtered type are `[x]`
+- `claim_single_note` marks exactly ONE note `[~]`, leaving others as `[ ]`
+- TASK is set to the note's text content (without checkbox/tag prefix)
+- Pipeline runs the coder with the note text as the task
+- On success (exit 0), the note is marked `[x]`
+- On failure (exit non-zero), the note is reset to `[ ]`
+- `--human --complete` chains through multiple notes, one per iteration
+- `--human --complete` stops on first failure (note still `[ ]`)
+- `--human --complete` respects `AUTONOMOUS_TIMEOUT` and `MAX_PIPELINE_ATTEMPTS`
+- Each note in `--human --complete` gets its own commit
+- Notes are never auto-injected based on task text matching (flag-only gating
+  from M15.1)
+- `--human` without a task argument does NOT require a task string
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- `pick_next_note` must handle the section structure of HUMAN_NOTES.md. Notes
+  live under `## Features`, `## Bugs`, `## Polish` sections. Priority ordering
+  (BUG > FEAT > POLISH) means scanning Bugs section first, then Features, then
+  Polish — not alphabetical by tag name.
+- `claim_single_note` must escape regex special characters in the note text
+  when using sed to mark it. Notes may contain brackets, parentheses, etc.
+- The `--human --complete` loop must NOT use the M16 outer loop directly —
+  M16 retries the SAME task on failure. `--human --complete` advances to the
+  NEXT note on success and stops on failure. It's a different iteration pattern.
+  However, it should reuse M16's safety bounds (timeout, attempt cap).
+- `--human` combined with `--milestone` is invalid — notes are not milestones.
+  Reject this combination with a clear error message.
+- `--human` combined with a task string is invalid — the note IS the task.
+  Reject: `tekhton --human "some task"` should error.
+- `--with-notes` combined with `--human` is redundant but harmless — `--human`
+  already implies notes are active. Don't error, just log a note.
+- The note text extracted for TASK should include the tag (e.g., "[BUG] Fix the
+  thing") so the coder knows the category. Strip only the `- [ ] ` prefix.
+- Auto-commit between notes in `--human --complete` ensures each fix is
+  isolated in its own commit. This is important for rollback granularity.
+
+**Seeds Forward:**
+- M16's `--complete` flag provides the safety bounds (timeout, attempt cap)
+  that `--human --complete` reuses.
+- V3 could add `--human --watch` that monitors HUMAN_NOTES.md for new items
+  and processes them automatically.
+- The single-note claim/resolve pattern is more reliable than bulk operations
+  and could eventually replace the bulk `claim_human_notes()` /
+  `resolve_human_notes()` entirely.
+
 #### Milestone 16: Outer Orchestration Loop (Milestone-to-Completion)
 
 Add a `--complete` flag that wraps the entire pipeline in an outer orchestration
