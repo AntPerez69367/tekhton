@@ -324,10 +324,10 @@ ${nb_notes}"
     # --- Context budget reporting --------------------------------------------
 
     # Mark human notes as in-progress before coder runs (only when task is about notes)
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes "$TASK"; then
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
         claim_human_notes
     elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        log "Human notes exist but task does not reference them — skipping notes injection."
+        log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
         HUMAN_NOTES_BLOCK=""
     fi
 
@@ -438,7 +438,7 @@ ${nb_notes}"
 
     # Resolve human notes based on coder's structured reporting
     # Only resolve if notes were actually claimed (marked [~]) for this run
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes "$TASK"; then
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
         resolve_human_notes
     fi
 

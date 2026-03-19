@@ -323,35 +323,35 @@ Full design document: `DESIGN_v2.md`.
 #### [DONE] Milestone 14: Turn Exhaustion Continuation Loop
 Based on the codebase analysis, here's the split:
 
-#### Milestone 15.1: Bug Fixes — Notes Gating, Resolved Cleanup, and Auto-Commit Default
+Now I have enough context. Here's the split:
 
-Fix three of the seven systemic bugs independently: phantom HUMAN_NOTES injection,
-NON_BLOCKING_LOG `## Resolved` growth, and AUTO_COMMIT defaulting to `false` in
-milestone mode. Each fix is self-contained and leaves the codebase in a working state.
+#### Milestone 15.1.1: Notes Gating — Flag-Only Claiming, Coder Cleanup, and --human Flag
+
+Make human notes injection 100% explicit opt-in. Simplify `should_claim_notes()` to
+check only `HUMAN_MODE` and `WITH_NOTES` flags (removing task-text pattern matching).
+Update coder.sh to gate claiming behind the simplified check and remove the phantom
+COMPLETE→IN PROGRESS downgrade. Add `--human [TAG]` flag parsing to tekhton.sh.
 
 **Files to modify:**
-- `lib/notes.sh` — Simplify `should_claim_notes()` to be flag-only: returns
-  0 (true) only if `HUMAN_MODE=true` or `WITH_NOTES=true`. Remove ALL
-  task-text pattern matching (`human.?notes`, `HUMAN_NOTES` regex). Notes
-  injection is now 100% explicit opt-in via `--human` or `--with-notes` flags.
-  Remove the `HUMAN_NOTES_ALL_ADDRESSED` export from `resolve_human_notes()`
-  (no longer needed when claiming is gated).
-- `stages/coder.sh` — Gate `claim_human_notes()` call (line ~342) behind
-  `should_claim_notes`. Remove the `COMPLETE→IN PROGRESS` downgrade
-  block (lines ~444-452) that forces rework when notes aren't addressed. Ensure
-  `HUMAN_NOTES_BLOCK` is set to empty string (not undefined) when notes are not
-  claimed, so `{{IF:HUMAN_NOTES_BLOCK}}` simply doesn't render.
-- `lib/drift_cleanup.sh` — Add `clear_resolved_nonblocking_notes()` function
-  that reads all items from the `## Resolved` section of NON_BLOCKING_LOG.md,
-  returns them (for metrics capture), then empties the section. Only runs on
-  successful pipeline completion. Keep the existing
-  `clear_completed_nonblocking_notes()` unchanged.
-- `lib/config_defaults.sh` — Change `AUTO_COMMIT` default to be conditional:
-  `true` when `MILESTONE_MODE=true`, `false` otherwise. Explicit user config
-  in pipeline.conf still overrides.
-- `tekhton.sh` — Add `--with-notes` flag parsing that sets `WITH_NOTES=true`.
-  Add `--human [TAG]` flag parsing that sets `HUMAN_MODE=true` and optionally
-  `HUMAN_NOTES_TAG=BUG|FEAT|POLISH`.
+- `lib/notes.sh` — Simplify `should_claim_notes()` (lines 12-31): remove the
+  `grep -qE -i 'human.?notes|HUMAN_NOTES'` task-text matching block (lines 25-28).
+  Keep the `WITH_NOTES` check (line 16) and rename the `NOTES_FILTER` check to
+  also check `HUMAN_MODE=true`. The function should return 0 only when
+  `WITH_NOTES=true`, `HUMAN_MODE=true`, or `NOTES_FILTER` is set. Remove
+  the `task_text` parameter since it's no longer used. Update the usage comment.
+- `stages/coder.sh` — The `claim_human_notes` call (line 327) is already gated
+  behind `should_claim_notes "$TASK"`. Update to `should_claim_notes` (no arg)
+  after the parameter removal. Similarly update the resolve call (line 441).
+  Ensure the `elif` branch (lines 329-331) still sets `HUMAN_NOTES_BLOCK=""`
+  when notes exist but aren't claimed — but change the condition to match the
+  new parameterless `should_claim_notes`. Remove the COMPLETE→IN PROGRESS
+  downgrade block if it exists (scout report references lines ~440-452, but
+  current code may have shifted).
+- `tekhton.sh` — Add `--human` flag parsing in the argument loop. `--human`
+  sets `HUMAN_MODE=true`. If the next argument is one of BUG, FEAT, or POLISH,
+  consume it as `HUMAN_NOTES_TAG`. Add both `HUMAN_MODE` and `HUMAN_NOTES_TAG`
+  initialization (defaulting to `false` and empty string) near the other flag
+  defaults.
 
 **Acceptance criteria:**
 - `should_claim_notes` returns 1 (false) when neither flag is set, regardless
@@ -361,14 +361,13 @@ milestone mode. Each fix is self-contained and leaves the codebase in a working 
 - Task text matching ("human notes", "HUMAN_NOTES") no longer triggers claiming
 - Coder prompt has empty `HUMAN_NOTES_BLOCK` when notes are not claimed
 - `{{IF:HUMAN_NOTES_BLOCK}}` section does not render when notes are not claimed
-- `COMPLETE→IN PROGRESS` downgrade no longer exists in coder.sh
-- `clear_resolved_nonblocking_notes()` empties `## Resolved` section and returns
-  the cleared items
-- `AUTO_COMMIT` defaults to `true` in milestone mode, `false` otherwise
-- Explicit `AUTO_COMMIT=false` in pipeline.conf overrides the milestone default
-- `--with-notes` flag is accepted without error
+- COMPLETE→IN PROGRESS downgrade no longer exists in coder.sh (if present)
 - `--human` flag is accepted and sets `HUMAN_MODE=true`
 - `--human BUG` sets `HUMAN_NOTES_TAG=BUG`
+- `--human FEAT` sets `HUMAN_NOTES_TAG=FEAT`
+- `--human POLISH` sets `HUMAN_NOTES_TAG=POLISH`
+- `--human` without a tag argument does not consume the next positional argument
+  as a tag (only BUG/FEAT/POLISH are valid tag values)
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on all modified files
 
@@ -376,19 +375,80 @@ milestone mode. Each fix is self-contained and leaves the codebase in a working 
 - `HUMAN_NOTES_BLOCK` must be set to `""` (empty string), not left unset, when
   notes are not claimed. The template engine treats unset variables differently
   from empty ones.
-- The `HUMAN_NOTES_ALL_ADDRESSED` removal must not break any other consumers.
-  Grep for all references before removing.
+- `should_claim_notes` is called in two places in coder.sh (claiming and resolving).
+  Both must be updated to the parameterless form.
+- The `--human` flag parser must handle edge cases: `--human` as the last argument
+  (no tag), `--human` followed by a non-tag argument (e.g., `--human --complete`
+  should not consume `--complete` as a tag).
+- `HUMAN_MODE` and `HUMAN_NOTES_TAG` must be exported so they're visible to
+  sourced libraries (notes.sh checks `HUMAN_MODE`).
+
+**Seeds Forward:**
+- Milestone 15.1.2 is independent and can run in parallel.
+- Milestone 15.4 builds the `--human` workflow on top of the flag-only gating
+  established here.
+- Milestone 15.3 depends on `should_claim_notes` being flag-only for reliable
+  `finalize_run()` behavior.
+
+#### Milestone 15.1.2: Resolved Cleanup Function and AUTO_COMMIT Conditional Default
+
+Add `clear_resolved_nonblocking_notes()` to lib/drift_cleanup.sh that empties the
+`## Resolved` section of NON_BLOCKING_LOG.md on successful pipeline completion.
+Change `AUTO_COMMIT` default in lib/config_defaults.sh to be conditional: `true`
+when `MILESTONE_MODE=true`, `false` otherwise.
+
+**Files to modify:**
+- `lib/drift_cleanup.sh` — Add `clear_resolved_nonblocking_notes()` function
+  after the existing `clear_completed_nonblocking_notes()` (line ~184). The
+  function reads all items from the `## Resolved` section of NON_BLOCKING_LOG.md,
+  prints them to stdout (for metrics capture by the caller), then removes the
+  items while preserving the `## Resolved` heading. Follow the same AWK pattern
+  used by `clear_completed_nonblocking_notes()` for consistency. Return 0 on
+  success or if no resolved items exist.
+- `lib/config_defaults.sh` — Change the `AUTO_COMMIT` default (line 128-129)
+  to be conditional on `MILESTONE_MODE`. When `MILESTONE_MODE=true`, default
+  to `true`. When `MILESTONE_MODE` is false or unset, default to `false`.
+  The existing `: "${AUTO_COMMIT:=true}"` syntax means explicit user config
+  in pipeline.conf still overrides (it's set before defaults are loaded).
+  The conditional must check `MILESTONE_MODE` which is set during flag parsing
+  in tekhton.sh before `config_defaults.sh` is sourced.
+- `tests/test_auto_commit_conditional_default.sh` — Update the existing test
+  file (if it exists) or verify it covers: milestone mode defaults to true,
+  non-milestone defaults to false, explicit override works in both modes.
+
+**Acceptance criteria:**
+- `clear_resolved_nonblocking_notes()` empties `## Resolved` section items and
+  prints them to stdout
+- `clear_resolved_nonblocking_notes()` preserves the `## Resolved` heading itself
+- `clear_resolved_nonblocking_notes()` returns 0 when no resolved items exist
+- `clear_resolved_nonblocking_notes()` returns 0 when NON_BLOCKING_LOG.md doesn't
+  exist
+- `AUTO_COMMIT` defaults to `true` in milestone mode
+- `AUTO_COMMIT` defaults to `false` in non-milestone mode
+- Explicit `AUTO_COMMIT=false` in pipeline.conf overrides the milestone default
+- Explicit `AUTO_COMMIT=true` in pipeline.conf overrides the non-milestone default
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
 - `clear_resolved_nonblocking_notes()` must preserve the `## Resolved` heading
-  itself — only clear the items underneath it.
+  itself — only clear the items underneath it. Don't delete blank lines between
+  the heading and the first item.
 - The `AUTO_COMMIT` conditional default must be set AFTER `MILESTONE_MODE` is
-  determined in the config loading sequence.
+  determined in the config loading sequence. Verify the sourcing order in
+  tekhton.sh: flag parsing → config load → config_defaults.sh. If
+  `config_defaults.sh` is sourced before flag parsing, the conditional won't
+  work and the assignment must move to a later point.
+- The existing test file `tests/test_auto_commit_conditional_default.sh` already
+  exists — read it first to understand what's already covered before modifying.
+- `AUTO_COMMIT` was previously defaulting to `true` unconditionally (line 128-129).
+  The CLAUDE.md says it should default to `false` in non-milestone mode. This is
+  a behavior change for non-milestone users who relied on the `true` default.
 
 **Seeds Forward:**
 - Milestone 15.2 depends on the `AUTO_COMMIT` conditional default for
   auto-commit integration in `finalize_run()`.
 - Milestone 15.3 calls `clear_resolved_nonblocking_notes()` from `finalize_run()`.
-- Milestone 15.4 builds the `--human` workflow on top of flag-only gating.
-
 #### Milestone 15.2: Milestone Marking, Archival Cleanup, and [DONE] Migration
 
 Fix the milestone [DONE] chicken-and-egg problem and the [DONE] line accumulation.

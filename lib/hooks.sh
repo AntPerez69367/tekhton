@@ -119,15 +119,15 @@ ${root_cause}"
     fi
 
     # Append git diff --stat for a concrete file list and change summary.
-    # Prefer --cached (staged changes) since tekhton.sh pre-stages before calling
-    # this function. Fall back to HEAD comparison for unstaged working tree changes.
+    # Compare working tree against HEAD — no pre-staging required. Staging
+    # happens once in _do_git_commit() right before the actual commit.
     local diff_stat=""
-    diff_stat=$(git diff --cached --stat 2>/dev/null || true)
-    if [ -z "$diff_stat" ]; then
-        diff_stat=$(git diff HEAD --stat 2>/dev/null || true)
-    fi
+    diff_stat=$(git diff HEAD --stat 2>/dev/null || true)
     if [ -z "$diff_stat" ]; then
         diff_stat=$(git diff --stat 2>/dev/null || true)
+    fi
+    if [ -z "$diff_stat" ]; then
+        diff_stat=$(git diff --cached --stat 2>/dev/null || true)
     fi
     if [ -n "$diff_stat" ]; then
         # Last line of diff --stat is the summary (e.g., "7 files changed, 73 insertions(+), 54 deletions(-)")

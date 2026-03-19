@@ -7,6 +7,7 @@
 # - Sets WITH_NOTES=true globally
 # - Forces claim_human_notes() regardless of task text
 # - Works in combination with should_claim_notes()
+# - Task text is NEVER inspected (flag-only gating)
 # =============================================================================
 set -euo pipefail
 
@@ -17,6 +18,8 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # --- Minimal pipeline globals ------------------------------------------------
 PROJECT_DIR="$TMPDIR"
 WITH_NOTES=false
+HUMAN_MODE=false
+NOTES_FILTER=""
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
@@ -27,14 +30,6 @@ assert_eq() {
     local name="$1" expected="$2" actual="$3"
     if [ "$expected" != "$actual" ]; then
         echo "FAIL: $name — expected '$expected', got '$actual'"
-        FAIL=1
-    fi
-}
-
-assert_true() {
-    local name="$1" condition="${2:-}"
-    if ! eval "$condition"; then
-        echo "FAIL: $name — condition false: $condition"
         FAIL=1
     fi
 }
@@ -51,7 +46,7 @@ assert_eq "1.1 default WITH_NOTES" "false" "$WITH_NOTES"
 # =============================================================================
 
 WITH_NOTES=true
-if should_claim_notes "implement auth module"; then
+if should_claim_notes; then
     # Expected — WITH_NOTES forces claiming
     :
 else
@@ -60,19 +55,22 @@ else
 fi
 
 # =============================================================================
-# Test 3: WITH_NOTES=false respects task text matching
+# Test 3: WITH_NOTES=false — task text is never inspected
 # =============================================================================
 
 WITH_NOTES=false
+HUMAN_MODE=false
+NOTES_FILTER=""
 # Task without notes keyword should not claim
-if should_claim_notes "implement auth module"; then
+if should_claim_notes; then
     echo "FAIL: 3.1 unrelated task should not claim"
     FAIL=1
 fi
 
-# Task with notes keyword should claim
-if ! should_claim_notes "address human notes"; then
-    echo "FAIL: 3.2 task with notes should claim"
+# Task text mentioning "human notes" does NOT trigger claiming (flag-only)
+# should_claim_notes no longer accepts task text parameter
+if should_claim_notes; then
+    echo "FAIL: 3.2 no flags set should not claim"
     FAIL=1
 fi
 
@@ -80,48 +78,52 @@ fi
 # Test 4: Toggling WITH_NOTES changes behavior
 # =============================================================================
 
-task="implement database migration"
+HUMAN_MODE=false
+NOTES_FILTER=""
 
 WITH_NOTES=false
-if should_claim_notes "$task"; then
+if should_claim_notes; then
     echo "FAIL: 4.1 should not claim with WITH_NOTES=false"
     FAIL=1
 fi
 
 WITH_NOTES=true
-if ! should_claim_notes "$task"; then
+if ! should_claim_notes; then
     echo "FAIL: 4.2 should claim with WITH_NOTES=true"
     FAIL=1
 fi
 
 WITH_NOTES=false
-if should_claim_notes "$task"; then
+if should_claim_notes; then
     echo "FAIL: 4.3 should not claim after toggling back to false"
     FAIL=1
 fi
 
 # =============================================================================
-# Test 5: WITH_NOTES and task text are independent conditions (OR logic)
+# Test 5: WITH_NOTES and HUMAN_MODE are independent conditions (OR logic)
 # =============================================================================
 
-# WITH_NOTES=true OR task mentions human notes → claim
+# WITH_NOTES=true → claim
 WITH_NOTES=true
-if ! should_claim_notes "any task"; then
+HUMAN_MODE=false
+if ! should_claim_notes; then
     echo "FAIL: 5.1 WITH_NOTES=true should force claim"
     FAIL=1
 fi
 
-# WITH_NOTES=false AND task mentions human notes → claim
+# HUMAN_MODE=true → claim
 WITH_NOTES=false
-if ! should_claim_notes "address human notes"; then
-    echo "FAIL: 5.2 task mentioning notes should force claim"
+HUMAN_MODE=true
+if ! should_claim_notes; then
+    echo "FAIL: 5.2 HUMAN_MODE=true should force claim"
     FAIL=1
 fi
 
-# WITH_NOTES=false AND task doesn't mention human notes → don't claim
+# Neither flag → no claim
 WITH_NOTES=false
-if should_claim_notes "random task"; then
-    echo "FAIL: 5.3 random task without flag should not claim"
+HUMAN_MODE=false
+if should_claim_notes; then
+    echo "FAIL: 5.3 no flags should not claim"
     FAIL=1
 fi
 
@@ -147,21 +149,18 @@ EOF
 cd "$PROJECT_DIR"
 
 # Test that claim_human_notes can be controlled via WITH_NOTES
-# (We can't directly test claim_human_notes since it modifies files,
-# but we can test that WITH_NOTES is visible to it via should_claim_notes)
-
+HUMAN_MODE=false
 WITH_NOTES=false
-task="implement auth"
 
-# When WITH_NOTES=false and task doesn't mention notes, should_claim_notes returns false
-if should_claim_notes "$task"; then
+# When WITH_NOTES=false, should_claim_notes returns false
+if should_claim_notes; then
     echo "FAIL: 6.1 gate should prevent claiming"
     FAIL=1
 fi
 
 WITH_NOTES=true
-# When WITH_NOTES=true, gate opens regardless of task
-if ! should_claim_notes "$task"; then
+# When WITH_NOTES=true, gate opens
+if ! should_claim_notes; then
     echo "FAIL: 6.2 gate should open with WITH_NOTES=true"
     FAIL=1
 fi
@@ -170,30 +169,33 @@ fi
 # Test 7: WITH_NOTES works with different case variations
 # =============================================================================
 
+HUMAN_MODE=false
+NOTES_FILTER=""
+
 # The implementation checks ${WITH_NOTES:-false} = "true"
 # So only the string "true" (lowercase) should work
 
 WITH_NOTES="true"
-if ! should_claim_notes "any task"; then
+if ! should_claim_notes; then
     echo "FAIL: 7.1 WITH_NOTES='true' should work"
     FAIL=1
 fi
 
 # Other values should not enable claiming
 WITH_NOTES="True"  # Capital T
-if should_claim_notes "random task"; then
+if should_claim_notes; then
     echo "FAIL: 7.2 WITH_NOTES='True' should not work (case-sensitive)"
     FAIL=1
 fi
 
 WITH_NOTES="1"  # Truthy value but not the string "true"
-if should_claim_notes "random task"; then
+if should_claim_notes; then
     echo "FAIL: 7.3 WITH_NOTES='1' should not work (must be 'true')"
     FAIL=1
 fi
 
 WITH_NOTES="true"  # Back to valid value
-if ! should_claim_notes "random task"; then
+if ! should_claim_notes; then
     echo "FAIL: 7.4 WITH_NOTES='true' should work again"
     FAIL=1
 fi
@@ -203,14 +205,17 @@ fi
 # =============================================================================
 
 unset WITH_NOTES
-# When unset, it defaults to "false" in the grep -qiE test
-if should_claim_notes "random task"; then
+HUMAN_MODE=false
+NOTES_FILTER=""
+# When unset, it defaults to "false"
+if should_claim_notes; then
     echo "FAIL: 8.1 unset WITH_NOTES should default to false"
     FAIL=1
 fi
 
-if ! should_claim_notes "address human notes"; then
-    echo "FAIL: 8.2 task with notes should still claim when WITH_NOTES unset"
+# No flag set at all — should not claim
+if should_claim_notes; then
+    echo "FAIL: 8.2 no flags should not claim when WITH_NOTES unset"
     FAIL=1
 fi
 
@@ -219,13 +224,19 @@ fi
 # =============================================================================
 
 WITH_NOTES=false
-if should_claim_notes "random task"; then
-    echo "FAIL: 9.1 WITH_NOTES=false should not claim random task"
+HUMAN_MODE=false
+NOTES_FILTER=""
+if should_claim_notes; then
+    echo "FAIL: 9.1 WITH_NOTES=false should not claim"
     FAIL=1
 fi
 
-if ! should_claim_notes "fix human notes"; then
-    echo "FAIL: 9.2 task with notes should claim even with WITH_NOTES=false"
+# Only flag-based claiming works
+WITH_NOTES=false
+HUMAN_MODE=false
+NOTES_FILTER="BUG"
+if ! should_claim_notes; then
+    echo "FAIL: 9.2 NOTES_FILTER=BUG should claim"
     FAIL=1
 fi
 

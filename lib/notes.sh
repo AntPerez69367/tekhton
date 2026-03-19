@@ -5,25 +5,25 @@ set -euo pipefail
 # States: [ ] not started, [~] in-scope this run (transient), [x] completed
 
 # should_claim_notes — Returns 0 (true) if human notes should be claimed for
-# this task. Notes are only injected when the task explicitly references human
-# notes OR the --with-notes flag is set. This prevents phantom notes injection
-# into unrelated tasks.
-# Usage: should_claim_notes "$TASK"
+# this run. Notes are only injected when an explicit flag is set:
+#   --with-notes (WITH_NOTES=true)
+#   --human      (HUMAN_MODE=true)
+#   --notes-filter X (NOTES_FILTER non-empty)
+# Task text is never inspected. This prevents phantom notes injection.
+# Usage: should_claim_notes
 should_claim_notes() {
-    local task_text="${1:-}"
-
-    # Global override: --with-notes flag forces claiming
+    # --with-notes flag forces claiming
     if [[ "${WITH_NOTES:-false}" = "true" ]]; then
+        return 0
+    fi
+
+    # --human flag forces claiming
+    if [[ "${HUMAN_MODE:-false}" = "true" ]]; then
         return 0
     fi
 
     # Active notes filter implies intent to address notes
     if [[ -n "${NOTES_FILTER:-}" ]]; then
-        return 0
-    fi
-
-    # Match task text against human-notes patterns (case-insensitive)
-    if grep -qE -i 'human.?notes|HUMAN_NOTES' <<< "$task_text"; then
         return 0
     fi
 
@@ -179,6 +179,11 @@ resolve_human_notes() {
         sed -i 's/^- \[~\] /- [x] /' HUMAN_NOTES.md
         log "HUMAN_NOTES.md — all [~] items marked [x] (coder status: COMPLETE, no structured report)."
         warn "Coder did not produce structured ## Human Notes Status section."
+    # Fallback for success without CODER_SUMMARY.md: _PIPELINE_EXIT_CODE is set to 0 by
+    # tekhton.sh:991 before calling this function when pipeline succeeds. The elif path fires
+    # only when CODER_SUMMARY.md is absent but exit code is clean (features implemented and
+    # committed). This guard exists to allow test harnesses to set _PIPELINE_EXIT_CODE to
+    # non-zero to simulate failure scenarios.
     elif [[ -n "${_PIPELINE_EXIT_CODE:-}" ]] && [[ "${_PIPELINE_EXIT_CODE}" -eq 0 ]]; then
         # Pipeline succeeded (exit 0) but CODER_SUMMARY.md is missing or incomplete.
         # Features were implemented and committed — treat as success rather than resetting.

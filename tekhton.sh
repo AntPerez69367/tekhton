@@ -149,6 +149,8 @@ NOTES_FILTER=""
 MILESTONE_MODE=false
 AUTO_ADVANCE=false
 WITH_NOTES=false
+HUMAN_MODE=false
+HUMAN_NOTES_TAG=""
 SKIP_AUDIT=false
 FORCE_AUDIT=false
 SKIP_FINAL_CHECKS=false
@@ -527,6 +529,17 @@ EOF
             ;;
         --help|-h) usage 0 ;;
         --with-notes) WITH_NOTES=true; shift ;;
+        --human)
+            HUMAN_MODE=true
+            shift
+            # Consume optional tag argument (BUG, FEAT, POLISH) if present
+            if [[ "${1:-}" =~ ^(BUG|FEAT|POLISH)$ ]]; then
+                HUMAN_NOTES_TAG="$1"
+                shift
+            fi
+            export HUMAN_MODE HUMAN_NOTES_TAG
+            ;;
+
         --usage-threshold)
             shift
             USAGE_THRESHOLD_PCT="$1"
@@ -1017,17 +1030,14 @@ if [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
     _MS_COMMIT_DISPOSITION=$(get_milestone_disposition 2>/dev/null || echo "")
 fi
 
-# --- Pre-stage and generate commit message -----------------------------------
-# Stage all changes BEFORE generating the commit message so that
-# generate_commit_message() can use `git diff --cached --stat` to produce an
-# accurate file list and change summary (including previously untracked files).
-# Remove the lock file first so it isn't included in the staged changes.
+# --- Generate commit message --------------------------------------------------
+# Remove the lock file first so it isn't included in any subsequent staging.
 if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
     rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
 fi
-_check_gitignore_safety
-git add -A > /dev/null 2>&1
 
+# generate_commit_message() reads diff data via `git diff HEAD --stat` —
+# no pre-staging required. Staging + safety checks happen once in _do_git_commit().
 COMMIT_MSG=$(generate_commit_message "$TASK" "$_MS_COMMIT_NUM" "$_MS_COMMIT_DISPOSITION" || echo "feat: ${TASK}")
 
 # --- Done --------------------------------------------------------------------
