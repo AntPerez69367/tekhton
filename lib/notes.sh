@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # notes.sh — Human notes management (three-state tracking)
 # Sourced by tekhton.sh. Expects: NOTES_FILTER, LOG_DIR, TIMESTAMP, log()
 # States: [ ] not started, [~] in-scope this run (transient), [x] completed
