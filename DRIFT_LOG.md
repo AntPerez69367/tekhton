@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-19
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-03-19 | "Fix the items in the NON_BLOCKING_LOG.md"] `NON_BLOCKING_LOG.md:23` and `:13` — duplicate resolved entry for `lib/agent_monitor.sh` split (same text appears twice in Resolved section). Pre-existing issue, not introduced by this run.

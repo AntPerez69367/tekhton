@@ -343,6 +343,8 @@ usage() {
     echo "  --init-notes              Create a blank HUMAN_NOTES.md template and exit"
     echo "  --seed-contracts          Seed inline system contracts in lib/ source files"
     echo "  --with-notes              Force human notes injection regardless of task text"
+    echo "  --usage-threshold N       Pause if session usage exceeds N% (overrides config)"
+    echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
     echo "  --skip-audit              Skip architect audit even if threshold is reached"
     echo "  --force-audit             Force architect audit regardless of threshold"
     echo ""
@@ -525,6 +527,12 @@ EOF
             ;;
         --help|-h) usage 0 ;;
         --with-notes) WITH_NOTES=true; shift ;;
+        --usage-threshold)
+            shift
+            USAGE_THRESHOLD_PCT="$1"
+            shift
+            ;;
+        --no-commit) AUTO_COMMIT=false; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --) shift; break ;;

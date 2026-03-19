@@ -10,11 +10,12 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/notes.sh:26` — `HUMAN_NOTES` literal in pattern `'human.?notes|HUMAN_NOTES'` is redundant with `-i` (case-insensitive) since `human.?notes` already matches `HUMAN_NOTES`. Not a bug, but slightly noisy pattern.
-- `stages/coder.sh:322` — `build_context_packet` is called before the `should_claim_notes` gate (lines 327-332). If `build_context_packet` ever reads `HUMAN_NOTES_BLOCK` as a global, it would see the pre-gate value. Currently safe since the function takes explicit args, but the ordering is subtly coupled and worth a comment.
+- `lib/hooks.sh:110,113` — `grep -qi "fix\|bug"` and `grep -qi "^n/a\|^none\|^(fill"` use BRE `\|` alternation (GNU grep extension, not portable to macOS BSD grep). Use `-Eqi` with unescaped `|` for POSIX ERE portability.
+- `tests/test_auto_commit_conditional_default.sh:102-104` — The `reload_defaults` call at line 103 is dead: the comment "Should NOT override since AUTO_COMMIT is already set" is incorrect because `reload_defaults` unsets `AUTO_COMMIT` first (as the next comment acknowledges). Remove the dead `reload_defaults` line; the `AUTO_COMMIT=false` + `source config_defaults.sh` sequence that follows is the correct test.
 
 ## Coverage Gaps
-- None
+- No test covers `--usage-threshold` with a missing value argument (crash scenario under `set -u`)
+- No test covers root cause extraction in `generate_commit_message` when task contains "fix" and `CODER_SUMMARY.md` has a non-N/A root cause
 
 ## Drift Observations
-- `NON_BLOCKING_LOG.md:23` and `:13` — duplicate resolved entry for `lib/agent_monitor.sh` split (same text appears twice in Resolved section). Pre-existing issue, not introduced by this run.
+- None
