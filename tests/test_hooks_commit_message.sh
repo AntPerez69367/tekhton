@@ -21,6 +21,7 @@ TASK="Test task"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
+source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
 
 # Stub milestone functions — not needed for these tests
 get_milestone_commit_prefix() { echo ""; }
