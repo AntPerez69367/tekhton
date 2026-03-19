@@ -98,7 +98,8 @@ run_stage_tester() {
         if grep -q "Compilation failed" "$LOG_FILE" || grep -q "Failed to load" "$LOG_FILE"; then
             error "One or more test files failed to compile. The tester report may be inaccurate."
             error "Compilation errors detected in:"
-            grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=/  /' | sed 's/:.*//' | sort -u | tee -a "$LOG_FILE"
+            _failed_paths=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=/  /' | sed 's/:.*//' | sort -u)
+            echo "$_failed_paths"
             warn "Fix the failing test files, then resume with: $0 --start-at tester \"${TASK}\""
             # Mark affected test files as unchecked in TESTER_REPORT.md so resume picks them up
             FAILED_FILES=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=//' | sed 's/:.*//' | sort -u)

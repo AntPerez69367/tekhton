@@ -11,6 +11,10 @@
 # shellcheck source=lib/agent_monitor.sh
 source "${TEKHTON_HOME}/lib/agent_monitor.sh"
 
+# Source post-invocation monitoring helpers (file-change detection, state reset)
+# shellcheck source=lib/agent_monitor_helpers.sh
+source "${TEKHTON_HOME}/lib/agent_monitor_helpers.sh"
+
 # Source transient error retry envelope (13.2.1)
 # shellcheck source=lib/agent_retry.sh
 source "${TEKHTON_HOME}/lib/agent_retry.sh"
