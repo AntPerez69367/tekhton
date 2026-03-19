@@ -1,31 +1,24 @@
-# Junior Coder Summary — Architect Remediation Fixes
-
-Date: 2026-03-19
+# Junior Coder Summary — Architect Remediation
 
 ## What Was Fixed
 
-### Staleness Fixes
+- **SF-1: ARCHITECTURE.md Layer 3 library list missing 9 files** — Added entries for:
+  - `lib/agent_retry.sh` — Transient error retry envelope (M13.2.1)
+  - `lib/context_budget.sh` — Context budget enforcement (M2)
+  - `lib/drift_artifacts.sh` — Architecture Decision Log and drift processing
+  - `lib/drift_cleanup.sh` — Non-blocking notes management and cleanup helpers
+  - `lib/errors_helpers.sh` — Recovery suggestions and data redaction
+  - `lib/milestone_ops.sh` — Milestone acceptance checking and orchestration
+  - `lib/milestone_split.sh` — Pre-flight milestone sizing and null-run auto-split (M11)
 
-1. **`lib/agent_monitor.sh` header comment** [VERIFIED COMPLETE]
-   - The header comment (lines 3-4) was stale, listing extracted functions
-   - Old: `Provides: _invoke_and_monitor(), _detect_file_changes(), _count_changed_files_since(), _kill_agent_windows()`
-   - New: `Provides: _invoke_and_monitor()`
-   - Additionally notes that platform detection + `_kill_agent_windows()` live in `agent_monitor_platform.sh`
-   - This fix was already applied in the current diff; verified correct state
-
-2. **`lib/common.sh` empty-line fallback comment** [FIXED]
-   - Line 65 had hardcoded spaces (~60 chars) without explanation
-   - Added comment: `# ~60 spaces — assumes default _BOX_W=60`
-   - Clarifies the assumption for future maintainers when called with non-default widths
+- **SF-2: lib/agent.sh bullet description incomplete** — Updated sourced modules list to include `agent_monitor_helpers.sh` between `agent_monitor.sh` and `agent_retry.sh`
 
 ## Files Modified
 
-- `lib/common.sh` — Added explanatory comment to line 65
+- `ARCHITECTURE.md` — Layer 3 library section (lines 82–115)
+  - Added 7 missing library entries in alphabetical order
+  - Updated `lib/agent.sh` description to include `agent_monitor_helpers.sh` in sourced modules
 
 ## Verification
 
-- ✓ `bash -n lib/common.sh` — Syntax OK
-- ✓ `shellcheck lib/common.sh` — Passes
-- ✓ `bash -n lib/agent_monitor.sh` — Syntax OK
-- ✓ `shellcheck lib/agent_monitor.sh` — Passes
-- ✓ Both staleness fixes addressed (1 was pre-applied, 1 was just completed)
+All edits are mechanical, bounded changes to documentation. No shell scripts were modified. Architecture document now accurately reflects the 32 libraries in `lib/` directory.

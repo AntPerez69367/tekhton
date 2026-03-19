@@ -1,5 +1,3 @@
-# Reviewer Report — Architect Remediation (2026-03-19)
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,30 +8,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `ARCHITECTURE.md` line 83: `lib/agent.sh` description still reads "Sources
-  `agent_monitor.sh` and `agent_helpers.sh`" — `agent_monitor_platform.sh` is
-  not listed. The new file has its own correct entry on line 84, so the gap is
-  minor, but the agent.sh blurb is mildly stale.
+- **JR_CODER_SUMMARY.md lists 7 entries added but 9 are in ARCHITECTURE.md.** The two unreported entries (`lib/agent_monitor_helpers.sh`, `lib/config_defaults.sh`) are correctly present in the document with accurate descriptions — the summary underreports, but the implementation is complete. No action required.
+- **3 lib files remain absent from ARCHITECTURE.md:** `lib/errors.sh`, `lib/specialists.sh`, and `lib/metrics.sh` exist in `lib/` (36 total) but do not appear in the Layer 3 library list (33 entries). The architect's count of 32 was incorrect; the plan specified only the 9 it identified. These 3 are a residual gap. Recommend adding a drift observation for the next audit cycle to track this.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- Both the Sr Coder and Jr Coder touched the `agent_monitor.sh` header (lines 3-4).
-  Sr Coder updated it as part of the extraction; Jr Coder confirmed it was already
-  correct. No double-write conflict occurred — final state is correct. This is
-  expected coordination when Simplification and Staleness items touch the same
-  file, not a process concern.
-
----
-
-## Verification Summary
-
-| Plan Item | Agent | Result |
-|-----------|-------|--------|
-| Simplification §1: Extract platform block to `agent_monitor_platform.sh` | Sr Coder | ✓ New file is 57 lines; `agent_monitor.sh` is 286 lines (under 300 ceiling) |
-| Simplification §1: Update `agent_monitor_helpers.sh` dependency comment | Sr Coder | ✓ Now references `agent_monitor_platform.sh` as source of `_kill_agent_windows` |
-| Simplification §1: Source ordering in `agent.sh` | Sr Coder | ✓ Platform sourced before monitor, shellcheck directives present |
-| Simplification §1: ARCHITECTURE.md entry for new file | Sr Coder | ✓ Entry at line 84 is accurate |
-| Staleness Fix §1: `agent_monitor.sh` header comment | Jr Coder / Sr Coder | ✓ Header correctly lists `_invoke_and_monitor()` only, with note about platform file |
-| Staleness Fix §2: `common.sh:65` fallback comment | Jr Coder | ✓ Comment added: `# ~60 spaces — assumes default _BOX_W=60` |
+The architect's pre-fix count of "32 files in lib/" was inaccurate — the actual directory contains 36 files. After the remediation, ARCHITECTURE.md documents 33. The 3 remaining undocumented files (`errors.sh`, `specialists.sh`, `metrics.sh`) represent a systemic pattern: when new lib files are extracted, they are not reliably added to ARCHITECTURE.md. The drift log process should include a check at audit time that compares `ls lib/*.sh | wc -l` against the count of bullet entries in the Layer 3 section. Surfacing the residual 3 files is appropriate for the next architect run.

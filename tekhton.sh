@@ -303,6 +303,7 @@ source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
+source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 
 # Stage implementations
@@ -761,9 +762,24 @@ trap _tekhton_sigint_handler INT
 
 _run_pipeline_stages() {
     # Stage 0: Architect Audit (conditional)
+    # Architect audit runs on its own turn/time budget. Save and restore
+    # the pipeline accumulators so architect turns do not inflate coder
+    # metrics or affect adaptive calibration.
     if [ "$START_AT" = "coder" ] && [ "$SKIP_AUDIT" = false ]; then
         if [ "$FORCE_AUDIT" = true ] || should_trigger_audit 2>/dev/null; then
+            local _pre_audit_turns="$TOTAL_TURNS"
+            local _pre_audit_time="$TOTAL_TIME"
+            local _pre_audit_summary="$STAGE_SUMMARY"
+
             run_stage_architect
+
+            # Record architect totals separately, then restore pipeline accumulators
+            export ARCHITECT_AUDIT_TURNS=$(( TOTAL_TURNS - _pre_audit_turns ))
+            export ARCHITECT_AUDIT_TIME=$(( TOTAL_TIME - _pre_audit_time ))
+            TOTAL_TURNS="$_pre_audit_turns"
+            TOTAL_TIME="$_pre_audit_time"
+            STAGE_SUMMARY="$_pre_audit_summary"
+            log "Architect audit used ${ARCHITECT_AUDIT_TURNS} turns (${ARCHITECT_AUDIT_TIME}s) — not counted against coder budget."
         fi
     fi
 
