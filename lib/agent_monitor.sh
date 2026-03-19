@@ -326,6 +326,40 @@ _invoke_and_monitor() {
     fi
 }
 
+# --- Monitoring state reset (13.1) -------------------------------------------
+# Cleans up FIFO, temp files, and resets API error flags between retry attempts.
+# Safe to call even when no prior monitoring state exists.
+#
+# Usage: _reset_monitoring_state SESSION_DIR
+
+_reset_monitoring_state() {
+    local session_dir="${1:?_reset_monitoring_state requires session_dir}"
+
+    # Kill any lingering FIFO reader subshell
+    if [[ -n "${_TEKHTON_AGENT_PID:-}" ]]; then
+        kill "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+        kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+        _kill_agent_windows
+    fi
+
+    # Remove stale FIFO and temp files (guard with existence checks)
+    rm -f "${session_dir}/agent_fifo_"* 2>/dev/null || true
+    rm -f "${session_dir}/agent_stderr.txt" 2>/dev/null || true
+    rm -f "${session_dir}/agent_last_output.txt" 2>/dev/null || true
+    rm -f "${session_dir}/agent_api_error.txt" 2>/dev/null || true
+    rm -f "${session_dir}/agent_exit" 2>/dev/null || true
+    rm -f "${session_dir}/agent_last_turns" 2>/dev/null || true
+
+    # Reset API error detection flags
+    _API_ERROR_DETECTED=false
+    _API_ERROR_TYPE=""
+
+    # Reset activity timestamps (touch a fresh marker if activity_marker exists)
+    if [[ -f "${session_dir}/activity_marker" ]]; then
+        touch "${session_dir}/activity_marker"
+    fi
+}
+
 # --- File-change detection helpers (FIFO loop + null-run detection) -----------
 
 # _detect_file_changes — 0 if files changed since marker, 1 otherwise.

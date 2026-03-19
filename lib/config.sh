@@ -248,6 +248,12 @@ load_config() {
     : "${CLEANUP_MAX_TURNS:=15}"            # Turn budget for cleanup agent
     : "${CLEANUP_TRIGGER_THRESHOLD:=5}"     # Min unresolved items before triggering
 
+    # --- Transient error retry defaults ---
+    : "${TRANSIENT_RETRY_ENABLED:=true}"          # Toggle transient error retry
+    : "${MAX_TRANSIENT_RETRIES:=3}"               # Max retries on transient errors per agent call
+    : "${TRANSIENT_RETRY_BASE_DELAY:=30}"         # Initial backoff delay in seconds
+    : "${TRANSIENT_RETRY_MAX_DELAY:=120}"         # Max backoff delay in seconds
+
     # --- Metrics defaults ---
     : "${METRICS_ENABLED:=true}"            # Enable run metrics collection
     : "${METRICS_MIN_RUNS:=5}"              # Min runs before adaptive calibration
@@ -304,6 +310,9 @@ load_config() {
     _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
     _clamp_config_value SPECIALIST_API_MAX_TURNS 50
     _clamp_config_value METRICS_MIN_RUNS 100
+    _clamp_config_value MAX_TRANSIENT_RETRIES 10
+    _clamp_config_value TRANSIENT_RETRY_BASE_DELAY 300
+    _clamp_config_value TRANSIENT_RETRY_MAX_DELAY 600
 
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     if [[ "$PIPELINE_STATE_FILE" != /* ]]; then

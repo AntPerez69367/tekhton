@@ -101,6 +101,55 @@ report_error() {
     } >&2
 }
 
+# --- Structured retry reporting (13.1) ----------------------------------------
+# Prints a formatted retry notice to stderr with attempt number, category, and delay.
+# Uses the same _is_utf8_terminal detection as report_error() for consistent rendering.
+#
+# Usage: report_retry ATTEMPT MAX_ATTEMPTS CATEGORY DELAY
+
+report_retry() {
+    local attempt="$1"
+    local max="$2"
+    local category="$3"
+    local delay="$4"
+
+    # Detect Unicode support for box-drawing characters
+    local _box_tl="+" _box_tr="+" _box_bl="+" _box_br="+"
+    local _box_h="-" _box_v="|" _box_w=60
+    if _is_utf8_terminal; then
+        _box_tl="╔" _box_tr="╗" _box_bl="╚" _box_br="╝"
+        _box_h="═" _box_v="║"
+    fi
+
+    local _hline=""
+    local _i=0
+    while [[ "$_i" -lt "$_box_w" ]]; do
+        _hline="${_hline}${_box_h}"
+        _i=$(( _i + 1 ))
+    done
+
+    # _rbox_line: prints a content line with left/right borders and padded interior.
+    _rbox_line() {
+        local _content="$1"
+        if [[ -n "$_content" ]]; then
+            printf '%s  %-*s%s\n' "$_box_v" "$((_box_w - 2))" "$_content" "$_box_v" 2>/dev/null || \
+                echo "${_box_v}  ${_content}"
+        else
+            printf '%s%-*s%s\n' "$_box_v" "$_box_w" "" "$_box_v" 2>/dev/null || \
+                echo "${_box_v}"
+        fi
+    }
+
+    {
+        echo
+        echo "${_box_tl}${_hline}${_box_tr}"
+        _rbox_line "RETRY: Transient error (${category})"
+        _rbox_line "Attempt ${attempt}/${max} — retrying in ${delay}s..."
+        echo "${_box_bl}${_hline}${_box_br}"
+        echo
+    } >&2
+}
+
 # --- Prerequisite check ------------------------------------------------------
 
 require_cmd() {
