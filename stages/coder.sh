@@ -323,6 +323,14 @@ ${nb_notes}"
 
     # --- Context budget reporting --------------------------------------------
 
+    # Mark human notes as in-progress before coder runs (only when task is about notes)
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes "$TASK"; then
+        claim_human_notes
+    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+        log "Human notes exist but task does not reference them — skipping notes injection."
+        HUMAN_NOTES_BLOCK=""
+    fi
+
     _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"
     _add_context_component "Glossary" "$GLOSSARY_BLOCK"
     _add_context_component "Milestone" "$MILESTONE_BLOCK"
@@ -336,14 +344,6 @@ ${nb_notes}"
     log_context_report "coder" "$CLAUDE_CODER_MODEL"
 
     # --- Invoke coder agent --------------------------------------------------
-
-    # Mark human notes as in-progress before coder runs (only when task is about notes)
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes "$TASK"; then
-        claim_human_notes
-    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        log "Human notes exist but task does not reference them — skipping notes injection."
-        HUMAN_NOTES_BLOCK=""
-    fi
 
     CODER_PROMPT=$(render_prompt "coder")
 

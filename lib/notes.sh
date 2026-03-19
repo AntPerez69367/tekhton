@@ -17,8 +17,13 @@ should_claim_notes() {
         return 0
     fi
 
+    # Active notes filter implies intent to address notes
+    if [[ -n "${NOTES_FILTER:-}" ]]; then
+        return 0
+    fi
+
     # Match task text against human-notes patterns (case-insensitive)
-    if echo "$task_text" | grep -qiE '[Hh]uman.?[Nn]otes|HUMAN_NOTES'; then
+    if grep -qE -i 'human.?notes|HUMAN_NOTES' <<< "$task_text"; then
         return 0
     fi
 

@@ -215,8 +215,9 @@ run_stage_architect() {
             # Join multi-line bullets: accumulate continuation lines (lines
             # that don't start with a bullet marker) into the previous bullet.
             local _oos_current=""
+            local cleaned
             while IFS= read -r line; do
-                local cleaned="${line#"${line%%[![:space:]]*}"}"
+                cleaned="${line#"${line%%[![:space:]]*}"}"
                 [ -z "$cleaned" ] && continue
                 if [[ "$cleaned" =~ ^[-*][[:space:]]+(.*) ]]; then
                     # New bullet — flush previous
@@ -277,8 +278,9 @@ run_stage_architect() {
         # Join multi-line bullets, then filter out non-actionable entries.
         local _design_items=()
         local _ds_current=""
+        local cleaned
         while IFS= read -r line; do
-            local cleaned="${line#"${line%%[![:space:]]*}"}"
+            cleaned="${line#"${line%%[![:space:]]*}"}"
             [ -z "$cleaned" ] && continue
             if [[ "$cleaned" =~ ^[-*][[:space:]]+(.*) ]]; then
                 # New bullet — flush previous
