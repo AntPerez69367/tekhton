@@ -318,7 +318,7 @@ Full design document: `DESIGN_v2.md`.
 #### [DONE] Milestone 13.2.1.2: Transient Retry Loop with Exponential Backoff
 #### [DONE] Milestone 13.2.2: Stage Cleanup and Metrics Integration
 
-#### Milestone 14: Turn Exhaustion Continuation Loop
+#### [DONE] Milestone 14: Turn Exhaustion Continuation Loop
 
 Add automatic continuation when an agent hits its turn limit but made substantive
 progress. Instead of saving state and requiring a human to re-run, the pipeline
@@ -413,13 +413,129 @@ should go to the split path, not the continuation path.
   the remaining items efficiently."
 
 **Seeds Forward:**
-- Milestone 15 (Outer Loop) uses continuation as one of its recovery strategies
+- Milestone 16 (Outer Loop) uses continuation as one of its recovery strategies
   in the orchestration state machine
 - The `continuation_attempts` metric enables future adaptive turn budgeting:
   if a project consistently needs 2 continuations, increase the default turn cap
 - The substantive-work heuristic can be refined using metrics data from Milestone 8
 
-#### Milestone 15: Outer Orchestration Loop (Milestone-to-Completion)
+#### Milestone 15: Pipeline Lifecycle Consolidation
+
+Consolidate the scattered post-pipeline bookkeeping into a single, ordered
+`finalize_run()` function and fix 7 systemic lifecycle bugs that cause artifact
+accumulation, phantom notes, and autonomous-mode blocking across pipeline runs.
+
+This is a structural consolidation milestone — no new features, just making the
+existing machinery work as designed.
+
+**Problems addressed:**
+1. **HUMAN_NOTES phantom injection** — `claim_human_notes()` runs every pipeline
+   invocation, injecting notes into the coder prompt even when the task has nothing
+   to do with those notes. Notes get claimed, coder ignores them (rightly), they
+   get reset on next run. Cycle repeats forever.
+2. **NON_BLOCKING_LOG `## Resolved` growth** — `clear_completed_nonblocking_notes()`
+   only clears `[x]` items from `## Open`, but items that transit to `## Resolved`
+   accumulate permanently.
+3. **DRIFT_LOG timing** — Drift observations resolved by the architect get
+   re-counted if the resolution happens after the count snapshot.
+4. **CLAUDE.md `[DONE]` line accumulation** — `archive_completed_milestone()`
+   replaces milestone blocks with one-line `#### [DONE] Milestone N: Title`
+   summaries that persist forever. After 24 milestones, 24 noise lines.
+5. **Interactive commit blocking** — `_prompt_commit()` in `hooks.sh` reads from
+   stdin, blocking autonomous/milestone mode. `AUTO_COMMIT` exists but defaults
+   to `false`.
+6. **Milestone [DONE] chicken-and-egg** — Nothing in the pipeline programmatically
+   marks a milestone heading as `[DONE]` in CLAUDE.md. Archival looks for `[DONE]`
+   but only the human or a separate `archive_all_completed_milestones()` call sets
+   it.
+7. **Scattered bookkeeping** — Post-pipeline work is spread across 5+ locations
+   in `tekhton.sh`: `run_final_checks()`, `process_drift_artifacts()`,
+   `record_run_metrics()`, `archive_reports()`, commit prompt, and
+   `archive_completed_milestone()`. Ordering bugs are inevitable.
+
+**Files to modify:**
+- `tekhton.sh` — Replace the scattered post-pipeline calls (lines ~1050-1120)
+  with a single `finalize_run()` call. The function lives in `lib/hooks.sh`.
+- `lib/hooks.sh` — Add `finalize_run()` that calls, in order:
+  1. `run_final_checks()` (existing)
+  2. `process_drift_artifacts()` (from drift_artifacts.sh)
+  3. `record_run_metrics()` (from metrics.sh)
+  4. `clear_resolved_nonblocking_notes()` (new — purges `## Resolved`)
+  5. `archive_reports()` (existing)
+  6. `mark_milestone_done()` (new — if milestone mode + acceptance passed)
+  7. Auto-commit (if `AUTO_COMMIT=true` or milestone mode)
+  8. `archive_completed_milestone()` (existing — now finds the `[DONE]` mark)
+- `lib/drift_cleanup.sh` — Add `clear_resolved_nonblocking_notes()` that empties
+  the `## Resolved` section of NON_BLOCKING_LOG.md after archiving its contents
+  to the run metrics.
+- `lib/milestone_archival.sh` — Change `archive_completed_milestone()` to REMOVE
+  the `[DONE]` one-liner from CLAUDE.md entirely after archiving to
+  MILESTONE_ARCHIVE.md, instead of leaving it behind. Add a single
+  `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment at the top
+  of the milestone list if not already present.
+- `lib/milestone_ops.sh` — Add `mark_milestone_done()` that finds the current
+  milestone's `#### Milestone N:` heading in CLAUDE.md and prepends `[DONE] ` to
+  it. Called by `finalize_run()` only after acceptance check passes.
+- `lib/config_defaults.sh` — Set `AUTO_COMMIT` default to `true` when
+  `MILESTONE_MODE=true`, `false` otherwise (preserving backward compatibility).
+- `stages/coder.sh` — Remove the `COMPLETE→IN PROGRESS` downgrade for unaddressed
+  HUMAN_NOTES (revert prior fix that treated the symptom). Instead, gate
+  `claim_human_notes()` behind a check: only claim notes if the task description
+  explicitly references them OR if a `--with-notes` flag is passed.
+- `lib/notes.sh` — Add `should_claim_notes(task)` that returns true only if the
+  task text contains a HUMAN_NOTES reference or the `--with-notes` flag is set.
+  Remove the `HUMAN_NOTES_ALL_ADDRESSED` export (no longer needed when claiming
+  is gated).
+- `prompts/coder.prompt.md` — Keep the `{{IF:HUMAN_NOTES_BLOCK}}` section but
+  it will only fire when notes are actually claimed (gated by
+  `should_claim_notes()`).
+
+**Acceptance criteria:**
+- Post-pipeline bookkeeping runs via a single `finalize_run()` call in a
+  deterministic order
+- `NON_BLOCKING_LOG.md` `## Resolved` section is emptied after each successful
+  run (contents preserved in metrics)
+- `CLAUDE.md` has zero `[DONE]` one-liner lines after archival — completed
+  milestones live only in `MILESTONE_ARCHIVE.md`
+- Milestone acceptance triggers `mark_milestone_done()` → archival finds the
+  mark → removes it entirely from CLAUDE.md
+- HUMAN_NOTES are only injected into coder prompt when the task references them
+  or `--with-notes` is passed
+- Pipeline runs in milestone mode auto-commit without interactive prompt
+- Non-milestone mode behavior unchanged (`AUTO_COMMIT=false` default preserved)
+- `finalize_run()` is the ONLY place post-pipeline bookkeeping happens — no
+  stragglers in `tekhton.sh`
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- The `finalize_run()` ordering matters. Metrics must be recorded BEFORE cleanup
+  so the resolved items count is captured. Archival must be AFTER commit so the
+  commit includes the milestone's code changes.
+- `mark_milestone_done()` must be idempotent — if the heading already has
+  `[DONE]`, don't add it twice.
+- The HUMAN_NOTES gating must not break the prompt template. If no notes are
+  claimed, `HUMAN_NOTES_BLOCK` should be empty (not undefined), so the
+  `{{IF:HUMAN_NOTES_BLOCK}}` conditional simply doesn't render.
+- The `## Resolved` cleanup should not run if the pipeline failed — only on
+  successful completion. Failed runs should preserve resolved items for the next
+  attempt.
+- Removing [DONE] one-liners from CLAUDE.md is a one-time migration. Clean up
+  the existing 24 [DONE] lines as part of this milestone.
+- Auto-commit in milestone mode should still respect `AUTO_COMMIT=false` if
+  explicitly set in pipeline.conf. The default changes, not the override behavior.
+
+**Seeds Forward:**
+- Milestone 16 (Outer Loop) benefits directly: `finalize_run()` is the single
+  function the outer loop calls after each iteration, auto-commit eliminates the
+  interactive prompt that would block the loop, and clean milestone archival
+  prevents CLAUDE.md bloat across chained milestone completions.
+- Clean CLAUDE.md (no [DONE] noise) improves context efficiency for all agents
+  that read it.
+- The `should_claim_notes()` gate can be extended to support task-tagged notes
+  (e.g., `[FEAT:auth]` → only claimed when task mentions "auth").
+
+#### Milestone 16: Outer Orchestration Loop (Milestone-to-Completion)
 
 Add a `--complete` flag that wraps the entire pipeline in an outer orchestration
 loop with a clear contract: **run this milestone until it passes acceptance or all
@@ -635,7 +751,7 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ### Milestone Plan
 
-#### Milestone 16: Tech Stack Detection Engine
+#### Milestone 17: Tech Stack Detection Engine
 
 Pure shell library that detects project language(s), framework(s), package manager,
 build system, and infers ANALYZE_CMD / TEST_CMD / BUILD_CHECK_CMD. No agent calls.
@@ -714,13 +830,13 @@ Returns structured detection results that `--init` and the crawler consume.
   comment, low-confidence get commented out with a suggestion.
 
 **Seeds Forward:**
-- Milestone 17 (crawler) uses `detect_languages()` and `detect_entry_points()`
+- Milestone 18 (crawler) uses `detect_languages()` and `detect_entry_points()`
   to decide which files to sample
-- Milestone 18 (smart init) uses `detect_commands()` to auto-populate
+- Milestone 19 (smart init) uses `detect_commands()` to auto-populate
   pipeline.conf and `detect_project_type()` to select the plan template
-- Milestone 20 (synthesis) uses `format_detection_report()` as input context
+- Milestone 21 (synthesis) uses `format_detection_report()` as input context
 
-#### Milestone 17: Project Crawler & Index Generator
+#### Milestone 18: Project Crawler & Index Generator
 
 Shell-driven breadth-first crawler that traverses a project directory and produces
 PROJECT_INDEX.md — a structured, token-budgeted manifest of the project's
@@ -807,16 +923,16 @@ calls. The index is the foundation for all downstream synthesis.
   batching with `find ... -exec wc -l {} +` rather than one `wc` per file.
 
 **Seeds Forward:**
-- Milestone 18 (smart init) embeds the index in the --init flow
-- Milestone 19 (incremental rescan) reuses `_crawl_file_inventory` with a
+- Milestone 19 (smart init) embeds the index in the --init flow
+- Milestone 20 (incremental rescan) reuses `_crawl_file_inventory` with a
   git-diff filter
-- Milestone 20 (synthesis) feeds PROJECT_INDEX.md to the agent for CLAUDE.md
+- Milestone 21 (synthesis) feeds PROJECT_INDEX.md to the agent for CLAUDE.md
   generation
 
-#### Milestone 18: Smart Init Orchestrator
+#### Milestone 19: Smart Init Orchestrator
 
 Replace the current `--init` with an intelligent, interactive initialization flow
-that uses tech stack detection (M16) and the project crawler (M17) to auto-populate
+that uses tech stack detection (M17) and the project crawler (M18) to auto-populate
 pipeline.conf, generate a rich PROJECT_INDEX.md, detect greenfield vs. brownfield,
 and guide the user to the appropriate next step (--plan or --replan).
 
@@ -861,7 +977,7 @@ and guide the user to the appropriate next step (--plan or --replan).
   - `_seed_claude_md(project_dir, detection_report)` — Creates an initial
     CLAUDE.md with: detected tech stack, directory structure summary, detected
     entry points, and TODO markers for sections the user should fill in.
-    Not a full generation — that's Milestone 20's job.
+    Not a full generation — that's Milestone 21's job.
 
 **Acceptance criteria:**
 - `--init` on a Node.js project auto-detects TypeScript, sets `TEST_CMD="npm test"`,
@@ -894,11 +1010,11 @@ and guide the user to the appropriate next step (--plan or --replan).
   value and how to override it.
 
 **Seeds Forward:**
-- Milestone 19 (incremental rescan) adds `--rescan` for index updates
-- Milestone 20 (agent synthesis) uses PROJECT_INDEX.md to generate full
+- Milestone 20 (incremental rescan) adds `--rescan` for index updates
+- Milestone 21 (agent synthesis) uses PROJECT_INDEX.md to generate full
   CLAUDE.md and DESIGN.md
 
-#### Milestone 19: Incremental Rescan & Index Maintenance
+#### Milestone 20: Incremental Rescan & Index Maintenance
 
 Add `--rescan` command that updates PROJECT_INDEX.md incrementally using git diff
 since the last scan. This keeps the project index current without repeating the
@@ -968,13 +1084,13 @@ projects can keep their index and documents in sync as the codebase evolves.
   was deleted (remove that language's dependency section entirely).
 
 **Seeds Forward:**
-- Milestone 20 uses the up-to-date index for synthesis
+- Milestone 21 uses the up-to-date index for synthesis
 - Future V3 `--watch` mode could trigger automatic rescan on file changes
 
-#### Milestone 20: Agent-Assisted Project Synthesis
+#### Milestone 21: Agent-Assisted Project Synthesis
 
-The capstone milestone. Uses PROJECT_INDEX.md from the crawler (M17) plus tech
-stack detection (M16) as input to an agent-assisted synthesis pipeline that
+The capstone milestone. Uses PROJECT_INDEX.md from the crawler (M18) plus tech
+stack detection (M17) as input to an agent-assisted synthesis pipeline that
 generates production-quality CLAUDE.md and DESIGN.md for brownfield projects. This
 is the brownfield equivalent of `--plan` — but instead of interviewing the user
 about a project that doesn't exist yet, it reads the project that already exists
