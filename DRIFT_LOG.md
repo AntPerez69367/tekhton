@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-18 | "Tackle the last feature in the HUMAN_NOTES.md"] `lib/drift.sh` at 677 lines — inconsistent boolean variable style across old and new functions in the same file (integer 0/1 vs string false/true).
 - [2026-03-18 | "Implement Milestone 12.2: Agent Exit Analysis, Real-Time Detection & Structured Reporting"] `lib/agent_monitor.sh` lines 132–222: The timed-read and blocking-read branches inside the FIFO reader subshell have diverged — the timed branch carries ring buffer, API detection, and future feature hooks while the blocking branch is a stripped-down copy. Future features added to the timed branch will need to be mirrored manually. A refactor to extract a `_process_fifo_line()` helper called from both branches would eliminate this maintenance surface.
 (none)
 

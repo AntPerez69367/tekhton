@@ -487,6 +487,106 @@ append_nonblocking_notes() {
     mv "$tmpfile" "$nb_file"
 }
 
+# clear_completed_nonblocking_notes — Removes [x] items from the ## Open section.
+# Called at the start of each run so only the current run's completions are visible.
+clear_completed_nonblocking_notes() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [ ! -f "$nb_file" ]; then
+        return 0
+    fi
+
+    # Count [x] items first — skip file rewrite if none exist
+    local completed_count
+    completed_count=$(awk '/^## Open/{f=1; next} f && /^##/{exit} f && /^- \[x\]/{c++} END{print c+0}' \
+        "$nb_file" 2>/dev/null)
+    if [ "$completed_count" -eq 0 ] 2>/dev/null; then
+        return 0
+    fi
+
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+    local in_open=false
+
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "^## Open"; then
+            in_open=true
+            echo "$line" >> "$tmpfile"
+        elif echo "$line" | grep -q "^## " && [ "$in_open" = true ]; then
+            in_open=false
+            echo "$line" >> "$tmpfile"
+        elif [ "$in_open" = true ] && echo "$line" | grep -qi "^- \[x\]"; then
+            # Skip completed items
+            :
+        else
+            echo "$line" >> "$tmpfile"
+        fi
+    done < "$nb_file"
+
+    mv "$tmpfile" "$nb_file"
+    log "Cleared ${completed_count} completed item(s) from NON_BLOCKING_LOG.md."
+}
+
+# get_completed_nonblocking_notes — Returns text of [x] items from ## Open.
+# Used to include completed items in the commit message.
+get_completed_nonblocking_notes() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [ ! -f "$nb_file" ]; then
+        return
+    fi
+    awk '/^## Open/{f=1; next} f && /^##/{exit} f && /^- \[x\]/{print}' \
+        "$nb_file" 2>/dev/null || true
+}
+
+# clear_resolved_drift_observations — Removes items from the ## Resolved section.
+# Called at the start of each run so only the current run's resolutions are visible.
+clear_resolved_drift_observations() {
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
+    if [ ! -f "$drift_file" ]; then
+        return 0
+    fi
+
+    # Count resolved items first — skip file rewrite if none exist
+    local resolved_count
+    resolved_count=$(awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{c++} END{print c+0}' \
+        "$drift_file" 2>/dev/null)
+    if [ "$resolved_count" -eq 0 ] 2>/dev/null; then
+        return 0
+    fi
+
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+    local in_resolved=false
+
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "^## Resolved"; then
+            in_resolved=true
+            echo "$line" >> "$tmpfile"
+        elif echo "$line" | grep -q "^## " && [ "$in_resolved" = true ]; then
+            in_resolved=false
+            echo "$line" >> "$tmpfile"
+        elif [ "$in_resolved" = true ] && echo "$line" | grep -q "^- \[RESOLVED"; then
+            # Skip resolved items
+            :
+        else
+            echo "$line" >> "$tmpfile"
+        fi
+    done < "$drift_file"
+
+    mv "$tmpfile" "$drift_file"
+    log "Cleared ${resolved_count} resolved item(s) from DRIFT_LOG.md."
+}
+
+# get_resolved_drift_observations — Returns text of [RESOLVED ...] items from ## Resolved.
+# Used to include resolved drift items in the commit message.
+get_resolved_drift_observations() {
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
+    if [ ! -f "$drift_file" ]; then
+        return
+    fi
+    awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{print}' \
+        "$drift_file" 2>/dev/null || true
+}
+
 # count_open_nonblocking_notes — Returns count of open (unchecked) notes.
 count_open_nonblocking_notes() {
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"

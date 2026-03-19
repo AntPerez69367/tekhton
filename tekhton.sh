@@ -725,6 +725,13 @@ if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
     archive_all_completed_milestones "CLAUDE.md"
 fi
 
+# --- Startup cleanup: clear completed items from logs -----------------------
+# Remove [x] items from NON_BLOCKING_LOG.md and [RESOLVED] items from DRIFT_LOG.md
+# so only the current run's completions appear. The commit message at the end of
+# the run captures what was resolved; these logs don't need to keep them forever.
+clear_completed_nonblocking_notes
+clear_resolved_drift_observations
+
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
 
 _tekhton_sigint_handler() {
