@@ -217,6 +217,53 @@ get_completed_nonblocking_notes() {
         "$nb_file" 2>/dev/null || true
 }
 
+# clear_resolved_nonblocking_notes — Empties the ## Resolved section of
+# NON_BLOCKING_LOG.md. Returns the cleared items on stdout for metrics capture.
+# Only call on successful pipeline completion. Preserves the ## Resolved heading.
+clear_resolved_nonblocking_notes() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [ ! -f "$nb_file" ]; then
+        return 0
+    fi
+
+    # Extract resolved items for metrics capture (output them before clearing)
+    local resolved_items
+    resolved_items=$(awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- /{print}' \
+        "$nb_file" 2>/dev/null || true)
+
+    if [ -z "$resolved_items" ]; then
+        return 0
+    fi
+
+    # Output cleared items for caller to capture
+    echo "$resolved_items"
+
+    # Rewrite file without resolved items (keep the ## Resolved heading)
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+    local in_resolved=false
+
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "^## Resolved"; then
+            in_resolved=true
+            echo "$line" >> "$tmpfile"
+        elif echo "$line" | grep -q "^## " && [[ "$in_resolved" = true ]]; then
+            in_resolved=false
+            echo "$line" >> "$tmpfile"
+        elif [[ "$in_resolved" = true ]] && echo "$line" | grep -q "^- "; then
+            # Skip resolved items
+            :
+        else
+            echo "$line" >> "$tmpfile"
+        fi
+    done < "$nb_file"
+
+    mv "$tmpfile" "$nb_file"
+    local count
+    count=$(echo "$resolved_items" | wc -l)
+    log "Cleared ${count} resolved item(s) from NON_BLOCKING_LOG.md ## Resolved section."
+}
+
 # clear_resolved_drift_observations — Removes items from the ## Resolved section.
 # Called at the start of each run so only the current run's resolutions are visible.
 clear_resolved_drift_observations() {

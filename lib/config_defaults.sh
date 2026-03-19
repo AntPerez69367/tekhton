@@ -125,7 +125,15 @@ set -euo pipefail
 
 # --- Usage threshold defaults ---
 : "${USAGE_THRESHOLD_PCT:=0}"              # 0 = disabled; set to e.g. 90 to pause at 90%
-: "${AUTO_COMMIT:=false}"                  # Auto-commit on pipeline success (skip prompt)
+# AUTO_COMMIT defaults to true in milestone mode, false otherwise.
+# Explicit user config in pipeline.conf overrides this conditional default.
+if [ -z "${AUTO_COMMIT+x}" ]; then
+    if [ "${MILESTONE_MODE:-false}" = "true" ]; then
+        AUTO_COMMIT=true
+    else
+        AUTO_COMMIT=false
+    fi
+fi
 
 # --- Metrics defaults ---
 : "${METRICS_ENABLED:=true}"

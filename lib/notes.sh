@@ -3,6 +3,27 @@
 # Sourced by tekhton.sh. Expects: NOTES_FILTER, LOG_DIR, TIMESTAMP, log()
 # States: [ ] not started, [~] in-scope this run (transient), [x] completed
 
+# should_claim_notes — Returns 0 (true) if human notes should be claimed for
+# this task. Notes are only injected when the task explicitly references human
+# notes OR the --with-notes flag is set. This prevents phantom notes injection
+# into unrelated tasks.
+# Usage: should_claim_notes "$TASK"
+should_claim_notes() {
+    local task_text="${1:-}"
+
+    # Global override: --with-notes flag forces claiming
+    if [[ "${WITH_NOTES:-false}" = "true" ]]; then
+        return 0
+    fi
+
+    # Match task text against human-notes patterns (case-insensitive)
+    if echo "$task_text" | grep -qiE '[Hh]uman.?[Nn]otes|HUMAN_NOTES'; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Reads HUMAN_NOTES.md and returns unchecked items count
 count_human_notes() {
     if [ ! -f "HUMAN_NOTES.md" ]; then
@@ -60,9 +81,6 @@ claim_human_notes() {
 # If CODER_SUMMARY.md lacks a "Human Notes Status" section, falls back to
 # marking all [~] items based on the coder's overall status.
 resolve_human_notes() {
-    # Reset tracking global
-    export HUMAN_NOTES_ALL_ADDRESSED=true
-
     if [ ! -f "HUMAN_NOTES.md" ]; then
         return
     fi
@@ -131,13 +149,13 @@ resolve_human_notes() {
             if [ "$remaining" -gt 0 ]; then
                 sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md
                 warn "HUMAN_NOTES.md — ${remaining} unmentioned [~] item(s) reset to [ ]."
-                export HUMAN_NOTES_ALL_ADDRESSED=false
+                log "Some human notes were not fully addressed."
             fi
 
             # If nothing was completed or explicitly addressed, notes were ignored
             if [ "$completed" -eq 0 ] && [ "$reset" -eq 0 ]; then
                 warn "Coder wrote ## Human Notes Status section but did not address any notes."
-                export HUMAN_NOTES_ALL_ADDRESSED=false
+                log "Some human notes were not fully addressed."
             fi
             return
         fi
@@ -159,7 +177,6 @@ resolve_human_notes() {
         # Coder didn't finish or no summary — reset everything
         sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md
         log "HUMAN_NOTES.md — all [~] items reset to [ ] (coder incomplete or missing summary)."
-        export HUMAN_NOTES_ALL_ADDRESSED=false
     fi
 }
 

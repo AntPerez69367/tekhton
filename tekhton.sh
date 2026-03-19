@@ -148,6 +148,7 @@ _check_pipeline_lock() {
 NOTES_FILTER=""
 MILESTONE_MODE=false
 AUTO_ADVANCE=false
+WITH_NOTES=false
 SKIP_AUDIT=false
 FORCE_AUDIT=false
 SKIP_FINAL_CHECKS=false
@@ -341,6 +342,7 @@ usage() {
     echo "  --notes-filter POLISH     Inject only [POLISH] notes this run"
     echo "  --init-notes              Create a blank HUMAN_NOTES.md template and exit"
     echo "  --seed-contracts          Seed inline system contracts in lib/ source files"
+    echo "  --with-notes              Force human notes injection regardless of task text"
     echo "  --skip-audit              Skip architect audit even if threshold is reached"
     echo "  --force-audit             Force architect audit regardless of threshold"
     echo ""
@@ -522,6 +524,7 @@ EOF
             exit 0
             ;;
         --help|-h) usage 0 ;;
+        --with-notes) WITH_NOTES=true; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --) shift; break ;;

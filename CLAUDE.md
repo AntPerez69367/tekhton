@@ -319,222 +319,189 @@ Full design document: `DESIGN_v2.md`.
 #### [DONE] Milestone 13.2.2: Stage Cleanup and Metrics Integration
 
 #### [DONE] Milestone 14: Turn Exhaustion Continuation Loop
+Based on the codebase analysis, here's the split:
 
-Add automatic continuation when an agent hits its turn limit but made substantive
-progress. Instead of saving state and requiring a human to re-run, the pipeline
-immediately re-invokes the agent with full prior-progress context and a fresh turn
-budget. This eliminates the most common human-in-the-loop scenario: "coder did 80%
-of the work, ran out of turns, I re-ran and it finished."
+#### Milestone 15.1: Bug Fixes — Notes Gating, Resolved Cleanup, and Auto-Commit Default
+
+Fix three of the seven systemic bugs independently: phantom HUMAN_NOTES injection,
+NON_BLOCKING_LOG `## Resolved` growth, and AUTO_COMMIT defaulting to `false` in
+milestone mode. Each fix is self-contained and leaves the codebase in a working state.
 
 **Files to modify:**
-- `stages/coder.sh` — After coder completion, before the existing turn-limit exit
-  path:
-  1. Check if `CODER_SUMMARY.md` exists and contains `## Status: IN PROGRESS`
-  2. Check if substantive work was done: `git diff --stat` shows ≥1 file modified
-  3. If both true: **do not exit**. Instead:
-     a. Increment `CONTINUATION_ATTEMPT` counter (starts at 0)
-     b. If `CONTINUATION_ATTEMPT >= MAX_CONTINUATION_ATTEMPTS`: trigger milestone
-        split (existing M11 path) or save state and exit
-     c. Build continuation context: git diff stat + CODER_SUMMARY.md contents +
-        "You are continuing from a previous run that hit the turn limit. Read the
-        modified files to understand current state. Do NOT redo completed work."
-     d. Log: "Coder hit turn limit with progress (attempt N/M). Continuing..."
-     e. Re-invoke `run_agent "Coder (continuation N)"` with the continuation
-        context injected into the prompt
-     f. After continuation agent completes, loop back to the status check
-  4. If `CODER_SUMMARY.md` says `## Status: COMPLETE`: proceed to review normally
-  5. If no substantive work (0 files modified): fall through to existing null-run
-     path (split or exit)
-- `stages/tester.sh` — Same pattern for tester: if partial tests remain and
-  substantive test files were created, re-invoke tester with "continue writing
-  the remaining tests" context. Cap at `MAX_CONTINUATION_ATTEMPTS`.
-- `lib/config.sh` — Add defaults: `MAX_CONTINUATION_ATTEMPTS=3`,
-  `CONTINUATION_ENABLED=true`
-- `lib/agent.sh` — Add `build_continuation_context(stage, attempt_num)` that
-  assembles: (1) previous CODER_SUMMARY.md or tester report, (2) git diff stat
-  of files modified so far, (3) explicit instruction not to redo work, (4) the
-  attempt number for the agent's awareness. Returns the context as a string for
-  prompt injection.
-- `prompts/coder.prompt.md` — Add `{{IF:CONTINUATION_CONTEXT}}` block that injects
-  the continuation instructions when present. Place it before the task section
-  so the agent reads its own prior summary before starting work.
-- `prompts/tester.prompt.md` — Add equivalent `{{IF:CONTINUATION_CONTEXT}}` block.
-- `lib/metrics.sh` — Add `continuation_attempts` field to JSONL record. Track how
-  many continuation loops were needed per stage.
-- `templates/pipeline.conf.example` — Add continuation config keys
-
-**Substantive work detection heuristic:**
-```
-substantive = (files_modified >= 1) AND (
-    (coder_summary_lines >= 20) OR
-    (git_diff_lines >= 50)
-)
-```
-This distinguishes "agent did real implementation work but ran out of time" from
-"agent spent all turns planning/reading and wrote almost nothing." The latter
-should go to the split path, not the continuation path.
+- `lib/notes.sh` — Add `should_claim_notes(task)` that returns 0 (true) only if
+  the task text matches `[Hh]uman.?[Nn]otes` or `HUMAN_NOTES` or if a global
+  `WITH_NOTES=true` flag is set. Remove the `HUMAN_NOTES_ALL_ADDRESSED` export
+  from `resolve_human_notes()` (no longer needed when claiming is gated).
+- `stages/coder.sh` — Gate `claim_human_notes()` call (line ~342) behind
+  `should_claim_notes "$TASK"`. Remove the `COMPLETE→IN PROGRESS` downgrade
+  block (lines ~444-452) that forces rework when notes aren't addressed. Ensure
+  `HUMAN_NOTES_BLOCK` is set to empty string (not undefined) when notes are not
+  claimed, so `{{IF:HUMAN_NOTES_BLOCK}}` simply doesn't render.
+- `lib/drift_cleanup.sh` — Add `clear_resolved_nonblocking_notes()` function
+  that reads all items from the `## Resolved` section of NON_BLOCKING_LOG.md,
+  returns them (for metrics capture), then empties the section. Only runs on
+  successful pipeline completion. Keep the existing
+  `clear_completed_nonblocking_notes()` unchanged.
+- `lib/config_defaults.sh` — Change `AUTO_COMMIT` default to be conditional:
+  `true` when `MILESTONE_MODE=true`, `false` otherwise. Explicit user config
+  in pipeline.conf still overrides.
+- `tekhton.sh` — Add `--with-notes` flag parsing that sets `WITH_NOTES=true`.
 
 **Acceptance criteria:**
-- Coder hitting turn limit with `Status: IN PROGRESS` and ≥1 modified file triggers
-  automatic continuation (no human prompt)
-- Continuation agent receives prior CODER_SUMMARY.md contents and git diff stat
-- Continuation agent does NOT redo work already shown in the prior summary
-- Maximum 3 continuation attempts before escalating to split or exit
-- After 3 failed continuations: if milestone mode, trigger auto-split; if not
-  milestone mode, save state and exit with clear message
-- Tester partial completion with ≥1 test file created triggers continuation
-- Each continuation attempt is logged with attempt number and progress metrics
-- `CONTINUATION_ENABLED=false` disables continuation (1.0-compatible behavior)
-- `metrics.jsonl` records continuation attempt count
-- Null runs (0 files modified) are NOT continued — they go to existing split/exit
+- `should_claim_notes "implement auth module"` returns 1 (false)
+- `should_claim_notes "address HUMAN_NOTES items"` returns 0 (true)
+- `should_claim_notes "fix human notes"` returns 0 (true)
+- `WITH_NOTES=true should_claim_notes "any task"` returns 0 (true)
+- Coder prompt has empty `HUMAN_NOTES_BLOCK` when notes are not claimed
+- `{{IF:HUMAN_NOTES_BLOCK}}` section does not render when notes are not claimed
+- `COMPLETE→IN PROGRESS` downgrade no longer exists in coder.sh
+- `clear_resolved_nonblocking_notes()` empties `## Resolved` section and returns
+  the cleared items
+- `AUTO_COMMIT` defaults to `true` in milestone mode, `false` otherwise
+- Explicit `AUTO_COMMIT=false` in pipeline.conf overrides the milestone default
+- `--with-notes` flag is accepted without error
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on all modified files
 
 **Watch For:**
-- The continuation context must include the FULL `CODER_SUMMARY.md`, not just the
-  status line. The agent needs its own prior plan and checklist to know what remains.
-- Git diff stat is a snapshot at re-invocation time. If the agent's continuation
-  modifies the same files, the next snapshot grows — this is expected and correct.
-- Do NOT reset the turn counter for the overall pipeline. Each continuation gets
-  a fresh agent turn budget, but the pipeline should track cumulative turns for
-  metrics and cost awareness.
-- The continuation prompt must be strong enough that the agent reads modified files
-  FIRST. Without this, the agent will re-read the task description and start from
-  scratch, wasting its turn budget re-implementing what's already done.
-- Do NOT continue after review-stage failures. If the reviewer found blockers, the
-  existing rework routing (sr/jr coder) handles it. Continuation is only for
-  turn exhaustion, not for quality failures.
-- When continuation transitions to milestone split (after MAX_CONTINUATION_ATTEMPTS),
-  the partial work must be preserved. The split agent should see what was already
-  implemented so it can scope sub-milestones around the remaining work, not the
-  total work.
-- Consider injecting the cumulative turn count into the continuation prompt:
-  "Previous attempts used N turns total. You have M turns. Focus on completing
-  the remaining items efficiently."
+- `HUMAN_NOTES_BLOCK` must be set to `""` (empty string), not left unset, when
+  notes are not claimed. The template engine treats unset variables differently
+  from empty ones.
+- The `HUMAN_NOTES_ALL_ADDRESSED` removal must not break any other consumers.
+  Grep for all references before removing.
+- `clear_resolved_nonblocking_notes()` must preserve the `## Resolved` heading
+  itself — only clear the items underneath it.
+- The `AUTO_COMMIT` conditional default must be set AFTER `MILESTONE_MODE` is
+  determined in the config loading sequence.
 
 **Seeds Forward:**
-- Milestone 16 (Outer Loop) uses continuation as one of its recovery strategies
-  in the orchestration state machine
-- The `continuation_attempts` metric enables future adaptive turn budgeting:
-  if a project consistently needs 2 continuations, increase the default turn cap
-- The substantive-work heuristic can be refined using metrics data from Milestone 8
+- Milestone 15.2 depends on the `AUTO_COMMIT` conditional default for
+  auto-commit integration in `finalize_run()`.
+- Milestone 15.3 calls `clear_resolved_nonblocking_notes()` from `finalize_run()`.
 
-#### Milestone 15: Pipeline Lifecycle Consolidation
+#### Milestone 15.2: Milestone Marking, Archival Cleanup, and [DONE] Migration
 
-Consolidate the scattered post-pipeline bookkeeping into a single, ordered
-`finalize_run()` function and fix 7 systemic lifecycle bugs that cause artifact
-accumulation, phantom notes, and autonomous-mode blocking across pipeline runs.
-
-This is a structural consolidation milestone — no new features, just making the
-existing machinery work as designed.
-
-**Problems addressed:**
-1. **HUMAN_NOTES phantom injection** — `claim_human_notes()` runs every pipeline
-   invocation, injecting notes into the coder prompt even when the task has nothing
-   to do with those notes. Notes get claimed, coder ignores them (rightly), they
-   get reset on next run. Cycle repeats forever.
-2. **NON_BLOCKING_LOG `## Resolved` growth** — `clear_completed_nonblocking_notes()`
-   only clears `[x]` items from `## Open`, but items that transit to `## Resolved`
-   accumulate permanently.
-3. **DRIFT_LOG timing** — Drift observations resolved by the architect get
-   re-counted if the resolution happens after the count snapshot.
-4. **CLAUDE.md `[DONE]` line accumulation** — `archive_completed_milestone()`
-   replaces milestone blocks with one-line `#### [DONE] Milestone N: Title`
-   summaries that persist forever. After 24 milestones, 24 noise lines.
-5. **Interactive commit blocking** — `_prompt_commit()` in `hooks.sh` reads from
-   stdin, blocking autonomous/milestone mode. `AUTO_COMMIT` exists but defaults
-   to `false`.
-6. **Milestone [DONE] chicken-and-egg** — Nothing in the pipeline programmatically
-   marks a milestone heading as `[DONE]` in CLAUDE.md. Archival looks for `[DONE]`
-   but only the human or a separate `archive_all_completed_milestones()` call sets
-   it.
-7. **Scattered bookkeeping** — Post-pipeline work is spread across 5+ locations
-   in `tekhton.sh`: `run_final_checks()`, `process_drift_artifacts()`,
-   `record_run_metrics()`, `archive_reports()`, commit prompt, and
-   `archive_completed_milestone()`. Ordering bugs are inevitable.
+Fix the milestone [DONE] chicken-and-egg problem and the [DONE] line accumulation.
+Add `mark_milestone_done()` to programmatically mark milestones, change archival
+to fully remove [DONE] lines from CLAUDE.md, and perform a one-time migration of
+existing [DONE] one-liners.
 
 **Files to modify:**
-- `tekhton.sh` — Replace the scattered post-pipeline calls (lines ~1050-1120)
-  with a single `finalize_run()` call. The function lives in `lib/hooks.sh`.
-- `lib/hooks.sh` — Add `finalize_run()` that calls, in order:
-  1. `run_final_checks()` (existing)
-  2. `process_drift_artifacts()` (from drift_artifacts.sh)
-  3. `record_run_metrics()` (from metrics.sh)
-  4. `clear_resolved_nonblocking_notes()` (new — purges `## Resolved`)
-  5. `archive_reports()` (existing)
-  6. `mark_milestone_done()` (new — if milestone mode + acceptance passed)
-  7. Auto-commit (if `AUTO_COMMIT=true` or milestone mode)
-  8. `archive_completed_milestone()` (existing — now finds the `[DONE]` mark)
-- `lib/drift_cleanup.sh` — Add `clear_resolved_nonblocking_notes()` that empties
-  the `## Resolved` section of NON_BLOCKING_LOG.md after archiving its contents
-  to the run metrics.
-- `lib/milestone_archival.sh` — Change `archive_completed_milestone()` to REMOVE
-  the `[DONE]` one-liner from CLAUDE.md entirely after archiving to
-  MILESTONE_ARCHIVE.md, instead of leaving it behind. Add a single
-  `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment at the top
-  of the milestone list if not already present.
-- `lib/milestone_ops.sh` — Add `mark_milestone_done()` that finds the current
-  milestone's `#### Milestone N:` heading in CLAUDE.md and prepends `[DONE] ` to
-  it. Called by `finalize_run()` only after acceptance check passes.
-- `lib/config_defaults.sh` — Set `AUTO_COMMIT` default to `true` when
-  `MILESTONE_MODE=true`, `false` otherwise (preserving backward compatibility).
-- `stages/coder.sh` — Remove the `COMPLETE→IN PROGRESS` downgrade for unaddressed
-  HUMAN_NOTES (revert prior fix that treated the symptom). Instead, gate
-  `claim_human_notes()` behind a check: only claim notes if the task description
-  explicitly references them OR if a `--with-notes` flag is passed.
-- `lib/notes.sh` — Add `should_claim_notes(task)` that returns true only if the
-  task text contains a HUMAN_NOTES reference or the `--with-notes` flag is set.
-  Remove the `HUMAN_NOTES_ALL_ADDRESSED` export (no longer needed when claiming
-  is gated).
-- `prompts/coder.prompt.md` — Keep the `{{IF:HUMAN_NOTES_BLOCK}}` section but
-  it will only fire when notes are actually claimed (gated by
-  `should_claim_notes()`).
+- `lib/milestone_ops.sh` — Add `mark_milestone_done(milestone_num)` that:
+  1. Reads CLAUDE.md
+  2. Finds the line matching `^#### Milestone ${milestone_num}:` (without [DONE])
+  3. Prepends `[DONE] ` to make it `#### [DONE] Milestone N: Title`
+  4. Is idempotent — if the line already contains `[DONE]`, returns 0 without
+     modification
+  5. Returns 1 if the milestone heading is not found
+- `lib/milestone_archival.sh` — Change `archive_completed_milestone()` to:
+  1. After archiving the milestone block to MILESTONE_ARCHIVE.md, REMOVE the
+     `#### [DONE] Milestone N: Title` one-liner from CLAUDE.md entirely
+     (currently it leaves it behind)
+  2. After removal, if no `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->`
+     comment exists in the milestone plan section, add one at the top of the
+     milestone list
+  3. Clean up any blank lines left by the removal
+- `CLAUDE.md` — One-time migration: remove all existing `#### [DONE] Milestone N: Title`
+  one-liner lines (there are ~24 of them across two initiative sections). These
+  milestones are already in MILESTONE_ARCHIVE.md. Add the
+  `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment.
 
 **Acceptance criteria:**
-- Post-pipeline bookkeeping runs via a single `finalize_run()` call in a
-  deterministic order
-- `NON_BLOCKING_LOG.md` `## Resolved` section is emptied after each successful
-  run (contents preserved in metrics)
-- `CLAUDE.md` has zero `[DONE]` one-liner lines after archival — completed
-  milestones live only in `MILESTONE_ARCHIVE.md`
-- Milestone acceptance triggers `mark_milestone_done()` → archival finds the
-  mark → removes it entirely from CLAUDE.md
-- HUMAN_NOTES are only injected into coder prompt when the task references them
-  or `--with-notes` is passed
-- Pipeline runs in milestone mode auto-commit without interactive prompt
-- Non-milestone mode behavior unchanged (`AUTO_COMMIT=false` default preserved)
+- `mark_milestone_done 15` changes `#### Milestone 15:` to `#### [DONE] Milestone 15:`
+  in CLAUDE.md
+- `mark_milestone_done 15` on an already-marked milestone is a no-op (returns 0)
+- `mark_milestone_done 999` returns 1 (milestone not found)
+- `archive_completed_milestone()` removes the [DONE] one-liner from CLAUDE.md
+  after archiving — zero `[DONE]` lines remain for archived milestones
+- The `<!-- See MILESTONE_ARCHIVE.md -->` comment is added once and not duplicated
+- CLAUDE.md has zero `#### [DONE]` one-liner lines after the one-time migration
+- The MILESTONE_ARCHIVE.md still contains all previously archived milestone content
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- `mark_milestone_done()` must handle milestone numbers with dots (e.g., 13.2.1.1)
+  for sub-milestones. The regex must match the exact milestone number format.
+- The one-time migration must not remove milestone blocks that are still active —
+  only the `#### [DONE] Milestone N: Title` one-liner summaries (single lines
+  with no content block following them).
+- The `<!-- See MILESTONE_ARCHIVE.md -->` comment should go in the `### Milestone Plan`
+  section, not at the top of the file.
+- After removing [DONE] lines, there may be consecutive blank lines. Collapse them
+  to single blank lines.
+
+**Seeds Forward:**
+- Milestone 15.3 integrates `mark_milestone_done()` and `archive_completed_milestone()`
+  into the `finalize_run()` call sequence.
+
+#### Milestone 15.3: finalize_run() Consolidation
+
+Consolidate all scattered post-pipeline bookkeeping in `tekhton.sh` into a single
+`finalize_run()` function in `lib/hooks.sh`. This is the capstone sub-milestone
+that wires together all fixes from 15.1 and 15.2 into a deterministic, ordered
+finalization sequence.
+
+**Files to modify:**
+- `lib/hooks.sh` — Add `finalize_run()` that calls, in this exact order:
+  1. `run_final_checks()` (existing — analyze + test)
+  2. `process_drift_artifacts()` (existing — from drift_artifacts.sh)
+  3. `record_run_metrics()` (existing — from metrics.sh)
+  4. `clear_resolved_nonblocking_notes()` (from 15.1 — only if pipeline succeeded)
+  5. `archive_reports "$LOG_DIR" "$TIMESTAMP"` (existing)
+  6. `mark_milestone_done "$CURRENT_MILESTONE"` (from 15.2 — only if milestone
+     mode AND acceptance passed)
+  7. Auto-commit: if `AUTO_COMMIT=true` (now defaulting to true in milestone mode
+     per 15.1), run `_do_git_commit()` without interactive prompt. If
+     `AUTO_COMMIT=false`, call the existing interactive prompt (reading from
+     `/dev/tty`).
+  8. `archive_completed_milestone()` (from 15.2 — only after commit, only if
+     milestone was marked [DONE])
+  The function accepts a `pipeline_exit_code` parameter. Steps 4, 6, 7, 8 only
+  run if `pipeline_exit_code=0`.
+- `tekhton.sh` — Replace the scattered post-pipeline section (lines ~940-1149)
+  with a single call to `finalize_run $pipeline_exit_code`. Remove all inline
+  commit prompt logic, inline `archive_completed_milestone()` calls, and
+  inline metrics/drift/archive calls. The `_do_git_commit()` helper moves to
+  `lib/hooks.sh` alongside `finalize_run()`.
+
+**Acceptance criteria:**
 - `finalize_run()` is the ONLY place post-pipeline bookkeeping happens — no
-  stragglers in `tekhton.sh`
+  straggler calls in `tekhton.sh`
+- Post-pipeline bookkeeping runs in deterministic order as specified above
+- `finalize_run 0` (success) runs all 8 steps including cleanup and archival
+- `finalize_run 1` (failure) runs steps 1-3 and 5 only (metrics recorded,
+  reports archived, but no cleanup/commit/archival)
+- Pipeline runs in milestone mode auto-commit without interactive prompt
+- Non-milestone mode with `AUTO_COMMIT=false` still shows interactive prompt
+- Commit includes the milestone's code changes (archival happens AFTER commit)
+- Metrics are recorded BEFORE resolved-item cleanup (counts are captured)
+- `generate_commit_message()` is called within `finalize_run()` before commit
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on all modified files
 
 **Watch For:**
-- The `finalize_run()` ordering matters. Metrics must be recorded BEFORE cleanup
-  so the resolved items count is captured. Archival must be AFTER commit so the
-  commit includes the milestone's code changes.
-- `mark_milestone_done()` must be idempotent — if the heading already has
-  `[DONE]`, don't add it twice.
-- The HUMAN_NOTES gating must not break the prompt template. If no notes are
-  claimed, `HUMAN_NOTES_BLOCK` should be empty (not undefined), so the
-  `{{IF:HUMAN_NOTES_BLOCK}}` conditional simply doesn't render.
-- The `## Resolved` cleanup should not run if the pipeline failed — only on
-  successful completion. Failed runs should preserve resolved items for the next
-  attempt.
-- Removing [DONE] one-liners from CLAUDE.md is a one-time migration. Clean up
-  the existing 24 [DONE] lines as part of this milestone.
-- Auto-commit in milestone mode should still respect `AUTO_COMMIT=false` if
-  explicitly set in pipeline.conf. The default changes, not the override behavior.
+- The `finalize_run()` ordering is load-bearing:
+  - Metrics BEFORE cleanup (so resolved counts are captured)
+  - Commit BEFORE archival (so the commit includes milestone code changes)
+  - `mark_milestone_done` BEFORE commit (so the commit message can reference
+    the milestone status)
+- `finalize_run()` must handle the case where `run_final_checks()` fails.
+  The function should still run metrics/reports/cleanup even if final checks
+  fail — but should NOT commit or archive on failure.
+- The `_do_git_commit()` helper needs access to variables set in tekhton.sh
+  (LOG_DIR, TIMESTAMP, COMMIT_MSG). These should be passed as parameters or
+  exported before calling `finalize_run()`.
+- The interactive commit prompt (`read` from `/dev/tty`) must remain available
+  for non-milestone, non-auto-commit runs. Don't remove it entirely — just
+  move it into `finalize_run()`.
 
 **Seeds Forward:**
-- Milestone 16 (Outer Loop) benefits directly: `finalize_run()` is the single
-  function the outer loop calls after each iteration, auto-commit eliminates the
-  interactive prompt that would block the loop, and clean milestone archival
-  prevents CLAUDE.md bloat across chained milestone completions.
-- Clean CLAUDE.md (no [DONE] noise) improves context efficiency for all agents
-  that read it.
-- The `should_claim_notes()` gate can be extended to support task-tagged notes
-  (e.g., `[FEAT:auth]` → only claimed when task mentions "auth").
-
+- Milestone 16 (Outer Loop) calls `finalize_run()` as its single post-iteration
+  hook. The consolidated function eliminates the need for the outer loop to
+  know about individual bookkeeping steps.
+- Auto-commit in milestone mode (from 15.1's config change, wired here)
+  eliminates the interactive prompt that would block the autonomous loop.
 #### Milestone 16: Outer Orchestration Loop (Milestone-to-Completion)
 
 Add a `--complete` flag that wraps the entire pipeline in an outer orchestration

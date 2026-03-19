@@ -1594,3 +1594,108 @@ metrics JSONL record and dashboard output.
 - Milestone 14 (Turn Exhaustion Continuation) depends on reliable transient error
   handling being solved by the complete 13.2 scope
 - The `retry_count` metric enables future adaptive retry calibration in V3
+
+---
+
+## Archived: 2026-03-19 — Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 14: Turn Exhaustion Continuation Loop
+
+Add automatic continuation when an agent hits its turn limit but made substantive
+progress. Instead of saving state and requiring a human to re-run, the pipeline
+immediately re-invokes the agent with full prior-progress context and a fresh turn
+budget. This eliminates the most common human-in-the-loop scenario: "coder did 80%
+of the work, ran out of turns, I re-ran and it finished."
+
+**Files to modify:**
+- `stages/coder.sh` — After coder completion, before the existing turn-limit exit
+  path:
+  1. Check if `CODER_SUMMARY.md` exists and contains `## Status: IN PROGRESS`
+  2. Check if substantive work was done: `git diff --stat` shows ≥1 file modified
+  3. If both true: **do not exit**. Instead:
+     a. Increment `CONTINUATION_ATTEMPT` counter (starts at 0)
+     b. If `CONTINUATION_ATTEMPT >= MAX_CONTINUATION_ATTEMPTS`: trigger milestone
+        split (existing M11 path) or save state and exit
+     c. Build continuation context: git diff stat + CODER_SUMMARY.md contents +
+        "You are continuing from a previous run that hit the turn limit. Read the
+        modified files to understand current state. Do NOT redo completed work."
+     d. Log: "Coder hit turn limit with progress (attempt N/M). Continuing..."
+     e. Re-invoke `run_agent "Coder (continuation N)"` with the continuation
+        context injected into the prompt
+     f. After continuation agent completes, loop back to the status check
+  4. If `CODER_SUMMARY.md` says `## Status: COMPLETE`: proceed to review normally
+  5. If no substantive work (0 files modified): fall through to existing null-run
+     path (split or exit)
+- `stages/tester.sh` — Same pattern for tester: if partial tests remain and
+  substantive test files were created, re-invoke tester with "continue writing
+  the remaining tests" context. Cap at `MAX_CONTINUATION_ATTEMPTS`.
+- `lib/config.sh` — Add defaults: `MAX_CONTINUATION_ATTEMPTS=3`,
+  `CONTINUATION_ENABLED=true`
+- `lib/agent.sh` — Add `build_continuation_context(stage, attempt_num)` that
+  assembles: (1) previous CODER_SUMMARY.md or tester report, (2) git diff stat
+  of files modified so far, (3) explicit instruction not to redo work, (4) the
+  attempt number for the agent's awareness. Returns the context as a string for
+  prompt injection.
+- `prompts/coder.prompt.md` — Add `{{IF:CONTINUATION_CONTEXT}}` block that injects
+  the continuation instructions when present. Place it before the task section
+  so the agent reads its own prior summary before starting work.
+- `prompts/tester.prompt.md` — Add equivalent `{{IF:CONTINUATION_CONTEXT}}` block.
+- `lib/metrics.sh` — Add `continuation_attempts` field to JSONL record. Track how
+  many continuation loops were needed per stage.
+- `templates/pipeline.conf.example` — Add continuation config keys
+
+**Substantive work detection heuristic:**
+```
+substantive = (files_modified >= 1) AND (
+    (coder_summary_lines >= 20) OR
+    (git_diff_lines >= 50)
+)
+```
+This distinguishes "agent did real implementation work but ran out of time" from
+"agent spent all turns planning/reading and wrote almost nothing." The latter
+should go to the split path, not the continuation path.
+
+**Acceptance criteria:**
+- Coder hitting turn limit with `Status: IN PROGRESS` and ≥1 modified file triggers
+  automatic continuation (no human prompt)
+- Continuation agent receives prior CODER_SUMMARY.md contents and git diff stat
+- Continuation agent does NOT redo work already shown in the prior summary
+- Maximum 3 continuation attempts before escalating to split or exit
+- After 3 failed continuations: if milestone mode, trigger auto-split; if not
+  milestone mode, save state and exit with clear message
+- Tester partial completion with ≥1 test file created triggers continuation
+- Each continuation attempt is logged with attempt number and progress metrics
+- `CONTINUATION_ENABLED=false` disables continuation (1.0-compatible behavior)
+- `metrics.jsonl` records continuation attempt count
+- Null runs (0 files modified) are NOT continued — they go to existing split/exit
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- The continuation context must include the FULL `CODER_SUMMARY.md`, not just the
+  status line. The agent needs its own prior plan and checklist to know what remains.
+- Git diff stat is a snapshot at re-invocation time. If the agent's continuation
+  modifies the same files, the next snapshot grows — this is expected and correct.
+- Do NOT reset the turn counter for the overall pipeline. Each continuation gets
+  a fresh agent turn budget, but the pipeline should track cumulative turns for
+  metrics and cost awareness.
+- The continuation prompt must be strong enough that the agent reads modified files
+  FIRST. Without this, the agent will re-read the task description and start from
+  scratch, wasting its turn budget re-implementing what's already done.
+- Do NOT continue after review-stage failures. If the reviewer found blockers, the
+  existing rework routing (sr/jr coder) handles it. Continuation is only for
+  turn exhaustion, not for quality failures.
+- When continuation transitions to milestone split (after MAX_CONTINUATION_ATTEMPTS),
+  the partial work must be preserved. The split agent should see what was already
+  implemented so it can scope sub-milestones around the remaining work, not the
+  total work.
+- Consider injecting the cumulative turn count into the continuation prompt:
+  "Previous attempts used N turns total. You have M turns. Focus on completing
+  the remaining items efficiently."
+
+**Seeds Forward:**
+- Milestone 16 (Outer Loop) uses continuation as one of its recovery strategies
+  in the orchestration state machine
+- The `continuation_attempts` metric enables future adaptive turn budgeting:
+  if a project consistently needs 2 continuations, increase the default turn cap
+- The substantive-work heuristic can be refined using metrics data from Milestone 8
