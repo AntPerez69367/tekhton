@@ -136,7 +136,7 @@ _resolve_addressed_nonblocking_notes() {
         if [[ "$in_open" = true ]] && echo "$line" | grep -q "^- \[ \]"; then
             local matched=false
             while IFS= read -r mod_file; do
-                [ -z "$mod_file" ] && continue
+                [[ -z "$mod_file" ]] && continue
                 local basename_mod
                 basename_mod=$(basename "$mod_file" 2>/dev/null || echo "$mod_file")
                 if echo "$line" | grep -q "$basename_mod"; then
@@ -155,7 +155,7 @@ _resolve_addressed_nonblocking_notes() {
         fi
     done < "$nb_file"
 
-    if [ "$resolved" -gt 0 ]; then
+    if [[ "$resolved" -gt 0 ]]; then
         mv "$tmpfile" "$nb_file"
         log "Resolved ${resolved} non-blocking note(s) based on modified files."
     else
