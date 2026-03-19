@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-18 | "Finish implementing Milestone 13.2.1: Core Retry Envelope in run_agent()"] `lib/config.sh` is 342 lines — exceeds the 300-line ceiling. Pre-existing issue, no changes to scope in this rework. Candidate for a future `lib/config_defaults.sh` extraction.
+- [2026-03-18 | "Finish implementing Milestone 13.2.1: Core Retry Envelope in run_agent()"] --
 - [2026-03-18 | "Implement Milestone 13.2.1: Core Retry Envelope in run_agent()"] `lib/agent_monitor.sh` remains well over 300 lines. Pre-existing, noted in prior review. Warrants a future split.
 - [2026-03-18 | "Implement Milestone 13.2.1: Core Retry Envelope in run_agent()"] --
 - [2026-03-18 | "Continue Implementing Milestone 13.1: Retry Infrastructure — Config, Reporting, and Monitoring Reset"] `lib/agent_monitor.sh:211` — The activity-timeout kill sequence inside the FIFO reader subshell uses `kill "$_TEKHTON_AGENT_PID"` directly, but the outer `_run_agent_abort` trap already does the same. These two kill paths are logically duplicated. Not a bug — the subshell can't reach the trap — but worth a comment explaining why the inner kill is necessary.

@@ -117,14 +117,43 @@ run_agent() {
 
     _IM_PERM_FLAGS=("${_perm_flags[@]}")  # Pass to monitor
 
+    # --- CLI activity indicator (spinner) — shows which agent is working --------
+    local _spinner_pid=""
+    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
+        (
+            trap 'exit 0' INT TERM
+            chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+            start_ts=$(date +%s)
+            i=0
+            while true; do
+                now=$(date +%s)
+                elapsed=$(( now - start_ts ))
+                mins=$(( elapsed / 60 ))
+                secs=$(( elapsed % 60 ))
+                printf '\r\033[0;36m[tekhton]\033[0m %s %s is generating... %dm%02ds ' \
+                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" > /dev/tty
+                i=$(( i + 1 ))
+                sleep 0.2
+            done
+        ) &
+        _spinner_pid=$!
+    fi
+
     # --- Transient error retry envelope (13.2.1) --------------------------------
     # Delegates invocation + classification + retry to _run_with_retry() in
-    # agent_helpers.sh. Stages do not know about retries — they see success or
+    # agent_retry.sh. Stages do not know about retries — they see success or
     # final failure. Results come back via globals: AGENT_ERROR_*, LAST_AGENT_RETRY_COUNT,
     # _RWR_EXIT, _RWR_TURNS, _RWR_WAS_ACTIVITY_TIMEOUT.
     _run_with_retry "$label" "$_invoke" "$model" "$max_turns" "$prompt" \
         "$log_file" "$_activity_timeout" "$_session_dir" "$_exit_file" "$_turns_file" \
         "$_prerun_marker" "$_timeout"
+
+    # Stop spinner
+    if [[ -n "${_spinner_pid:-}" ]]; then
+        kill "$_spinner_pid" 2>/dev/null || true
+        wait "$_spinner_pid" 2>/dev/null || true
+        printf '\r\033[K' > /dev/tty 2>/dev/null || true
+    fi
 
     local agent_exit="$_RWR_EXIT"
     local _was_activity_timeout="$_RWR_WAS_ACTIVITY_TIMEOUT"

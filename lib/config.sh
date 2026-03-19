@@ -212,7 +212,7 @@ load_config() {
     : "${DYNAMIC_TURNS_ENABLED:=true}"
     : "${CODER_MIN_TURNS:=15}"
     : "${CODER_MAX_TURNS_CAP:=200}"
-    : "${REVIEWER_MIN_TURNS:=5}"
+    : "${REVIEWER_MIN_TURNS:=10}"
     : "${REVIEWER_MAX_TURNS_CAP:=30}"
     : "${TESTER_MIN_TURNS:=10}"
     : "${TESTER_MAX_TURNS_CAP:=100}"
