@@ -212,15 +212,42 @@ run_stage_architect() {
 
         local oos_items=()
         if [ -n "$oos_section" ]; then
+            # Join multi-line bullets: accumulate continuation lines (lines
+            # that don't start with a bullet marker) into the previous bullet.
+            local _oos_current=""
             while IFS= read -r line; do
-                line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
-                [ -z "$line" ] && continue
-                echo "$line" | grep -qiE '^\s*None\b' && continue
-                echo "$line" | grep -qiE '^\s*N/?A\b' && continue
-                echo "$line" | grep -qiE '^No (items?|observations?)\b' && continue
-                echo "$line" | grep -qE '^\s*-+\s*$' && continue
-                oos_items+=("$line")
+                local cleaned="${line#"${line%%[![:space:]]*}"}"
+                [ -z "$cleaned" ] && continue
+                if [[ "$cleaned" =~ ^[-*][[:space:]]+(.*) ]]; then
+                    # New bullet — flush previous
+                    if [ -n "$_oos_current" ]; then
+                        oos_items+=("$_oos_current")
+                    fi
+                    _oos_current="${BASH_REMATCH[1]}"
+                else
+                    # Continuation line — append to current bullet
+                    if [ -n "$_oos_current" ]; then
+                        _oos_current="${_oos_current} ${cleaned}"
+                    else
+                        _oos_current="$cleaned"
+                    fi
+                fi
             done <<< "$oos_section"
+            # Flush last bullet
+            if [ -n "$_oos_current" ]; then
+                oos_items+=("$_oos_current")
+            fi
+
+            # Filter out placeholder entries
+            local _filtered_oos=()
+            for entry in "${oos_items[@]}"; do
+                echo "$entry" | grep -qiE '^\s*None\b' && continue
+                echo "$entry" | grep -qiE '^\s*N/?A\b' && continue
+                echo "$entry" | grep -qiE '^No (items?|observations?)\b' && continue
+                echo "$entry" | grep -qE '^\s*-+\s*$' && continue
+                _filtered_oos+=("$entry")
+            done
+            oos_items=("${_filtered_oos[@]+"${_filtered_oos[@]}"}")
         fi
 
         # Resolve ALL unresolved observations — the architect reviewed them all.
@@ -247,32 +274,49 @@ run_stage_architect() {
         ARCHITECT_PLAN.md 2>/dev/null || true)
 
     if [ -n "$design_section" ]; then
-        # Filter out non-actionable lines: section subtitles, separators, "None",
-        # and common no-action phrases the agent may produce.
-        local filtered_lines=""
+        # Join multi-line bullets, then filter out non-actionable entries.
+        local _design_items=()
+        local _ds_current=""
         while IFS= read -r line; do
-            local cleaned
-            cleaned=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
+            local cleaned="${line#"${line%%[![:space:]]*}"}"
             [ -z "$cleaned" ] && continue
-            # Skip placeholder / boilerplate / no-action lines
-            echo "$cleaned" | grep -qiE '^None\b' && continue
-            echo "$cleaned" | grep -qiE '^N/?A\b' && continue
-            echo "$cleaned" | grep -qiE '^No (design|doc|observations?|issues?|action|items?)\b' && continue
-            echo "$cleaned" | grep -qiE '^(All|No) (drift |design )?(observations?|items?) (are|have been|were)\b' && continue
-            echo "$cleaned" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
-            echo "$cleaned" | grep -qE '^\s*-+\s*$' && continue
-            echo "$cleaned" | grep -qiE '^\*?\(route to human' && continue
-            filtered_lines+="${cleaned}"$'\n'
+            if [[ "$cleaned" =~ ^[-*][[:space:]]+(.*) ]]; then
+                # New bullet — flush previous
+                if [ -n "$_ds_current" ]; then
+                    _design_items+=("$_ds_current")
+                fi
+                _ds_current="${BASH_REMATCH[1]}"
+            else
+                # Continuation line
+                if [ -n "$_ds_current" ]; then
+                    _ds_current="${_ds_current} ${cleaned}"
+                else
+                    _ds_current="$cleaned"
+                fi
+            fi
         done <<< "$design_section"
+        if [ -n "$_ds_current" ]; then
+            _design_items+=("$_ds_current")
+        fi
 
-        # Only append if there are real actionable lines
-        filtered_lines=$(echo "$filtered_lines" | sed '/^$/d')
-        if [ -n "$filtered_lines" ]; then
+        # Filter out placeholder / boilerplate entries
+        local _filtered_design=()
+        for entry in "${_design_items[@]+"${_design_items[@]}"}"; do
+            echo "$entry" | grep -qiE '^\s*None\b' && continue
+            echo "$entry" | grep -qiE '^\s*N/?A\b' && continue
+            echo "$entry" | grep -qiE '^No (design|doc|observations?|issues?|action|items?)\b' && continue
+            echo "$entry" | grep -qiE '^(All|No) (drift |design )?(observations?|items?) (are|have been|were)\b' && continue
+            echo "$entry" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
+            echo "$entry" | grep -qE '^\s*-+\s*$' && continue
+            echo "$entry" | grep -qiE '^\*?\(route to human' && continue
+            _filtered_design+=("$entry")
+        done
+
+        if [ ${#_filtered_design[@]} -gt 0 ]; then
             log "Adding design doc observations to human action file..."
-            while IFS= read -r line; do
-                [ -z "$line" ] && continue
-                append_human_action "architect" "$line"
-            done <<< "$filtered_lines"
+            for entry in "${_filtered_design[@]}"; do
+                append_human_action "architect" "$entry"
+            done
         fi
     fi
 

@@ -705,6 +705,11 @@ fi
 # --- Auto-advance: initialize milestone state if needed ----------------------
 
 if [ "$AUTO_ADVANCE" = true ]; then
+    # The --auto-advance CLI flag activates AUTO_ADVANCE_ENABLED so that
+    # should_auto_advance() in milestone_ops.sh allows the loop to run.
+    # Without this, the config default of false blocks the while loop.
+    AUTO_ADVANCE_ENABLED=true
+    export AUTO_ADVANCE_ENABLED
     if [ -n "$_CURRENT_MILESTONE" ]; then
         _total_milestones=$(get_milestone_count "CLAUDE.md")
         init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
