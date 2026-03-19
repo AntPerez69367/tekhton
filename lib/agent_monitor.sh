@@ -83,7 +83,10 @@ _invoke_and_monitor() {
         rm -f "$_fifo"
         mkfifo "$_fifo"
 
-        # Background: run claude, write to FIFO (stdin=/dev/null)
+        # Background: run claude, write stdout to FIFO, tee stderr to
+        # a dedicated file and the caller's stdout (not the FIFO).
+        local _stderr_file="${_session_dir}/agent_stderr.txt"
+        : > "$_stderr_file"
         (
             $_invoke claude \
                 --model "$model" \
@@ -92,7 +95,7 @@ _invoke_and_monitor() {
                 --output-format json \
                 -p "$prompt" \
                 < /dev/null \
-                > "$_fifo" 2>&1
+                > "$_fifo" 2> >(tee -a "$_stderr_file" >&1)
             echo "$?" > "$_exit_file"
         ) &
         _TEKHTON_AGENT_PID=$!
@@ -129,40 +132,47 @@ _invoke_and_monitor() {
             _stream_api_error=false
             _stream_api_type=""
 
+            # Shared per-line processing for both timed and blocking branches.
+            # Modifies subshell globals directly (no `local`) — see comment at
+            # the ring buffer dump block below for rationale.
+            _process_fifo_line() {
+                echo "$1" >&3
+                _last_line="$1"
+                # Ring buffer: store line
+                _rb[$(( _rb_idx % _rb_size ))]="$1"
+                _rb_idx=$(( _rb_idx + 1 ))
+                # Real-time API error detection
+                case "$1" in
+                    *'"type":"error"'*|*'"status":'*429*|*'"status":'*500*|*'"status":'*502*|*'"status":'*503*|*'"status":'*529*|*server_error*|*rate_limit*|*overloaded*|*authentication_error*)
+                        if echo "$1" | grep -qE '"type"[[:space:]]*:[[:space:]]*"error"' 2>/dev/null; then
+                            _stream_api_error=true
+                            if echo "$1" | grep -qi 'rate_limit' 2>/dev/null; then
+                                _stream_api_type="api_rate_limit"
+                            elif echo "$1" | grep -qi 'overloaded' 2>/dev/null; then
+                                _stream_api_type="api_overloaded"
+                            elif echo "$1" | grep -qi 'server_error' 2>/dev/null; then
+                                _stream_api_type="api_500"
+                            elif echo "$1" | grep -qi 'authentication_error' 2>/dev/null; then
+                                _stream_api_type="api_auth"
+                            fi
+                        elif echo "$1" | grep -qE '"status"[[:space:]]*:[[:space:]]*(429|500|502|503|529)' 2>/dev/null; then
+                            _stream_api_error=true
+                            _stream_api_type="api_500"
+                        fi
+                        ;;
+                esac
+                if echo "$1" | grep -q '"type":"text"'; then
+                    echo "$1" | python3 -c \
+                        "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
+                        2>/dev/null || true
+                fi
+            }
+
             while true; do
                 if [ "$_read_interval" -gt 0 ]; then
                     if IFS= read -r -t "$_read_interval" line; then
                         _last_activity=$(date +%s)
-                        echo "$line" >&3
-                        _last_line="$line"
-                        # Ring buffer: store line
-                        _rb[$(( _rb_idx % _rb_size ))]="$line"
-                        _rb_idx=$(( _rb_idx + 1 ))
-                        # Real-time API error detection
-                        case "$line" in
-                            *'"type":"error"'*|*'"status":'*429*|*'"status":'*500*|*'"status":'*502*|*'"status":'*503*|*'"status":'*529*|*server_error*|*rate_limit*|*overloaded*|*authentication_error*)
-                                if echo "$line" | grep -qE '"type"[[:space:]]*:[[:space:]]*"error"' 2>/dev/null; then
-                                    _stream_api_error=true
-                                    if echo "$line" | grep -qi 'rate_limit' 2>/dev/null; then
-                                        _stream_api_type="api_rate_limit"
-                                    elif echo "$line" | grep -qi 'overloaded' 2>/dev/null; then
-                                        _stream_api_type="api_overloaded"
-                                    elif echo "$line" | grep -qi 'server_error' 2>/dev/null; then
-                                        _stream_api_type="api_500"
-                                    elif echo "$line" | grep -qi 'authentication_error' 2>/dev/null; then
-                                        _stream_api_type="api_auth"
-                                    fi
-                                elif echo "$line" | grep -qE '"status"[[:space:]]*:[[:space:]]*(429|500|502|503|529)' 2>/dev/null; then
-                                    _stream_api_error=true
-                                    _stream_api_type="api_500"
-                                fi
-                                ;;
-                        esac
-                        if echo "$line" | grep -q '"type":"text"'; then
-                            echo "$line" | python3 -c \
-                                "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
-                                2>/dev/null || true
-                        fi
+                        _process_fifo_line "$line"
                     else
                         _rc=$?
                         if [ "$_rc" -le 128 ]; then
@@ -209,13 +219,7 @@ _invoke_and_monitor() {
                 else
                     # Activity timeout disabled — blocking read
                     if IFS= read -r line; then
-                        echo "$line" >&3
-                        _last_line="$line"
-                        if echo "$line" | grep -q '"type":"text"'; then
-                            echo "$line" | python3 -c \
-                                "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
-                                2>/dev/null || true
-                        fi
+                        _process_fifo_line "$line"
                     else
                         break  # EOF
                     fi

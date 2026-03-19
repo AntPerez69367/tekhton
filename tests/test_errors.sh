@@ -113,7 +113,7 @@ output_file=$(tmpfile '{"type":"error","error":{"type":"authentication_error","m
 record=$(classify_error 1 "" "$output_file" 0 0)
 check_field "auth category"    "UPSTREAM"  "$(get_field "$record" 1)"
 check_field "auth subcategory" "api_auth"  "$(get_field "$record" 2)"
-check_field "auth transient"   "true"      "$(get_field "$record" 3)"
+check_field "auth transient"   "false"     "$(get_field "$record" 3)"
 
 # Authentication error via invalid.api.key pattern
 output_file=$(tmpfile 'Error: invalid api key provided')
@@ -219,11 +219,21 @@ check_field "max_turns category"    "AGENT_SCOPE" "$(get_field "$record" 1)"
 check_field "max_turns subcategory" "max_turns"   "$(get_field "$record" 2)"
 check_field "max_turns transient"   "false"       "$(get_field "$record" 3)"
 
-# no_summary — exit 0 + turns > 0 + file_changes = 0
-record=$(classify_error 0 "" "" 0 10)
+# no_summary — exit 0 + turns > 0 + has_summary = 0
+record=$(classify_error 0 "" "" 0 10 0)
 check_field "no_summary category"    "AGENT_SCOPE" "$(get_field "$record" 1)"
 check_field "no_summary subcategory" "no_summary"  "$(get_field "$record" 2)"
 check_field "no_summary transient"   "false"       "$(get_field "$record" 3)"
+
+# no_summary — exit 0 + turns > 0 + file_changes > 0 but no summary file
+record=$(classify_error 0 "" "" 5 10 0)
+check_field "no_summary with files category"    "AGENT_SCOPE" "$(get_field "$record" 1)"
+check_field "no_summary with files subcategory" "no_summary"  "$(get_field "$record" 2)"
+
+# has_summary = 1 bypasses no_summary — exit 0 + turns > 0 + has_summary = 1
+record=$(classify_error 0 "" "" 0 10 1)
+check_field "has_summary bypass category"    "AGENT_SCOPE"    "$(get_field "$record" 1)"
+check_field "has_summary bypass subcategory" "scope_unknown"  "$(get_field "$record" 2)"
 
 # =============================================================================
 # classify_error — PIPELINE fallback
@@ -293,7 +303,6 @@ transient_cases=(
     "UPSTREAM api_500"
     "UPSTREAM api_rate_limit"
     "UPSTREAM api_overloaded"
-    "UPSTREAM api_auth"
     "UPSTREAM api_timeout"
     "UPSTREAM api_unknown"
     "ENVIRONMENT network"
@@ -317,6 +326,7 @@ done
 echo "=== is_transient: permanent cases ==="
 
 permanent_cases=(
+    "UPSTREAM api_auth"
     "ENVIRONMENT disk_full"
     "ENVIRONMENT missing_dep"
     "ENVIRONMENT permissions"

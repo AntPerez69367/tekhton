@@ -4,10 +4,11 @@
 #
 # Tests:
 #   1. Success run produces a summary block with Class: SUCCESS
-#   2. Failure with error classification includes category in Class field
-#   3. Failure with error classification includes recovery suggestion
-#   4. Summary block is redacted via redact_sensitive
-#   5. Unicode/ASCII fallback works correctly
+#   2. Failure with error classification includes category and recovery
+#   3. Null run produces Class: NULL_RUN
+#   4. Summary block is tail-friendly (in last 20 lines)
+#   5. Summary block is redacted via redact_sensitive
+#   6. Unicode/ASCII fallback works correctly
 # =============================================================================
 set -euo pipefail
 

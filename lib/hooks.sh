@@ -125,6 +125,62 @@ ${ms_body}"
         fi
     fi
 
+    # Append completed non-blocking and resolved drift items to the body.
+    # Defensive guards: drift_cleanup.sh is always sourced before hooks.sh in the
+    # current pipeline, so these functions always exist. The guards protect against
+    # future refactors that might change sourcing order or make drift_cleanup optional.
+    local nb_items=""
+    if command -v get_completed_nonblocking_notes >/dev/null 2>&1; then
+        nb_items=$(get_completed_nonblocking_notes 2>/dev/null || true)
+    fi
+    local drift_items=""
+    if command -v get_resolved_drift_observations >/dev/null 2>&1; then
+        drift_items=$(get_resolved_drift_observations 2>/dev/null || true)
+    fi
+
+    if [ -n "$nb_items" ] || [ -n "$drift_items" ]; then
+        local debt_section=""
+        if [ -n "$nb_items" ]; then
+            local nb_count
+            nb_count=$(echo "$nb_items" | wc -l | tr -d '[:space:]')
+            debt_section="Non-blocking notes resolved (${nb_count}):"
+            while IFS= read -r item; do
+                [ -z "$item" ] && continue
+                # Strip the checkbox and date prefix, keep the description
+                local desc
+                # shellcheck disable=SC2001
+                desc=$(echo "$item" | sed 's/^- \[x\] \[[^]]*\] //')
+                debt_section="${debt_section}
+  - ${desc}"
+            done <<< "$nb_items"
+        fi
+        if [ -n "$drift_items" ]; then
+            local dr_count
+            dr_count=$(echo "$drift_items" | wc -l | tr -d '[:space:]')
+            if [ -n "$debt_section" ]; then
+                debt_section="${debt_section}
+"
+            fi
+            debt_section="${debt_section}Drift observations resolved (${dr_count}):"
+            while IFS= read -r item; do
+                [ -z "$item" ] && continue
+                # Strip the [RESOLVED date] prefix and the original date/task prefix
+                local desc
+                desc=$(echo "$item" | sed 's/^- \[RESOLVED [^]]*\] //' | sed 's/^\[[^]]*\] //')
+                debt_section="${debt_section}
+  - ${desc}"
+            done <<< "$drift_items"
+        fi
+
+        if [ -n "$body" ]; then
+            body="${body}
+
+${debt_section}"
+        else
+            body="${debt_section}"
+        fi
+    fi
+
     echo "$subject"
     if [ -n "$body" ]; then echo "" && echo "$body"; fi
 }
