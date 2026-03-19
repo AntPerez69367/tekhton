@@ -574,16 +574,18 @@ retry loop in 13.2.
 - Milestone 13.2 calls `report_retry()` and `_reset_monitoring_state()` inside
   the retry loop in `run_agent()`.
 
-#### Milestone 13.2: Retry Envelope in run_agent() and Stage Cleanup
+#### Milestone 13.2.1: Core Retry Envelope in run_agent()
 
-Wire the retry infrastructure from 13.1 into the agent invocation path. Add
-`_retry_agent()` wrapper inside `run_agent()` that detects transient errors via
-`classify_error()` and retries with exponential backoff. Remove the now-redundant
-tester-specific OOM retry. Add `retry_count` to metrics.
+Add the `_retry_agent()` wrapper inside `run_agent()` that detects transient errors
+via `classify_error()` and retries with exponential backoff. This is the core retry
+logic — it calls `report_retry()` and `_reset_monitoring_state()` (both from 13.1),
+uses `is_transient()` from `lib/errors.sh`, and re-invokes `_invoke_and_monitor`
+with identical arguments. No stage-level or metrics changes in this sub-milestone.
 
 **Files to modify:**
-- `lib/agent.sh` — Add `_retry_agent()` wrapper around the core agent invocation
-  inside `run_agent()`. After agent process exits and `classify_error()` runs:
+- `lib/agent.sh` — Initialize `LAST_AGENT_RETRY_COUNT=0` alongside other agent exit
+  detection globals (line ~48). Inside `run_agent()`, after `classify_error()` runs
+  (line ~197) but BEFORE the existing UPSTREAM bypass (line ~205):
   1. If `TRANSIENT_RETRY_ENABLED=false`: skip retry, fall through to existing path
   2. If `AGENT_ERROR_TRANSIENT=true`: enter retry loop
   3. Backoff schedule: `TRANSIENT_RETRY_BASE_DELAY` × 2^attempt, capped at
@@ -599,20 +601,12 @@ tester-specific OOM retry. Add `retry_count` to metrics.
   11. Reset `AGENT_ERROR_*` variables between retries
   12. Track retry count in `LAST_AGENT_RETRY_COUNT` variable
   13. Consider process group cleanup on retry: `kill -- -$PID` before retrying
-- `stages/tester.sh` — Remove the SIGKILL retry block (lines 51–66 that check
-  `was_null_run && LAST_AGENT_EXIT_CODE -eq 137` and sleep 15). This is now
-  handled generically by the retry envelope for ALL agents.
-- `lib/metrics.sh` — Add `retry_count` field to the JSONL record in
-  `record_run_metrics()`. Read from `LAST_AGENT_RETRY_COUNT` (default 0).
-  Add retry count to `summarize_metrics()` output.
-- `lib/agent.sh` — Initialize `LAST_AGENT_RETRY_COUNT=0` alongside other
-  agent exit detection globals.
 
 **Acceptance criteria:**
-- API 500 error during coder stage triggers automatic retry after 30s delay
+- API 500 error during any agent stage triggers automatic retry after 30s delay
 - API 429 (rate limit) triggers retry with 60s minimum delay
 - API 529 (overloaded) triggers retry with 60s minimum delay
-- OOM (exit 137) triggers retry after 15s for ALL agents (not just tester)
+- OOM (exit 137) triggers retry after 15s for ALL agents
 - Network errors (DNS, connection timeout) trigger retry after 30s
 - Maximum 3 retries before falling through to state-save-and-exit
 - Delay doubles on each attempt (30s → 60s → 120s) capped at `TRANSIENT_RETRY_MAX_DELAY`
@@ -620,13 +614,11 @@ tester-specific OOM retry. Add `retry_count` to metrics.
   (via `_reset_monitoring_state()`)
 - Activity timeout detection works correctly on retry attempts
 - Retry attempts are logged with attempt number and category via `report_retry()`
-- `metrics.jsonl` records `retry_count` per agent invocation
 - Permanent errors (`AGENT_SCOPE`, `PIPELINE`) are NEVER retried — they fall
   through immediately to existing error paths
 - `TRANSIENT_RETRY_ENABLED=false` disables retry entirely (1.0-compatible behavior)
-- Tester-specific OOM retry in `stages/tester.sh` is removed (no double retry)
 - All existing tests pass
-- `bash -n` and `shellcheck` pass on all modified files
+- `bash -n` and `shellcheck` pass on `lib/agent.sh`
 
 **Watch For:**
 - The retry envelope wraps the agent invocation INSIDE `run_agent()`, not at the
@@ -634,21 +626,58 @@ tester-specific OOM retry. Add `retry_count` to metrics.
 - FIFO cleanup between retries is critical. A stale FIFO reader from attempt 1
   will interfere with attempt 2's monitoring. `_reset_monitoring_state()` handles
   this but verify it kills the subshell before removing the FIFO.
-- The existing tester OOM retry is a special case that MUST be removed — otherwise
-  tester gets double retry (once in the agent wrapper, once in the stage).
 - `retry-after` header parsing from Claude CLI JSON output is best-effort. If the
   header isn't present or parseable, fall back to the exponential backoff schedule.
 - Do NOT retry on `AGENT_SCOPE/null_run` or `AGENT_SCOPE/max_turns`. Those are
   permanent conditions — the agent genuinely couldn't do the work.
-- Do NOT add retry to the scout stage. Scout failures are already non-fatal.
-- The `UPSTREAM` bypass of null-run classification (already in agent.sh from 12.2)
-  returns early from `run_agent()`. The retry loop must intercept BEFORE that
-  early return — check for transient errors and retry before the UPSTREAM return.
+- The retry loop must intercept BEFORE the existing UPSTREAM early return — check
+  for transient errors and retry before the UPSTREAM bypass fires.
+- The retry loop must re-run error classification after each retry attempt by
+  re-invoking `_invoke_and_monitor` and then re-classifying the new exit.
+
+**Seeds Forward:**
+- Milestone 13.2.2 removes the tester-specific OOM retry and adds `retry_count`
+  to metrics, completing the 13.2 scope
+
+#### Milestone 13.2.2: Stage Cleanup and Metrics Integration
+
+Remove the now-redundant tester-specific OOM retry (which would cause double retry
+with the generic envelope from 13.2.1) and add `retry_count` tracking to the
+metrics JSONL record and dashboard output.
+
+**Files to modify:**
+- `stages/tester.sh` — Remove the SIGKILL retry block (lines 51–66 that check
+  `was_null_run && LAST_AGENT_EXIT_CODE -eq 137` and sleep 15). This is now
+  handled generically by the retry envelope in `run_agent()` for ALL agents.
+  The UPSTREAM error handling block (lines 68–84) remains untouched.
+- `lib/metrics.sh` — Add `retry_count` field to the JSONL record in
+  `record_run_metrics()`. Read from `LAST_AGENT_RETRY_COUNT` (default 0).
+  Add retry count to `summarize_metrics()` output in a "Retries" line showing
+  total retry count across recorded runs and average retries per invocation.
+
+**Acceptance criteria:**
+- Tester-specific OOM retry in `stages/tester.sh` is removed (no double retry)
+- OOM during tester stage is handled by the generic retry envelope (verified by
+  the retry envelope from 13.2.1 applying to all agents including tester)
+- `metrics.jsonl` records `retry_count` per agent invocation (0 for no retries)
+- `--metrics` dashboard shows retry statistics in the summary output
+- Existing tester UPSTREAM error handling (save state and exit) is preserved
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- When removing the tester SIGKILL retry block, be careful not to remove the
+  UPSTREAM error handling block that follows it (lines 68–84). Only remove the
+  `if was_null_run && [ "$LAST_AGENT_EXIT_CODE" -eq 137 ]` block.
+- The `LAST_AGENT_RETRY_COUNT` variable is initialized in 13.2.1. This sub-milestone
+  only reads it — do not re-declare or shadow it.
+- `retry_count` in JSONL should be 0 (not omitted) when no retries occurred, for
+  consistent schema. This differs from `error_category` which is omitted on success.
 
 **Seeds Forward:**
 - Milestone 14 (Turn Exhaustion Continuation) depends on reliable transient error
-  handling being solved first
-- The `retry_count` metric enables future adaptive retry calibration
+  handling being solved by the complete 13.2 scope
+- The `retry_count` metric enables future adaptive retry calibration in V3
 #### Milestone 14: Turn Exhaustion Continuation Loop
 
 Add automatic continuation when an agent hits its turn limit but made substantive

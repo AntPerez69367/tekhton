@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
 - [2026-03-18 | "Continue Implementing Milestone 13.1: Retry Infrastructure — Config, Reporting, and Monitoring Reset"] `lib/agent_monitor.sh:211` — The activity-timeout kill sequence inside the FIFO reader subshell uses `kill "$_TEKHTON_AGENT_PID"` directly, but the outer `_run_agent_abort` trap already does the same. These two kill paths are logically duplicated. Not a bug — the subshell can't reach the trap — but worth a comment explaining why the inner kill is necessary.

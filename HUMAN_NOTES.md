@@ -12,10 +12,10 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 
 ## Features
-- [x] [FEAT] The NON_BLOCKING_LOG.md has an excellent mechanic of using `[ ]` and `[X]` to denote to-do and completed items, but it never gets tidied up. Currently after items have been picked up from the log and completed they are marked as `[X]`. Let's extend that slightly so that on a new run before we pick up the `[ ]` items we first clear any leftover `[X]` items so that we only ever see the last ones tackled. Also, from now on the items we complete from both the NON_BLOCKING_LOG and the DRIFT_LOG should be included in the final commit message. Then we can stop archiving them forever.
+None currently.
 
 ## Bugs
 None currently.
 
 ## Polish
-None currently.
+- [ ] [POLISH] "The Generating" message is a really nice feature we should be using when any of the agents are working. Currently while a claude model is running we don't reflect that to the user in the CLI. We should add a CLI indicator to show when an agent is actively generating content so that users are aware that the pipeline is processing. Let's keep the animating dot pattern we use now for consistency but let's change the message to which Agent is working (e.g. "Coder is generating...") so that it's more informative to the user.
