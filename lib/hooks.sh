@@ -103,14 +103,31 @@ generate_commit_message() {
 
     local body=""
     if [ -n "$what" ]; then
-        body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 | sed 's/^[-*] /- /' || true)
+        body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -15 | sed 's/^[-*] /- /' || true)
     fi
 
-    # Append git diff --stat for a concrete file list and change summary
+    # Include root cause for bug fixes
+    if [ -f "CODER_SUMMARY.md" ] && echo "$task" | grep -qi "fix\|bug"; then
+        local root_cause
+        root_cause=$(awk '/^## Root [Cc]ause/{found=1; next} found && /^##/{exit} found && NF{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 || true)
+        if [ -n "$root_cause" ] && ! echo "$root_cause" | grep -qi "^n/a\|^none\|^(fill"; then
+            body="${body:+${body}
+}
+Root cause:
+${root_cause}"
+        fi
+    fi
+
+    # Append git diff --stat for a concrete file list and change summary.
+    # Compare working tree against HEAD — no pre-staging required. Staging
+    # happens once in _do_git_commit() right before the actual commit.
     local diff_stat=""
-    diff_stat=$(git diff --cached --stat 2>/dev/null || git diff HEAD --stat 2>/dev/null || true)
+    diff_stat=$(git diff HEAD --stat 2>/dev/null || true)
     if [ -z "$diff_stat" ]; then
         diff_stat=$(git diff --stat 2>/dev/null || true)
+    fi
+    if [ -z "$diff_stat" ]; then
+        diff_stat=$(git diff --cached --stat 2>/dev/null || true)
     fi
     if [ -n "$diff_stat" ]; then
         # Last line of diff --stat is the summary (e.g., "7 files changed, 73 insertions(+), 54 deletions(-)")
@@ -118,7 +135,7 @@ generate_commit_message() {
         diff_summary=$(echo "$diff_stat" | tail -1 | sed 's/^ *//')
         # File lines are everything except the summary
         local diff_files
-        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//' | head -15)
+        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//' | head -20)
         if [ -n "$diff_summary" ]; then
             body="${body:+${body}
 }

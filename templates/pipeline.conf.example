@@ -150,8 +150,9 @@ NON_BLOCKING_INJECTION_THRESHOLD=8
 
 # Auto-commit: when true, automatically commits successful pipeline runs without
 # prompting the user. The commit message includes a summary, file list, and
-# change statistics. Set to false (default) to prompt before each commit.
-# AUTO_COMMIT=false
+# change statistics. Default: true. Set to false to always prompt.
+# Use --no-commit flag to skip auto-commit for a single run.
+# AUTO_COMMIT=true
 
 # --- Human notes configuration ----------------------------------------------
 # Valid categories for --notes-filter (pipe-separated for case matching)

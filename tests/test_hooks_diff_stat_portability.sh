@@ -10,7 +10,7 @@
 #   1. File lines appear in "Files changed:" section
 #   2. Summary line appears after file lines (not duplicated in file list)
 #   3. With a single-file diff, the one file line appears and summary is separate
-#   4. With 16+ files, output is capped at 15 file lines (head -15)
+#   4. With 22+ files, output is capped at 20 file lines (head -20)
 # =============================================================================
 set -euo pipefail
 
@@ -136,12 +136,12 @@ else
 fi
 
 # =============================================================================
-# Test 4: More than 15 files — output capped at 15 file lines
+# Test 4: More than 20 files — output capped at 20 file lines
 # =============================================================================
 git reset -q HEAD  # unstage everything
 
-# Create 16 new files and stage them
-for i in $(seq 1 16); do
+# Create 22 new files and stage them
+for i in $(seq 1 22); do
     echo "content $i" > "bulk_file_${i}.txt"
 done
 git add bulk_file_*.txt
@@ -151,12 +151,12 @@ MSG=$(generate_commit_message "feat: add many files")
 assert_contains "bulk: header present" "Files changed:" "$MSG"
 assert_contains "bulk: summary present" "files changed" "$MSG"
 
-# Count file_N lines — should be capped at 15
+# Count file_N lines — should be capped at 20
 file_line_count=$(echo "$MSG" | grep -cE "bulk_file_[0-9]+\.txt" || true)
-if [ "$file_line_count" -le 15 ]; then
-    echo "✓ Test 4: file lines capped at 15 (got $file_line_count)"
+if [ "$file_line_count" -le 20 ]; then
+    echo "✓ Test 4: file lines capped at 20 (got $file_line_count)"
 else
-    echo "FAIL: Test 4 — expected ≤15 file lines, got $file_line_count"
+    echo "FAIL: Test 4 — expected ≤20 file lines, got $file_line_count"
     FAIL=1
 fi
 

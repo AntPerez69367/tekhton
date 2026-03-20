@@ -148,8 +148,14 @@ _check_pipeline_lock() {
 NOTES_FILTER=""
 MILESTONE_MODE=false
 AUTO_ADVANCE=false
+WITH_NOTES=false
+HUMAN_MODE=false
+HUMAN_NOTES_TAG=""
+COMPLETE_MODE=false
+CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
 FORCE_AUDIT=false
+_AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
 TOTAL_TIME=0
@@ -305,6 +311,7 @@ source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
+source "${TEKHTON_HOME}/lib/finalize.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"
@@ -341,6 +348,12 @@ usage() {
     echo "  --notes-filter POLISH     Inject only [POLISH] notes this run"
     echo "  --init-notes              Create a blank HUMAN_NOTES.md template and exit"
     echo "  --seed-contracts          Seed inline system contracts in lib/ source files"
+    echo "  --human [TAG]             Pick next unchecked note from HUMAN_NOTES.md as task"
+    echo "                            Optional TAG: BUG, FEAT, POLISH"
+    echo "  --complete                Loop mode: repeat pipeline until done or bounds hit"
+    echo "  --with-notes              Force human notes injection regardless of task text"
+    echo "  --usage-threshold N       Pause if session usage exceeds N% (overrides config)"
+    echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
     echo "  --skip-audit              Skip architect audit even if threshold is reached"
     echo "  --force-audit             Force architect audit regardless of threshold"
     echo ""
@@ -351,6 +364,9 @@ usage() {
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
     echo "  tekhton --milestone \"Feat: payment system\""
+    echo "  tekhton --human                             # Pick next note and run"
+    echo "  tekhton --human BUG                         # Pick next BUG note"
+    echo "  tekhton --human --complete                  # Process all notes in loop"
     echo ""
     echo "Documentation:"
     echo "  man tekhton                              # Full man page (if installed)"
@@ -522,6 +538,25 @@ EOF
             exit 0
             ;;
         --help|-h) usage 0 ;;
+        --with-notes) WITH_NOTES=true; shift ;;
+        --human)
+            HUMAN_MODE=true
+            shift
+            # Consume optional tag argument (BUG, FEAT, POLISH) if present
+            if [[ "${1:-}" =~ ^(BUG|FEAT|POLISH)$ ]]; then
+                HUMAN_NOTES_TAG="$1"
+                shift
+            fi
+            export HUMAN_MODE HUMAN_NOTES_TAG
+            ;;
+
+        --usage-threshold)
+            shift
+            USAGE_THRESHOLD_PCT="$1"
+            shift
+            ;;
+        --complete) COMPLETE_MODE=true; shift ;;
+        --no-commit) AUTO_COMMIT=false; _AUTO_COMMIT_EXPLICIT=true; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --) shift; break ;;
@@ -530,7 +565,63 @@ EOF
     esac
 done
 
-if [ $# -eq 0 ]; then
+# AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
+# config_defaults.sh sets the non-milestone default (false). Here we override
+# to true for milestone mode, but only if the user didn't explicitly set it
+# in pipeline.conf (tracked by _CONF_KEYS_SET) or via --no-commit flag.
+if [ "$MILESTONE_MODE" = true ] \
+   && [[ " ${_CONF_KEYS_SET:-} " != *" AUTO_COMMIT "* ]] \
+   && [ "${_AUTO_COMMIT_EXPLICIT:-false}" != true ]; then
+    AUTO_COMMIT=true
+fi
+
+# --- Human mode: flag validation and note derivation --------------------------
+
+if [[ "$HUMAN_MODE" = true ]]; then
+    if [[ "$MILESTONE_MODE" = true ]]; then
+        error "Cannot combine --human with --milestone"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$WITH_NOTES" = true ]]; then
+        warn "--with-notes is redundant with --human (notes are already active)"
+    fi
+    # Sync NOTES_FILTER from HUMAN_NOTES_TAG for pre-flight display
+    if [[ -n "$HUMAN_NOTES_TAG" ]] && [[ -z "$NOTES_FILTER" ]]; then
+        NOTES_FILTER="$HUMAN_NOTES_TAG"
+    fi
+fi
+
+if [[ "$HUMAN_MODE" = true ]]; then
+    if [[ $# -gt 0 ]]; then
+        error "Cannot combine --human with an explicit task"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$COMPLETE_MODE" = true ]]; then
+        # Task is set per-iteration in the human-complete loop
+        TASK="--human --complete"
+        # Auto-commit each note independently (used by finalize.sh)
+        # shellcheck disable=SC2034
+        AUTO_COMMIT=true
+    else
+        # Single-note mode: pick the highest-priority unchecked note
+        CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+        if [[ -z "$CURRENT_NOTE_LINE" ]]; then
+            if [[ -n "$HUMAN_NOTES_TAG" ]]; then
+                log "No unchecked [${HUMAN_NOTES_TAG}] notes in HUMAN_NOTES.md"
+            else
+                log "No unchecked notes in HUMAN_NOTES.md"
+            fi
+            _TEKHTON_CLEAN_EXIT=true
+            exit 0
+        fi
+        TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
+        claim_single_note "$CURRENT_NOTE_LINE"
+        export CURRENT_NOTE_LINE
+        log "Human mode: picked note — ${TASK}"
+    fi
+elif [ $# -eq 0 ]; then
     # No task argument — try to pull from saved pipeline state
     if [ "$START_AT" != "coder" ] && [ -f "$PIPELINE_STATE_FILE" ]; then
         TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
@@ -702,6 +793,11 @@ fi
 # --- Auto-advance: initialize milestone state if needed ----------------------
 
 if [ "$AUTO_ADVANCE" = true ]; then
+    # The --auto-advance CLI flag activates AUTO_ADVANCE_ENABLED so that
+    # should_auto_advance() in milestone_ops.sh allows the loop to run.
+    # Without this, the config default of false blocks the while loop.
+    AUTO_ADVANCE_ENABLED=true
+    export AUTO_ADVANCE_ENABLED
     if [ -n "$_CURRENT_MILESTONE" ]; then
         _total_milestones=$(get_milestone_count "CLAUDE.md")
         init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
@@ -823,327 +919,225 @@ if ! check_usage_threshold; then
     exit 0
 fi
 
-# Run the pipeline stages (first pass)
-_run_pipeline_stages
+# --- Human-complete loop function --------------------------------------------
+# Processes notes one at a time in a loop. Each note gets its own pipeline run
+# and commit. Stage failures exit the script (crash handler resets [~] → [ ]).
+# Graceful per-note failure recovery is M16 scope (outer loop restructuring).
 
-# --- Auto-advance loop -------------------------------------------------------
+_run_human_complete_loop() {
+    : "${MAX_PIPELINE_ATTEMPTS:=5}"
+    : "${AUTONOMOUS_TIMEOUT:=7200}"
+    local human_attempt=0
+    local start_time
+    start_time=$(date +%s)
 
-if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
-    # Check acceptance for current milestone
-    _acceptance_pass=true
-    check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
+    while true; do
+        human_attempt=$((human_attempt + 1))
 
-    if [ "$_acceptance_pass" = true ]; then
-        # Find next milestone
-        _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+        # Safety bound: max attempts
+        if [[ "$human_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
+            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS}). Stopping."
+            break
+        fi
 
-        if [ -n "$_next_milestone" ]; then
-            write_milestone_disposition "COMPLETE_AND_CONTINUE"
+        # Safety bound: wall-clock timeout
+        local elapsed
+        elapsed=$(( $(date +%s) - start_time ))
+        if [[ "$elapsed" -ge "$AUTONOMOUS_TIMEOUT" ]]; then
+            warn "Reached AUTONOMOUS_TIMEOUT (${AUTONOMOUS_TIMEOUT}s). Stopping."
+            break
+        fi
 
-            # Auto-advance loop
-            while should_auto_advance; do
-                _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
-                if [ -z "$_next_milestone" ]; then
-                    log "No more milestones to advance to."
-                    write_milestone_disposition "COMPLETE_AND_WAIT"
-                    break
-                fi
+        # Pick next note
+        CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+        if [[ -z "$CURRENT_NOTE_LINE" ]]; then
+            if [[ -n "$HUMAN_NOTES_TAG" ]]; then
+                log "No more unchecked [${HUMAN_NOTES_TAG}] notes. Done."
+            else
+                log "No more unchecked notes. Done."
+            fi
+            break
+        fi
 
-                _next_title=$(get_milestone_title "$_next_milestone")
+        TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
+        export CURRENT_NOTE_LINE
 
-                # Confirm if configured
-                if [ "${AUTO_ADVANCE_CONFIRM}" = "true" ]; then
-                    if ! prompt_auto_advance_confirm "$_next_milestone" "$_next_title"; then
-                        log "Auto-advance declined by user."
-                        write_milestone_disposition "COMPLETE_AND_WAIT"
-                        break
-                    fi
-                fi
+        log "Human note ${human_attempt}: ${TASK}"
+        claim_single_note "$CURRENT_NOTE_LINE"
 
-                advance_milestone "$_CURRENT_MILESTONE" "$_next_milestone"
-                _CURRENT_MILESTONE="$_next_milestone"
-
-                # Update task for the new milestone
-                TASK="Implement Milestone ${_CURRENT_MILESTONE}: ${_next_title}"
-                log "Task updated: ${TASK}"
-
-                # Reset START_AT to coder for subsequent milestones
-                START_AT="coder"
-
-                # Archive reports from previous milestone
-                for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
-                    if [ -f "$f" ]; then
-                        ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_milestone${_CURRENT_MILESTONE}_${f}"
-                        mkdir -p "${LOG_DIR}/archive"
-                        mv "$f" "$ARCHIVE_NAME"
-                    fi
-                done
-
-                # Check usage threshold before starting next milestone
-                if ! check_usage_threshold; then
-                    warn "Usage threshold reached before milestone ${_CURRENT_MILESTONE}. Pausing auto-advance."
-                    write_milestone_disposition "COMPLETE_AND_WAIT"
-                    break
-                fi
-
-                # Update log file for new milestone
-                TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-                TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
-                LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
-
-                # Run pipeline stages for new milestone
-                _run_pipeline_stages
-
-                # Check acceptance for new milestone
-                _acceptance_pass=true
-                check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
-
-                if [ "$_acceptance_pass" = true ]; then
-                    _next_check=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
-                    if [ -n "$_next_check" ]; then
-                        write_milestone_disposition "COMPLETE_AND_CONTINUE"
-                    else
-                        write_milestone_disposition "COMPLETE_AND_WAIT"
-                        log "All milestones complete."
-                        break
-                    fi
-                else
-                    write_milestone_disposition "INCOMPLETE_REWORK"
-                    warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Stopping auto-advance."
-                    break
+        # Archive reports from previous iteration
+        if [[ "$human_attempt" -gt 1 ]]; then
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+                if [[ -f "$f" ]]; then
+                    mkdir -p "${LOG_DIR}/archive"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_human${human_attempt}_${f}"
                 fi
             done
-        else
-            write_milestone_disposition "COMPLETE_AND_WAIT"
-            log "No more milestones — this was the last one."
         fi
-    else
-        write_milestone_disposition "INCOMPLETE_REWORK"
-        warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Fix issues and re-run."
-    fi
-elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ] && [ "${SKIP_FINAL_CHECKS:-false}" != true ]; then
-    # Non-auto-advance milestone run: check acceptance and set disposition
-    _acceptance_pass=true
-    check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
 
-    if [ "$_acceptance_pass" = true ]; then
-        write_milestone_disposition "COMPLETE_AND_WAIT"
-    else
-        write_milestone_disposition "INCOMPLETE_REWORK"
-    fi
-fi
+        # Update log file for this note
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
+        LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
 
-# --- Autonomous debt sweep (post-success only) --------------------------------
-# Runs after the primary pipeline completes. Never runs during rework cycles.
-# Build gate failure in cleanup logs a warning but does not fail the pipeline.
+        # Reset start-at for each note (always full pipeline)
+        START_AT="coder"
 
-if [ "${SKIP_FINAL_CHECKS:-false}" != true ] && should_run_cleanup; then
-    run_stage_cleanup
-fi
+        # Check usage threshold before each note
+        if ! check_usage_threshold; then
+            warn "Usage threshold reached. Pausing human-complete loop."
+            # Reset the claimed note back to [ ]
+            resolve_single_note "$CURRENT_NOTE_LINE" 1
+            break
+        fi
 
-# --- Final checks ------------------------------------------------------------
-# run_final_checks returns non-zero when analyze/tests fail — capture it so
-# set -e doesn't kill the pipeline before we archive reports and commit.
-# Skip entirely if a stage null-ran (no point burning tokens on cleanup agents).
+        # Run full pipeline — if a stage calls exit 1, the script exits and
+        # the crash handler resets [~] → [ ]. This satisfies "stop on failure".
+        _run_pipeline_stages
 
-FINAL_CHECK_RESULT=0
-if [ "${SKIP_FINAL_CHECKS:-false}" = true ]; then
-    warn "Skipping final checks — a stage had a null run (agent died without doing work)."
-    warn "Fix the underlying issue and re-run before running analyze/test."
+        # Pipeline succeeded — finalize (includes commit for this note).
+        # _hook_resolve_notes detects HUMAN_MODE and calls resolve_single_note
+        # for CURRENT_NOTE_LINE, marking it [x] on success.
+        finalize_run 0
 
-    # Record metrics even on early exit so null-run data is captured
-    record_run_metrics
-
-    # Archive whatever reports exist so they aren't lost
-    archive_reports "$LOG_DIR" "$TIMESTAMP"
-    print_run_summary
-    warn "Pipeline exiting early due to null run. Re-run to resume."
-    _TEKHTON_CLEAN_EXIT=true
-    exit 0
-else
-    run_final_checks "$LOG_FILE" || FINAL_CHECK_RESULT=$?
-
-    if [ "$FINAL_CHECK_RESULT" -ne 0 ]; then
-        warn "Final checks had failures (exit ${FINAL_CHECK_RESULT}). Pipeline will continue to archiving and commit prompt."
-    fi
-fi
-
-# --- Drift artifact processing -----------------------------------------------
-
-process_drift_artifacts
-
-# --- Record run metrics ------------------------------------------------------
-
-record_run_metrics
-
-# --- Archive reports ---------------------------------------------------------
-
-archive_reports "$LOG_DIR" "$TIMESTAMP"
-
-# --- Milestone disposition for commit signatures -----------------------------
-
-_MS_COMMIT_NUM=""
-_MS_COMMIT_DISPOSITION=""
-if [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
-    _MS_COMMIT_NUM="$_CURRENT_MILESTONE"
-    _MS_COMMIT_DISPOSITION=$(get_milestone_disposition 2>/dev/null || echo "")
-fi
-
-# --- Generate commit message -------------------------------------------------
-
-COMMIT_MSG=$(generate_commit_message "$TASK" "$_MS_COMMIT_NUM" "$_MS_COMMIT_DISPOSITION" || echo "feat: ${TASK}")
-
-# --- Done --------------------------------------------------------------------
-
-header "Tekhton — Pipeline Complete"
-echo -e "  Task:      ${BOLD}${TASK}${NC}"
-echo -e "  Started:   ${BOLD}${START_AT}${NC}"
-echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT}${NC}"
-echo -e "  Log:       ${LOG_FILE}"
-
-# Show milestone completion status in the final banner
-if [ -n "$_MS_COMMIT_NUM" ]; then
-    if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
-        echo -e "  Milestone: ${GREEN}${BOLD}${_MS_COMMIT_NUM} — COMPLETE${NC}"
-    else
-        echo -e "  Milestone: ${YELLOW}${BOLD}${_MS_COMMIT_NUM} — PARTIAL${NC}"
-    fi
-fi
-echo
-
-# --- Action Items summary ----------------------------------------------------
-# Consolidated block showing everything the human should review before moving on.
-
-ACTION_ITEMS=()
-
-# Check for tester bugs
-# "None" at the start of the section (with optional period/whitespace) means no bugs,
-# even if the tester added explanatory bullet points after it.
-if [ -f "TESTER_REPORT.md" ] && \
-   awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
-    _bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
-    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ TESTER_REPORT.md — ${_bug_count} bug(s) found (see ## Bugs Found)${NC}")")
-fi
-
-# Check for test failures from final checks
-if [ "$FINAL_CHECK_RESULT" -ne 0 ]; then
-    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ Test suite — final checks failed (see output above)${NC}")")
-fi
-
-# Check for human action items
-if has_human_actions 2>/dev/null; then
-    _ha_count=$(count_human_actions)
-    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ ${HUMAN_ACTION_FILE} — ${_ha_count} item(s) needing manual work${NC}")")
-fi
-
-# Check for non-blocking notes (info only)
-if [ -f "${NON_BLOCKING_LOG_FILE:-}" ] && [ -s "${NON_BLOCKING_LOG_FILE:-}" ]; then
-    _nb_count=$(count_open_nonblocking_notes 2>/dev/null || echo 0)
-    if [ "$_nb_count" -gt 0 ]; then
-        ACTION_ITEMS+=("$(echo -e "${CYAN}  ℹ ${NON_BLOCKING_LOG_FILE} — ${_nb_count} accumulated observation(s)${NC}")")
-    fi
-fi
-
-# Check for drift observations (info only)
-if [ -f "${DRIFT_LOG_FILE:-}" ] && [ -s "${DRIFT_LOG_FILE:-}" ]; then
-    _drift_count=$(count_drift_observations 2>/dev/null || echo 0)
-    if [ "$_drift_count" -gt 0 ]; then
-        ACTION_ITEMS+=("$(echo -e "${CYAN}  ℹ ${DRIFT_LOG_FILE} — ${_drift_count} unresolved drift observation(s)${NC}")")
-    fi
-fi
-
-if [ ${#ACTION_ITEMS[@]} -gt 0 ]; then
-    echo -e "${BOLD}══════════════════════════════════════${NC}"
-    echo -e "${BOLD}  Action Items${NC}"
-    echo -e "${BOLD}══════════════════════════════════════${NC}"
-    for item in "${ACTION_ITEMS[@]}"; do
-        echo -e "$item"
+        log "Note completed: ${TASK}"
     done
-    echo -e "${BOLD}══════════════════════════════════════${NC}"
-    echo
-else
-    success "No action items — clean run."
-    echo
-fi
-
-log "Suggested commit message:"
-echo "────────────────────────────────────────"
-echo "$COMMIT_MSG"
-echo "────────────────────────────────────────"
-echo
-
-# Remove lock file BEFORE commit so it isn't staged by git add -A and then
-# deleted by the EXIT trap, leaving an uncommitted deletion in the working tree.
-if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
-    rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
-fi
-
-# Auto-commit when configured — skip interactive prompt entirely
-if [ "${AUTO_COMMIT:-false}" = "true" ]; then
-    log "AUTO_COMMIT enabled — committing automatically."
-    COMMIT_CHOICE="y"
-else
-    log "Commit with suggested message? [y/e/n]"
-    echo "  y = commit now with this message"
-    echo "  e = open message in \$EDITOR first"
-    echo "  n = skip (commit manually later)"
-
-    # Read from /dev/tty when stdin is piped, so `yes | tekhton` doesn't
-    # silently auto-answer the commit prompt after consuming the resume prompt.
-    if [ -t 0 ]; then
-        read -r COMMIT_CHOICE
-    else
-        read -r COMMIT_CHOICE < /dev/tty 2>/dev/null || COMMIT_CHOICE="y"
-        log "(read from /dev/tty — stdin was piped)"
-    fi
-fi
-
-# Helper: stage, commit, and log output without printing verbose git details
-_do_git_commit() {
-    local msg="$1"
-    _check_gitignore_safety
-    git add -A > /dev/null 2>&1
-    local git_output
-    git_output=$(git commit -m "$msg" 2>&1) || true
-    # Show only the summary line (e.g. "[branch abc1234] feat: message")
-    local summary
-    summary=$(echo "$git_output" | head -1)
-    log "$summary"
 }
 
-case "$COMMIT_CHOICE" in
-    y|Y)
-        _do_git_commit "$COMMIT_MSG"
-        # Tag milestone completion and archive after successful commit
-        if [ -n "$_MS_COMMIT_NUM" ]; then
-            if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
-                tag_milestone_complete "$_MS_COMMIT_NUM"
-                archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
+# --- Pipeline execution (mode dispatch) --------------------------------------
+
+if [[ "$HUMAN_MODE" = true ]] && [[ "$COMPLETE_MODE" = true ]]; then
+    # Human-complete mode: process notes one at a time in a loop
+    _run_human_complete_loop
+else
+    # Standard pipeline execution
+    _run_pipeline_stages
+
+    # --- Auto-advance loop ---------------------------------------------------
+
+    if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
+        # Check acceptance for current milestone
+        _acceptance_pass=true
+        check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
+
+        if [ "$_acceptance_pass" = true ]; then
+            # Find next milestone
+            _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+
+            if [ -n "$_next_milestone" ]; then
+                write_milestone_disposition "COMPLETE_AND_CONTINUE"
+
+                # Auto-advance loop
+                while should_auto_advance; do
+                    _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+                    if [ -z "$_next_milestone" ]; then
+                        log "No more milestones to advance to."
+                        write_milestone_disposition "COMPLETE_AND_WAIT"
+                        break
+                    fi
+
+                    _next_title=$(get_milestone_title "$_next_milestone")
+
+                    # Confirm if configured
+                    if [ "${AUTO_ADVANCE_CONFIRM}" = "true" ]; then
+                        if ! prompt_auto_advance_confirm "$_next_milestone" "$_next_title"; then
+                            log "Auto-advance declined by user."
+                            write_milestone_disposition "COMPLETE_AND_WAIT"
+                            break
+                        fi
+                    fi
+
+                    advance_milestone "$_CURRENT_MILESTONE" "$_next_milestone"
+                    _CURRENT_MILESTONE="$_next_milestone"
+
+                    # Update task for the new milestone
+                    TASK="Implement Milestone ${_CURRENT_MILESTONE}: ${_next_title}"
+                    log "Task updated: ${TASK}"
+
+                    # Reset START_AT to coder for subsequent milestones
+                    START_AT="coder"
+
+                    # Archive reports from previous milestone
+                    for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+                        if [ -f "$f" ]; then
+                            ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_milestone${_CURRENT_MILESTONE}_${f}"
+                            mkdir -p "${LOG_DIR}/archive"
+                            mv "$f" "$ARCHIVE_NAME"
+                        fi
+                    done
+
+                    # Check usage threshold before starting next milestone
+                    if ! check_usage_threshold; then
+                        warn "Usage threshold reached before milestone ${_CURRENT_MILESTONE}. Pausing auto-advance."
+                        write_milestone_disposition "COMPLETE_AND_WAIT"
+                        break
+                    fi
+
+                    # Update log file for new milestone
+                    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+                    TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
+                    LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
+
+                    # Run pipeline stages for new milestone
+                    _run_pipeline_stages
+
+                    # Check acceptance for new milestone
+                    _acceptance_pass=true
+                    check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
+
+                    if [ "$_acceptance_pass" = true ]; then
+                        _next_check=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+                        if [ -n "$_next_check" ]; then
+                            write_milestone_disposition "COMPLETE_AND_CONTINUE"
+                        else
+                            write_milestone_disposition "COMPLETE_AND_WAIT"
+                            log "All milestones complete."
+                            break
+                        fi
+                    else
+                        write_milestone_disposition "INCOMPLETE_REWORK"
+                        warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Stopping auto-advance."
+                        break
+                    fi
+                done
+            else
+                write_milestone_disposition "COMPLETE_AND_WAIT"
+                log "No more milestones — this was the last one."
             fi
+        else
+            write_milestone_disposition "INCOMPLETE_REWORK"
+            warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Fix issues and re-run."
         fi
-        print_run_summary
-        success "Committed. Open a PR and squash-merge to main when ready."
-        ;;
-    e|E)
-        TMPFILE=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/tekhton-commit-XXXXXX.txt")
-        echo "$COMMIT_MSG" > "$TMPFILE"
-        ${EDITOR:-nano} "$TMPFILE"
-        EDITED_MSG=$(cat "$TMPFILE")
-        rm "$TMPFILE"
-        _do_git_commit "$EDITED_MSG"
-        # Tag milestone completion and archive after successful commit
-        if [ -n "$_MS_COMMIT_NUM" ]; then
-            if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
-                tag_milestone_complete "$_MS_COMMIT_NUM"
-                archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
-            fi
+    elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ] && [ "${SKIP_FINAL_CHECKS:-false}" != true ]; then
+        # Non-auto-advance milestone run: check acceptance and set disposition
+        _acceptance_pass=true
+        check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
+
+        if [ "$_acceptance_pass" = true ]; then
+            write_milestone_disposition "COMPLETE_AND_WAIT"
+        else
+            write_milestone_disposition "INCOMPLETE_REWORK"
         fi
-        print_run_summary
-        success "Committed. Open a PR and squash-merge to main when ready."
-        ;;
-    *)
-        log "Skipped commit. When ready:"
-        echo "  git add -A && git commit -m '${COMMIT_MSG%%$'\n'*}'"
-        ;;
-esac
-echo
+    fi
+
+    # --- Autonomous debt sweep (post-success only) ----------------------------
+    # Runs after the primary pipeline completes. Never runs during rework cycles.
+    # Build gate failure in cleanup logs a warning but does not fail the pipeline.
+
+    if [ "${SKIP_FINAL_CHECKS:-false}" != true ] && should_run_cleanup; then
+        run_stage_cleanup
+    fi
+
+    # --- Finalize pipeline ---------------------------------------------------
+    # All post-pipeline bookkeeping is consolidated in finalize_run() (lib/finalize.sh).
+    # The hook sequence handles: final checks, drift artifacts, metrics, resolved
+    # notes cleanup, human notes resolution, report archiving, milestone marking,
+    # commit, milestone archival, and state clearing — in deterministic order.
+    #
+    # Pipeline exit code: 0 if we reached this point (stages completed).
+    # SKIP_FINAL_CHECKS signals a null-run stage — finalize_run handles it via
+    # the _hook_final_checks guard.
+
+    finalize_run 0
+    echo
+fi

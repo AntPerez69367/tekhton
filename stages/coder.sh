@@ -323,6 +323,14 @@ ${nb_notes}"
 
     # --- Context budget reporting --------------------------------------------
 
+    # Mark human notes as in-progress before coder runs (only when task is about notes)
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+        claim_human_notes
+    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+        log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
+        HUMAN_NOTES_BLOCK=""
+    fi
+
     _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"
     _add_context_component "Glossary" "$GLOSSARY_BLOCK"
     _add_context_component "Milestone" "$MILESTONE_BLOCK"
@@ -336,11 +344,6 @@ ${nb_notes}"
     log_context_report "coder" "$CLAUDE_CODER_MODEL"
 
     # --- Invoke coder agent --------------------------------------------------
-
-    # Mark human notes as in-progress before coder runs
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        claim_human_notes
-    fi
 
     CODER_PROMPT=$(render_prompt "coder")
 
@@ -434,22 +437,9 @@ ${nb_notes}"
     fi
 
     # Resolve human notes based on coder's structured reporting
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+    # Only resolve if notes were actually claimed (marked [~]) for this run
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
         resolve_human_notes
-
-        # If notes were injected but none were properly addressed, downgrade
-        # COMPLETE → IN PROGRESS so the continuation loop gives the coder
-        # another chance. This prevents the coder from ignoring human notes
-        # and claiming COMPLETE.
-        if [[ "${HUMAN_NOTES_ALL_ADDRESSED:-true}" = "false" ]]; then
-            local _coder_status_check
-            _coder_status_check=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
-            if [[ "$_coder_status_check" == *"COMPLETE"* ]]; then
-                warn "Coder reported COMPLETE but human notes were not properly addressed."
-                warn "Downgrading status to IN PROGRESS to trigger continuation."
-                sed -i 's/^## Status.*COMPLETE.*/## Status: IN PROGRESS/' CODER_SUMMARY.md
-            fi
-        fi
     fi
 
     # --- Post-coder clarification detection ------------------------------------
