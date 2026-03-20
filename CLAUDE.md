@@ -1009,7 +1009,13 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ### Milestone Plan
 
-#### Milestone 17: Tech Stack Detection Engine
+#### [DONE] Milestone 17: Tech Stack Detection Engine
+<!-- milestone-meta
+id: "17"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
 
 Pure shell library that detects project language(s), framework(s), package manager,
 build system, and infers ANALYZE_CMD / TEST_CMD / BUILD_CHECK_CMD. No agent calls.

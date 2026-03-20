@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-19
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-03-20 | "Implement Milestone 17: Tech Stack Detection Engine"] `detect.sh` `_find_source_files()`: the `git ls-files` path is not depth-bounded (finds files at any depth), while the non-git fallback uses `find -maxdepth 2`. Same inconsistency noted in cycle 1 — not a current blocker but detection results will differ between git and non-git repos with the same structure. Worth aligning when the crawler (M18) is built.
