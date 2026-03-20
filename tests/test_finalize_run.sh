@@ -3,7 +3,7 @@
 # test_finalize_run.sh — finalize_run() hook registry and orchestrator tests
 #
 # Tests:
-# - Hook registration order (10 hooks in deterministic sequence)
+# - Hook registration order (11 hooks in deterministic sequence)
 # - register_finalize_hook appends in order
 # - finalize_run calls all hooks in registration order
 # - finalize_run passes pipeline_exit_code to each hook
@@ -178,7 +178,7 @@ restore_hooks() {
 # =============================================================================
 echo "=== Test Suite 1: Hook registration order ==="
 
-assert_eq "1.1 exactly 10 hooks registered" "10" "${#FINALIZE_HOOKS[@]}"
+assert_eq "1.1 exactly 11 hooks registered" "11" "${#FINALIZE_HOOKS[@]}"
 assert_eq "1.2 first hook is _hook_final_checks"    "_hook_final_checks"    "${FINALIZE_HOOKS[0]}"
 assert_eq "1.3 second hook is _hook_drift_artifacts" "_hook_drift_artifacts" "${FINALIZE_HOOKS[1]}"
 assert_eq "1.4 third hook is _hook_record_metrics"   "_hook_record_metrics"  "${FINALIZE_HOOKS[2]}"
@@ -189,6 +189,7 @@ assert_eq "1.8 seventh hook is _hook_mark_done"      "_hook_mark_done"       "${
 assert_eq "1.9 eighth hook is _hook_commit"          "_hook_commit"          "${FINALIZE_HOOKS[7]}"
 assert_eq "1.10 ninth hook is _hook_archive_milestone" "_hook_archive_milestone" "${FINALIZE_HOOKS[8]}"
 assert_eq "1.11 tenth hook is _hook_clear_state"     "_hook_clear_state"     "${FINALIZE_HOOKS[9]}"
+assert_eq "1.12 eleventh hook is _hook_emit_run_summary" "_hook_emit_run_summary" "${FINALIZE_HOOKS[10]}"
 
 # =============================================================================
 # Test Suite 2: register_finalize_hook appends in order
@@ -197,14 +198,14 @@ echo "=== Test Suite 2: register_finalize_hook ==="
 
 _test_new_hook() { return 0; }
 register_finalize_hook "_test_new_hook"
-assert_eq "2.1 hook count increases by 1" "11" "${#FINALIZE_HOOKS[@]}"
-assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[10]}"
+assert_eq "2.1 hook count increases by 1" "12" "${#FINALIZE_HOOKS[@]}"
+assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[11]}"
 
 # Register a second additional hook — ensure ordering is preserved
 _test_new_hook_2() { return 0; }
 register_finalize_hook "_test_new_hook_2"
-assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[11]}"
-assert_eq "2.4 first new hook still at 10" "_test_new_hook" "${FINALIZE_HOOKS[10]}"
+assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[12]}"
+assert_eq "2.4 first new hook still at 11" "_test_new_hook" "${FINALIZE_HOOKS[11]}"
 
 restore_hooks
 

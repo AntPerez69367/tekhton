@@ -204,3 +204,25 @@ check_usage_threshold() {
     log "[usage] Session usage: ${pct}% (threshold: ${threshold}%)"
     return 0
 }
+
+# --- Orchestration status banner (M16) ------------------------------------------
+#
+# report_orchestration_status ATTEMPT MAX ELAPSED AGENT_CALLS
+# Prints a banner at the start of each outer loop iteration.
+report_orchestration_status() {
+    local attempt="$1"
+    local max="$2"
+    local elapsed="$3"
+    local agent_calls="$4"
+
+    local elapsed_min=$(( elapsed / 60 ))
+    local elapsed_sec=$(( elapsed % 60 ))
+
+    echo
+    echo -e "${BOLD}${CYAN}── Orchestration Loop ──────────────────${NC}"
+    echo -e "  Attempt:     ${BOLD}${attempt}${NC} / ${max}"
+    echo -e "  Elapsed:     ${elapsed_min}m ${elapsed_sec}s"
+    echo -e "  Agent calls: ${agent_calls} / ${MAX_AUTONOMOUS_AGENT_CALLS:-20}"
+    echo -e "${BOLD}${CYAN}────────────────────────────────────────${NC}"
+    echo
+}

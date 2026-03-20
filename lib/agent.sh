@@ -53,7 +53,7 @@ LAST_AGENT_EXIT_CODE=0     # claude CLI exit code
 LAST_AGENT_ELAPSED=0       # Wall-clock seconds
 LAST_AGENT_NULL_RUN=false  # true if agent likely died without doing work
 LAST_AGENT_RETRY_COUNT=0   # Transient error retries used in last run_agent() call
-
+TOTAL_AGENT_INVOCATIONS=0  # Cumulative agent calls (M16 orchestration tracking)
 # --- Error classification globals (12.2 — set after classify_error()) --------
 AGENT_ERROR_CATEGORY=""
 AGENT_ERROR_SUBCATEGORY=""
@@ -83,6 +83,9 @@ run_agent() {
             max_turns="${CODER_MAX_TURNS:-100}"
         fi
     fi
+
+    # Increment global invocation counter (M16 orchestration tracking)
+    TOTAL_AGENT_INVOCATIONS=$(( TOTAL_AGENT_INVOCATIONS + 1 ))
 
     local start_time
     start_time=$(date +%s)
