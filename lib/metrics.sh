@@ -101,6 +101,10 @@ record_run_metrics() {
     # Continuation attempts (14)
     local continuation_attempts="${CONTINUATION_ATTEMPTS:-0}"
 
+    # Orchestration loop fields (M16)
+    local pipeline_attempts="${_ORCH_ATTEMPT:-0}"
+    local total_agent_calls="${_ORCH_AGENT_CALLS:-0}"
+
     # Sanitize all numeric fields — strip any non-numeric content that may leak
     # from log() output captured via $() subshells
     total_turns=$(echo "$total_turns" | grep -oE '[0-9]+' | tail -1); total_turns="${total_turns:-0}"
@@ -118,6 +122,8 @@ record_run_metrics() {
     context_tokens=$(echo "$context_tokens" | grep -oE '[0-9]+' | tail -1); context_tokens="${context_tokens:-0}"
     retry_count=$(echo "$retry_count" | grep -oE '[0-9]+' | tail -1); retry_count="${retry_count:-0}"
     continuation_attempts=$(echo "$continuation_attempts" | grep -oE '[0-9]+' | tail -1); continuation_attempts="${continuation_attempts:-0}"
+    pipeline_attempts=$(echo "$pipeline_attempts" | grep -oE '[0-9]+' | tail -1); pipeline_attempts="${pipeline_attempts:-0}"
+    total_agent_calls=$(echo "$total_agent_calls" | grep -oE '[0-9]+' | tail -1); total_agent_calls="${total_agent_calls:-0}"
 
     # Outcome
     local outcome="unknown"
@@ -160,6 +166,11 @@ record_run_metrics() {
         "$continuation_attempts" \
         "$verdict" \
         "$outcome")
+
+    # Append orchestration fields when in --complete mode (M16)
+    if [[ "$pipeline_attempts" -gt 0 ]]; then
+        record="${record},\"pipeline_attempts\":${pipeline_attempts},\"total_agent_calls\":${total_agent_calls}"
+    fi
 
     # Append error fields only when populated (12.3)
     if [[ -n "$error_category" ]]; then

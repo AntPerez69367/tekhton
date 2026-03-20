@@ -930,7 +930,7 @@ completes the end-to-end `--human` workflow: pick → claim → pipeline → res
   and processes them automatically using these functions.
 - M16's `--complete` outer loop reuses the safety bounds (`MAX_PIPELINE_ATTEMPTS`,
   `AUTONOMOUS_TIMEOUT`) validated here.
-#### Milestone 16: Outer Orchestration Loop (Milestone-to-Completion)
+#### [DONE] Milestone 16: Outer Orchestration Loop (Milestone-to-Completion)
 
 Add a `--complete` flag that wraps the entire pipeline in an outer orchestration
 loop with a clear contract: **run this milestone until it passes acceptance or all

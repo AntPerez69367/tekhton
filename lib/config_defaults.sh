@@ -132,6 +132,13 @@ set -euo pipefail
 # Explicit AUTO_COMMIT in pipeline.conf always takes precedence via :=.
 : "${AUTO_COMMIT:=false}"
 
+# --- Outer orchestration loop (--complete) defaults ---
+: "${COMPLETE_MODE_ENABLED:=true}"        # Toggle --complete outer loop
+: "${MAX_PIPELINE_ATTEMPTS:=5}"           # Max full pipeline cycles in --complete mode
+: "${AUTONOMOUS_TIMEOUT:=7200}"           # Wall-clock timeout for --complete in seconds (2h)
+: "${MAX_AUTONOMOUS_AGENT_CALLS:=20}"     # Max total agent invocations in --complete mode
+: "${AUTONOMOUS_PROGRESS_CHECK:=true}"    # Enable stuck-detection between loop iterations
+
 # --- Metrics defaults ---
 : "${METRICS_ENABLED:=true}"
 : "${METRICS_MIN_RUNS:=5}"
@@ -185,6 +192,9 @@ _clamp_config_value CLEANUP_TRIGGER_THRESHOLD 100
 _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
+_clamp_config_value MAX_PIPELINE_ATTEMPTS 20
+_clamp_config_value AUTONOMOUS_TIMEOUT 14400
+_clamp_config_value MAX_AUTONOMOUS_AGENT_CALLS 100
 _clamp_config_value METRICS_MIN_RUNS 100
 _clamp_config_value MAX_CONTINUATION_ATTEMPTS 10
 _clamp_config_value MAX_TRANSIENT_RETRIES 10

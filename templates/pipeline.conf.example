@@ -395,6 +395,27 @@ CONTEXT_COMPILER_ENABLED=false
 # Use historical accuracy to adjust scout turn recommendations (default: true)
 # METRICS_ADAPTIVE_TURNS=true
 
+# --- Outer orchestration loop (--complete) ------------------------------------
+# The --complete flag wraps the pipeline in a retry loop that runs until the
+# milestone passes acceptance criteria or all recovery options are exhausted.
+# Combines transient retry, turn continuation, milestone splitting, and error
+# classification into a single autonomous loop.
+
+# Master toggle for --complete outer loop (default: true)
+# COMPLETE_MODE_ENABLED=true
+
+# Maximum full pipeline cycles per --complete invocation (default: 5)
+# MAX_PIPELINE_ATTEMPTS=5
+
+# Wall-clock timeout in seconds for --complete mode (default: 7200 = 2 hours)
+# AUTONOMOUS_TIMEOUT=7200
+
+# Maximum total agent invocations across all loop iterations (default: 20)
+# MAX_AUTONOMOUS_AGENT_CALLS=20
+
+# Enable stuck-detection: exit loop if git diff is identical between iterations
+# AUTONOMOUS_PROGRESS_CHECK=true
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false

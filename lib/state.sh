@@ -63,6 +63,21 @@ $(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY
     [ -f "$f" ] && echo "- $f ($(count_lines < "$f") lines)" || echo "- $f (missing)"
 done)
 
+## Orchestration Context
+$(if [ -n "${_ORCH_ATTEMPT:-}" ]; then
+    echo "Pipeline attempt: ${_ORCH_ATTEMPT}"
+    echo "Cumulative agent calls: ${_ORCH_AGENT_CALLS:-0}"
+    echo "Cumulative turns: ${TOTAL_TURNS:-0}"
+    echo "Wall-clock elapsed: ${_ORCH_ELAPSED:-0}s"
+    if [ -n "${_ORCH_ATTEMPT_LOG:-}" ]; then
+        echo ""
+        echo "### Prior Attempt Outcomes"
+        echo "$_ORCH_ATTEMPT_LOG"
+    fi
+else
+    echo "(not in --complete mode)"
+fi)
+
 ## Error Classification
 $(if [ -n "${AGENT_ERROR_CATEGORY:-}" ]; then
     echo "Category: ${AGENT_ERROR_CATEGORY}"

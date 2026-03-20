@@ -312,6 +312,8 @@ source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
+source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
+source "${TEKHTON_HOME}/lib/orchestrate.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"
@@ -1009,8 +1011,19 @@ _run_human_complete_loop() {
 if [[ "$HUMAN_MODE" = true ]] && [[ "$COMPLETE_MODE" = true ]]; then
     # Human-complete mode: process notes one at a time in a loop
     _run_human_complete_loop
+elif [[ "$COMPLETE_MODE" = true ]] && [[ "$HUMAN_MODE" != true ]]; then
+    # Outer orchestration loop (M16): retry pipeline until acceptance or bounds exhausted.
+    # Handles milestone and non-milestone tasks. Auto-advance is wired into the loop.
+    if [[ "${COMPLETE_MODE_ENABLED:-true}" != "true" ]]; then
+        warn "--complete is disabled (COMPLETE_MODE_ENABLED=false). Running single pipeline."
+        _run_pipeline_stages
+        finalize_run 0
+    else
+        run_complete_loop || true
+    fi
+    echo
 else
-    # Standard pipeline execution
+    # Standard single-run pipeline execution
     _run_pipeline_stages
 
     # --- Auto-advance loop ---------------------------------------------------

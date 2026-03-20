@@ -263,10 +263,12 @@ _hook_clear_state() {
     fi
 }
 
-# --- Hook registration (at source-time) -------------------------------------
-# Registration order IS execution order. V3 modules register additional hooks
-# after this file is sourced — no modification to the core sequence required.
+# Source RUN_SUMMARY.json emission hook (M16)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
 
+# --- Hook registration (at source-time) ---
+# Registration order IS execution order. V3 extends via new hooks.
 register_finalize_hook "_hook_final_checks"
 register_finalize_hook "_hook_drift_artifacts"
 register_finalize_hook "_hook_record_metrics"
@@ -277,9 +279,8 @@ register_finalize_hook "_hook_mark_done"
 register_finalize_hook "_hook_commit"
 register_finalize_hook "_hook_archive_milestone"
 register_finalize_hook "_hook_clear_state"
-
-# --- Orchestrator ------------------------------------------------------------
-
+register_finalize_hook "_hook_emit_run_summary"
+# --- Orchestrator ---
 # finalize_run PIPELINE_EXIT_CODE
 # Executes all registered hooks in order. Each hook receives the exit code
 # as its first argument and decides internally whether to act on success/failure.
