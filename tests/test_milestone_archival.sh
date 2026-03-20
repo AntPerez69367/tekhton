@@ -253,9 +253,9 @@ new_lines=$(wc -l < "$CLAUDE_MD")
 assert "archive_completed_milestone reduces CLAUDE.md line count" \
     "$([ "$new_lines" -lt "$original_lines" ] && echo 0 || echo 1)"
 
-# Test 18: CLAUDE.md retains the one-line summary
-assert "archive_completed_milestone leaves summary line in CLAUDE.md" \
-    "$(grep -q '#### \[DONE\] Milestone 1: Token Accounting' "$CLAUDE_MD" && echo 0 || echo 1)"
+# Test 18: CLAUDE.md no longer contains the [DONE] heading (removed entirely, not summarized)
+assert "archive_completed_milestone removes [DONE] heading from CLAUDE.md" \
+    "$(grep -q '#### \[DONE\] Milestone 1: Token Accounting' "$CLAUDE_MD" && echo 1 || echo 0)"
 
 # Test 19: CLAUDE.md no longer contains the body
 assert "archive_completed_milestone removes body content from CLAUDE.md" \
@@ -318,9 +318,9 @@ decimal_new_lines=$(wc -l < "$DECIMAL_MD")
 assert "archive_completed_milestone shrinks CLAUDE.md for decimal milestone" \
     "$([ "$decimal_new_lines" -lt "$decimal_original_lines" ] && echo 0 || echo 1)"
 
-# Test 28: summary line uses decimal notation
-assert "archive_completed_milestone summary line uses decimal notation correctly" \
-    "$(grep -q '#### \[DONE\] Milestone 0.5: Agent Output Monitoring' "$DECIMAL_MD" && echo 0 || echo 1)"
+# Test 28: [DONE] heading removed for decimal milestone (not summarized)
+assert "archive_completed_milestone removes [DONE] heading for decimal milestone" \
+    "$(grep -q '#### \[DONE\] Milestone 0.5: Agent Output Monitoring' "$DECIMAL_MD" && echo 1 || echo 0)"
 
 # Test 29: idempotency for decimal milestone
 assert "archive_completed_milestone is idempotent for decimal milestone 0.5" \
@@ -431,6 +431,148 @@ assert "archive_completed_milestone removes block from CLAUDE.md when using fall
     "$(grep -q 'Files to modify:' "$FALLBACK_MD" && echo 1 || echo 0)"
 
 unset TEKHTON_SESSION_DIR
+
+# =============================================================================
+# Tests: archive pointer comment insertion
+# =============================================================================
+
+echo "--- archive pointer comment insertion ---"
+
+POINTER_MD="${TMPDIR_BASE}/pointer_claude.md"
+POINTER_ARCHIVE="${TMPDIR_BASE}/pointer_archive.md"
+rm -f "$POINTER_ARCHIVE"
+MILESTONE_ARCHIVE_FILE="$POINTER_ARCHIVE"
+
+# Create a CLAUDE.md with a ### Milestone Plan heading
+cat > "$POINTER_MD" << 'EOF'
+# Project Rules
+
+## Current Initiative: Test Pipeline
+
+### Milestone Plan
+
+#### [DONE] Milestone 1: Token Accounting
+Add measurement infrastructure.
+
+Files to modify:
+- `lib/context.sh`
+
+#### Milestone 2: Context Compiler
+Add task-scoped context assembly.
+
+EOF
+
+archive_completed_milestone "1" "$POINTER_MD"
+
+# Test 40: archive pointer comment is inserted after ### Milestone Plan
+assert "archive pointer comment is inserted after Milestone Plan heading" \
+    "$(grep -qF '<!-- See MILESTONE_ARCHIVE.md for completed milestones -->' "$POINTER_MD" && echo 0 || echo 1)"
+
+# Test 41: [DONE] heading is removed (not summarized)
+assert "archive removes [DONE] heading entirely with Milestone Plan present" \
+    "$(grep -q '#### \[DONE\] Milestone 1' "$POINTER_MD" && echo 1 || echo 0)"
+
+# Test 42: active milestones preserved with pointer comment
+assert "archive preserves active milestones with pointer comment" \
+    "$(grep -q 'Context Compiler' "$POINTER_MD" && echo 0 || echo 1)"
+
+# Test 43: pointer comment is not duplicated on second archival
+POINTER_MD2="${TMPDIR_BASE}/pointer2_claude.md"
+POINTER_ARCHIVE2="${TMPDIR_BASE}/pointer2_archive.md"
+rm -f "$POINTER_ARCHIVE2"
+MILESTONE_ARCHIVE_FILE="$POINTER_ARCHIVE2"
+
+cat > "$POINTER_MD2" << 'EOF'
+# Project Rules
+
+## Current Initiative: Test Pipeline
+
+### Milestone Plan
+
+#### [DONE] Milestone 1: First
+Body one.
+
+#### [DONE] Milestone 2: Second
+Body two.
+
+#### Milestone 3: Active
+Active content.
+
+EOF
+
+archive_completed_milestone "1" "$POINTER_MD2"
+archive_completed_milestone "2" "$POINTER_MD2"
+
+pointer_count=$(grep -cF '<!-- See MILESTONE_ARCHIVE.md for completed milestones -->' "$POINTER_MD2" || true)
+assert "archive pointer comment appears exactly once after multiple archivals" \
+    "$([ "$pointer_count" = "1" ] && echo 0 || echo 1)"
+
+# Test 44: cross-initiative pointer insertion — both sections get the pointer
+CROSS_MD="${TMPDIR_BASE}/cross_initiative_claude.md"
+CROSS_ARCHIVE="${TMPDIR_BASE}/cross_initiative_archive.md"
+rm -f "$CROSS_ARCHIVE"
+MILESTONE_ARCHIVE_FILE="$CROSS_ARCHIVE"
+
+cat > "$CROSS_MD" << 'EOF'
+# Project Rules
+
+## Completed Initiative: Planning Phase Quality Overhaul
+
+### Milestone Plan
+
+#### [DONE] Milestone 1: Model Default
+Overhaul template depth.
+
+## Current Initiative: Adaptive Pipeline 2.0
+
+### Milestone Plan
+
+#### [DONE] Milestone 10: Commit Signatures
+Add milestone commit signatures.
+
+#### Milestone 11: Pre-Flight Sizing
+Add milestone sizing.
+
+EOF
+
+archive_completed_milestone "1" "$CROSS_MD"
+archive_completed_milestone "10" "$CROSS_MD"
+
+cross_pointer_count=$(grep -cF '<!-- See MILESTONE_ARCHIVE.md for completed milestones -->' "$CROSS_MD" || true)
+assert "cross-initiative: pointer comment inserted in both Milestone Plan sections" \
+    "$([ "$cross_pointer_count" = "2" ] && echo 0 || echo 1)"
+
+# =============================================================================
+# Tests: blank line collapsing
+# =============================================================================
+
+echo "--- blank line collapsing ---"
+
+COLLAPSE_FILE="${TMPDIR_BASE}/collapse_test.md"
+cat > "$COLLAPSE_FILE" << 'CEOF'
+Line one
+
+
+Line after two blanks
+
+
+
+
+Line after four blanks
+
+
+Line after two blanks again
+CEOF
+
+_collapse_blank_lines "$COLLAPSE_FILE"
+
+# Test 45: double blank lines are preserved
+assert "collapse preserves double blank lines" \
+    "$(awk '/Line one/{found=1; blanks=0; next} found && /^$/{blanks++; next} found && blanks>0{print blanks; found=0}' "$COLLAPSE_FILE" | head -1 | grep -q '^2$' && echo 0 || echo 1)"
+
+# Test 46: 4+ blank lines collapsed to 2
+assert "collapse reduces 4+ blank lines to 2" \
+    "$(awk '/two blanks$/{found=1; blanks=0; next} found && /^$/{blanks++; next} found && blanks>0{print blanks; found=0}' "$COLLAPSE_FILE" | head -1 | grep -q '^2$' && echo 0 || echo 1)"
 
 # =============================================================================
 # Summary

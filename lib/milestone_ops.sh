@@ -4,7 +4,8 @@ set -euo pipefail
 # milestone_ops.sh — Milestone commit signatures, auto-advance orchestration
 #
 # Sourced by tekhton.sh — do not run directly.
-# Expects: milestone_acceptance.sh, milestones.sh to be sourced first
+# Sources: milestone_acceptance.sh
+# Expects: milestones.sh to be sourced first
 # Expects: PROJECT_DIR, TEST_CMD, ANALYZE_CMD (from config)
 # Expects: log(), warn(), success(), header() from common.sh
 # Expects: run_build_gate() from gates.sh
