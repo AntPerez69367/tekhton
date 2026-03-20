@@ -592,29 +592,45 @@ that wires together all fixes from 15.1 and 15.2 into a deterministic, ordered
 finalization sequence.
 
 **Files to modify:**
-- `lib/hooks.sh` — Add `finalize_run()` that calls, in this exact order:
-  1. `run_final_checks()` (existing — analyze + test)
-  2. `process_drift_artifacts()` (existing — from drift_artifacts.sh)
-  3. `record_run_metrics()` (existing — from metrics.sh)
-  4. `clear_resolved_nonblocking_notes()` (from 15.1 — only if pipeline succeeded)
-  5. `resolve_human_notes_with_exit_code $pipeline_exit_code` — if
-     CODER_SUMMARY.md is missing but pipeline succeeded (exit 0), mark
-     all [~] → [x] instead of resetting to [ ]. Fixes the bug where
-     features are implemented and committed but HUMAN_NOTES shows undone.
-  6. `archive_reports "$LOG_DIR" "$TIMESTAMP"` (existing)
-  7. `mark_milestone_done "$CURRENT_MILESTONE"` (from 15.2 — only if milestone
-     mode AND acceptance passed)
-  8. Auto-commit: if `AUTO_COMMIT=true` (now defaulting to true in milestone mode
-     per 15.1), run `_do_git_commit()` without interactive prompt. If
-     `AUTO_COMMIT=false`, call the existing interactive prompt (reading from
-     `/dev/tty`).
-  9. `archive_completed_milestone()` (from 15.2 — only after commit, only if
-     milestone was marked [DONE])
-  10. `clear_milestone_state()` (existing but unwired — only after successful
-      milestone archival, prevents stale MILESTONE_STATE.md from leaking into
-      subsequent non-milestone runs)
-  The function accepts a `pipeline_exit_code` parameter. Steps 4-5, 7, 8, 9, 10
-  only run if `pipeline_exit_code=0`.
+- `lib/hooks.sh` — Add a hook registry and `finalize_run()` orchestrator:
+  1. Add `declare -a FINALIZE_HOOKS=()` array and `register_finalize_hook()`
+     function. Each hook is a function name; `finalize_run()` iterates the
+     array in registration order, passing `pipeline_exit_code` to each hook.
+     Hooks that fail log a warning but do not abort the sequence (||
+     log_warn pattern). This makes `finalize_run()` open for extension by
+     V3 without modifying the core sequence — V3 adds dashboard generation,
+     lane completion signaling, and graph updates by registering additional
+     hooks.
+  2. Register the following hooks in this exact order (registration order
+     IS execution order):
+     a. `_hook_final_checks` — wraps `run_final_checks()` (analyze + test)
+     b. `_hook_drift_artifacts` — wraps `process_drift_artifacts()`
+     c. `_hook_record_metrics` — wraps `record_run_metrics()`
+     d. `_hook_cleanup_resolved` — wraps `clear_resolved_nonblocking_notes()`
+        (only if pipeline succeeded)
+     e. `_hook_resolve_notes` — wraps `resolve_human_notes_with_exit_code
+        $pipeline_exit_code`. If CODER_SUMMARY.md is missing but pipeline
+        succeeded (exit 0), mark all [~] → [x] instead of resetting to [ ].
+        Fixes the bug where features are implemented and committed but
+        HUMAN_NOTES shows undone.
+     f. `_hook_archive_reports` — wraps `archive_reports "$LOG_DIR" "$TIMESTAMP"`
+     g. `_hook_mark_done` — wraps `mark_milestone_done "$CURRENT_MILESTONE"`
+        (only if milestone mode AND acceptance passed)
+     h. `_hook_commit` — Auto-commit: if `AUTO_COMMIT=true` (now defaulting
+        to true in milestone mode per 15.1), run `_do_git_commit()` without
+        interactive prompt. If `AUTO_COMMIT=false`, call the existing
+        interactive prompt (reading from `/dev/tty`).
+     i. `_hook_archive_milestone` — wraps `archive_completed_milestone()`
+        (only after commit, only if milestone was marked [DONE])
+     j. `_hook_clear_state` — wraps `clear_milestone_state()` (only after
+        successful milestone archival, prevents stale MILESTONE_STATE.md)
+  3. `finalize_run()` itself is simple: accept `pipeline_exit_code`, iterate
+     `FINALIZE_HOOKS`, call each with the exit code. Hooks d-e, g-j only
+     execute their inner logic when `pipeline_exit_code=0` (each hook checks
+     internally).
+  4. Hooks are registered at source-time (when hooks.sh is sourced), not at
+     call-time. This ensures the sequence is deterministic across all code
+     paths. V3 modules register additional hooks after hooks.sh is sourced.
 - `tekhton.sh` — Replace the scattered post-pipeline section (lines ~940-1149)
   with a single call to `finalize_run $pipeline_exit_code`. Remove all inline
   commit prompt logic, inline `archive_completed_milestone()` calls, and
@@ -625,10 +641,13 @@ finalization sequence.
 - `finalize_run()` is the ONLY place post-pipeline bookkeeping happens — no
   straggler calls in `tekhton.sh`
 - Post-pipeline bookkeeping runs in deterministic order as specified above
-- `finalize_run 0` (success) runs all 10 steps including cleanup, notes
+- `finalize_run 0` (success) runs all 10 hooks including cleanup, notes
   resolution, commit, and archival
-- `finalize_run 1` (failure) runs steps 1-3 and 6 only (metrics recorded,
+- `finalize_run 1` (failure) runs hooks a-c and f only (metrics recorded,
   reports archived, but no cleanup/commit/archival)
+- `register_finalize_hook` appends to `FINALIZE_HOOKS` array and hooks
+  execute in registration order
+- A failing hook logs a warning but does not abort the remaining hooks
 - Pipeline runs in milestone mode auto-commit without interactive prompt
 - Non-milestone mode with `AUTO_COMMIT=false` still shows interactive prompt
 - Commit includes the milestone's code changes (archival happens AFTER commit)
@@ -672,6 +691,10 @@ finalization sequence.
   eliminates the interactive prompt that would block the autonomous loop.
 - Milestone 15.4 (`--human --complete`) reuses `finalize_run()` as its
   per-note post-pipeline hook.
+- V3 modules extend `finalize_run()` by calling `register_finalize_hook` after
+  hooks.sh is sourced — no modification to the core hook sequence required.
+  Dashboard generation, lane completion signaling, and milestone graph updates
+  each register as additional hooks.
 
 #### Milestone 15.4: Human Notes Workflow (`--human` Flag)
 
@@ -838,12 +861,54 @@ re-run cycle.
   completion).
 - `lib/milestones.sh` — Add `record_pipeline_attempt(milestone_num, attempt,
   outcome, turns_used, files_changed)` that logs attempt metadata for the
-  progress detector and metrics.
+  progress detector and metrics. Add `emit_milestone_metadata(milestone_num,
+  depends_on, seeds_forward)` that writes an HTML comment block into CLAUDE.md
+  immediately after the milestone heading. Format:
+  ```
+  <!-- milestone-meta
+  id: "16"
+  depends_on: ["15.3", "15.4"]
+  seeds_forward: ["17", "18"]
+  estimated_complexity: "large"
+  status: "in_progress"
+  -->
+  ```
+  This comment is invisible to agents (they ignore HTML comments) but parseable
+  by the V3 milestone graph builder. `mark_milestone_done()` updates the
+  `status` field to `"done"` when marking a milestone complete. The metadata
+  block is idempotent — if already present, it is updated in-place rather than
+  duplicated. Complexity is inferred from the milestone's acceptance criteria
+  count and file-list length: ≤3 criteria + ≤2 files = "small", ≤8 criteria +
+  ≤5 files = "medium", else "large".
 - `lib/common.sh` — Add `report_orchestration_status(attempt, max, elapsed,
   agent_calls)` that prints a banner at the start of each loop iteration showing
   the autonomous loop state.
 - `lib/metrics.sh` — Add `pipeline_attempts` and `total_agent_calls` fields to
   JSONL record.
+- `lib/hooks.sh` — Add `_hook_emit_run_summary` registered as a finalize hook
+  (via `register_finalize_hook` from M15.3). This hook writes
+  `RUN_SUMMARY.json` to `$LOG_DIR` at the end of each pipeline run (success
+  or failure). Contents:
+  ```json
+  {
+    "milestone": "16",
+    "outcome": "success|failure|timeout|stuck",
+    "attempts": 2,
+    "total_agent_calls": 8,
+    "wall_clock_seconds": 1847,
+    "files_changed": ["lib/hooks.sh", "tekhton.sh"],
+    "error_classes_encountered": ["turn_exhaustion"],
+    "recovery_actions_taken": ["continuation"],
+    "rework_cycles": 1,
+    "split_depth": 0,
+    "timestamp": "2026-03-19T14:30:00Z"
+  }
+  ```
+  The hook collects data from variables already tracked by the outer loop
+  (PIPELINE_ATTEMPT, cumulative agent calls, wall clock, exit stage) and
+  from `git diff --name-only` for files_changed. This structured output is
+  consumed by V3's milestone steward for adaptive scheduling: turn budget
+  calibration, parallelization decisions, and file-overlap conflict prediction.
 - `templates/pipeline.conf.example` — Add `--complete` config keys with comments
 
 **Recovery decision tree inside the loop:**
@@ -883,6 +948,16 @@ After _run_pipeline_stages returns non-zero:
 - Each loop iteration prints a status banner showing attempt, elapsed time, and
   agent call count
 - `metrics.jsonl` records pipeline attempts and total agent calls
+- `RUN_SUMMARY.json` is written to `$LOG_DIR` on every pipeline completion
+  (success and failure) with structured outcome data
+- `RUN_SUMMARY.json` includes: milestone, outcome, attempts, total_agent_calls,
+  wall_clock_seconds, files_changed, error_classes_encountered,
+  recovery_actions_taken, rework_cycles, split_depth, timestamp
+- Milestone metadata HTML comments (`<!-- milestone-meta ... -->`) are written
+  to CLAUDE.md when milestone state changes (start, complete)
+- Metadata comments are idempotent — updating an existing comment replaces it
+  rather than duplicating
+- Metadata comments do not affect agent behavior (invisible in prompt rendering)
 - Without `--complete`, behavior is identical to current (single attempt, exit on
   failure)
 - All existing tests pass
@@ -915,6 +990,25 @@ After _run_pipeline_stages returns non-zero:
   fully autonomous operation. It chains: complete milestone N → advance to
   N+1 → complete N+1 → ... up to `AUTO_ADVANCE_LIMIT`. This is deliberately
   capped. V3 removes the cap.
+- `RUN_SUMMARY.json` must be written via the finalize hook registry (M15.3's
+  `register_finalize_hook`), NOT as inline code in the outer loop. This ensures
+  it runs in the correct sequence relative to other hooks and is extensible.
+- The milestone metadata HTML comment must use `<!-- milestone-meta ... -->`
+  delimiters exactly — no variations. The V3 graph parser will match this
+  literal prefix. The comment must be on lines immediately following the
+  `#### Milestone N:` heading, before any prose content.
+- `emit_milestone_metadata()` must handle CLAUDE.md files that already have
+  metadata comments (update in-place) AND files that don't (insert after
+  heading). Use a sed block that matches the heading line and checks whether
+  the next line starts with `<!-- milestone-meta`. If yes, replace the block.
+  If no, insert after the heading.
+- `RUN_SUMMARY.json` must be valid JSON. Use `printf` with proper escaping
+  for string values, not heredoc with unescaped variables. File paths in
+  `files_changed` may contain special characters.
+- The `_hook_emit_run_summary` hook should run on BOTH success and failure
+  paths (unlike hooks d-j in M15.3 which are success-only). The `outcome`
+  field distinguishes the cases. V3's steward needs failure data as much as
+  success data for scheduling decisions.
 
 **What NOT To Do:**
 - Do NOT add a `--build-project` flag. That's V3 scope. `--complete` operates on
@@ -939,6 +1033,19 @@ After _run_pipeline_stages returns non-zero:
   for each project
 - The orchestration state (attempt count, cumulative metrics, per-attempt outcomes)
   becomes the foundation for V3's project-level progress reporting
+- V3 milestone graph builder parses `<!-- milestone-meta -->` comments from
+  CLAUDE.md to construct the DAG representation (`MILESTONE_GRAPH.yaml`). The
+  structured metadata eliminates the need for NLP-based dependency extraction
+  from prose `Seeds Forward` blocks — dependencies are already declared as
+  `depends_on` and `seeds_forward` arrays in the metadata comments.
+- V3 milestone steward reads `RUN_SUMMARY.json` history to calibrate scheduling:
+  turn budgets are adjusted based on historical agent call counts per milestone,
+  parallelization decisions use `files_changed` overlap analysis across past
+  milestones, and error pattern detection uses `error_classes_encountered` to
+  predict which milestones are likely to need retry infrastructure.
+- The `register_finalize_hook` pattern (from M15.3) allows V3 to add dashboard
+  generation, lane completion signaling, and graph rebalancing hooks without
+  modifying M16's outer loop code.
 
 ## Future Initiative: Brownfield Intelligence (Smart Init)
 
