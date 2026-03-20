@@ -1959,3 +1959,734 @@ After _run_pipeline_stages returns non-zero:
 - The `register_finalize_hook` pattern (from M15.3) allows V3 to add dashboard
   generation, lane completion signaling, and graph rebalancing hooks without
   modifying M16's outer loop code.
+
+---
+
+## Archived: 2026-03-20 — Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 17: Tech Stack Detection Engine
+<!-- milestone-meta
+id: "17"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
+
+Pure shell library that detects project language(s), framework(s), package manager,
+build system, and infers ANALYZE_CMD / TEST_CMD / BUILD_CHECK_CMD. No agent calls.
+Returns structured detection results that `--init` and the crawler consume.
+
+**Files to create:**
+- `lib/detect.sh` — Tech stack detection library:
+  - `detect_languages()` — scans file extensions, shebangs, and manifest files.
+    Returns ranked list: `LANG|CONFIDENCE|MANIFEST`. Example:
+    `typescript|high|package.json`, `python|medium|requirements.txt`.
+    Confidence levels: `high` (manifest + source files), `medium` (manifest OR
+    source files), `low` (only a few source files, possible vendored code).
+    Languages detected: JavaScript/TypeScript, Python, Rust, Go, Java/Kotlin,
+    C/C++, Ruby, PHP, Dart/Flutter, Swift, C#/.NET, Elixir, Haskell, Lua, Shell.
+  - `detect_frameworks()` — reads manifest files for framework signatures.
+    Returns: `FRAMEWORK|LANG|EVIDENCE`. Example:
+    `next.js|typescript|"next" in package.json dependencies`,
+    `flask|python|"flask" in requirements.txt`.
+    Frameworks detected (non-exhaustive — extensible via pattern file):
+    React, Next.js, Vue, Angular, Svelte, Express, Fastify, Django, Flask,
+    FastAPI, Rails, Spring Boot, ASP.NET, Flutter, SwiftUI, Gin, Actix, Axum.
+  - `detect_commands()` — infers build, test, and lint commands from manifest
+    files and common conventions. Returns:
+    `CMD_TYPE|COMMAND|SOURCE|CONFIDENCE`. Example:
+    `test|npm test|package.json scripts.test|high`,
+    `analyze|eslint .|node_modules/.bin/eslint exists|medium`,
+    `build|cargo build|Cargo.toml present|high`.
+    Detection order: explicit manifest scripts → well-known tool binaries →
+    conventional Makefile targets → fallback suggestions.
+  - `detect_entry_points()` — identifies likely application entry points:
+    `main.py`, `index.ts`, `src/main.rs`, `cmd/*/main.go`, `lib/main.dart`,
+    `Program.cs`, `App.java`, `Makefile`, `docker-compose.yml`. Returns
+    file paths that exist.
+  - `detect_project_type()` — classifies the project into one of the `--plan`
+    template categories: `web-app`, `api-service`, `cli-tool`, `library`,
+    `mobile-app`, or `custom`. Uses language, framework, and entry point signals.
+  - `format_detection_report()` — renders all detection results as a structured
+    markdown block for inclusion in PROJECT_INDEX.md and agent prompts.
+
+**Files to modify:**
+- `tekhton.sh` — source `lib/detect.sh`
+
+**Acceptance criteria:**
+- `detect_languages` correctly identifies TypeScript from `package.json` +
+  `tsconfig.json` + `.ts` files with `high` confidence
+- `detect_languages` correctly identifies Python from `pyproject.toml` +
+  `.py` files with `high` confidence
+- `detect_commands` extracts `npm test` from `package.json` `scripts.test`
+- `detect_commands` extracts `pytest` from `pyproject.toml` `[tool.pytest]`
+- `detect_commands` extracts `cargo test` from `Cargo.toml` presence
+- `detect_frameworks` identifies Next.js from `"next"` in package.json deps
+- `detect_project_type` classifies a project with `package.json` + React +
+  `src/pages/` as `web-app`
+- `detect_entry_points` finds `src/main.rs` in a Rust project
+- All detection functions are safe on empty directories, non-git directories,
+  and directories with only binary files
+- Does not execute any project code, read `.env` files, or follow symlinks
+  outside the project
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/detect.sh`
+
+**Watch For:**
+- Monorepos may have multiple manifests at different levels. `detect_languages`
+  should scan the top 2 directory levels, not just the root.
+- Vendored code (e.g., `vendor/`, `third_party/`) should be excluded from
+  language detection to avoid skewing results. Use the same exclusion list as
+  `_generate_codebase_summary()`.
+- `detect_commands` should prefer explicit manifest scripts over inferred
+  commands. A `package.json` with `"test": "jest --coverage"` is more reliable
+  than guessing `npx jest`.
+- Some projects use Makefiles as the universal entry point. If a `Makefile`
+  exists with `test:` and `lint:` targets, those should be high-confidence
+  detections regardless of language.
+- Confidence levels matter for `--init` UX: high-confidence detections get
+  auto-set in pipeline.conf, medium-confidence get set with a `# VERIFY:`
+  comment, low-confidence get commented out with a suggestion.
+
+**Seeds Forward:**
+- Milestone 18 (crawler) uses `detect_languages()` and `detect_entry_points()`
+  to decide which files to sample
+- Milestone 19 (smart init) uses `detect_commands()` to auto-populate
+  pipeline.conf and `detect_project_type()` to select the plan template
+- Milestone 21 (synthesis) uses `format_detection_report()` as input context
+
+#### [DONE] Milestone 15: Pipeline Lifecycle Consolidation
+
+All 10 sub-milestones completed. Archived 2026-03-20.
+
+#### [DONE] Milestone 15.1.1: Notes Gating — Flag-Only Claiming, Coder Cleanup, and --human Flag
+
+Make human notes injection 100% explicit opt-in. Simplify `should_claim_notes()` to
+check only `HUMAN_MODE` and `WITH_NOTES` flags (removing task-text pattern matching).
+Update coder.sh to gate claiming behind the simplified check and remove the phantom
+COMPLETE→IN PROGRESS downgrade. Add `--human [TAG]` flag parsing to tekhton.sh.
+
+**Files to modify:**
+- `lib/notes.sh` — Simplify `should_claim_notes()` (lines 12-31): remove the
+  `grep -qE -i 'human.?notes|HUMAN_NOTES'` task-text matching block (lines 25-28).
+  Keep the `WITH_NOTES` check (line 16) and rename the `NOTES_FILTER` check to
+  also check `HUMAN_MODE=true`. The function should return 0 only when
+  `WITH_NOTES=true`, `HUMAN_MODE=true`, or `NOTES_FILTER` is set. Remove
+  the `task_text` parameter since it's no longer used. Update the usage comment.
+- `stages/coder.sh` — The `claim_human_notes` call (line 327) is already gated
+  behind `should_claim_notes "$TASK"`. Update to `should_claim_notes` (no arg)
+  after the parameter removal. Similarly update the resolve call (line 441).
+  Ensure the `elif` branch (lines 329-331) still sets `HUMAN_NOTES_BLOCK=""`
+  when notes exist but aren't claimed — but change the condition to match the
+  new parameterless `should_claim_notes`. Remove the COMPLETE→IN PROGRESS
+  downgrade block if it exists (scout report references lines ~440-452, but
+  current code may have shifted).
+- `tekhton.sh` — Add `--human` flag parsing in the argument loop. `--human`
+  sets `HUMAN_MODE=true`. If the next argument is one of BUG, FEAT, or POLISH,
+  consume it as `HUMAN_NOTES_TAG`. Add both `HUMAN_MODE` and `HUMAN_NOTES_TAG`
+  initialization (defaulting to `false` and empty string) near the other flag
+  defaults.
+
+**Acceptance criteria:**
+- `should_claim_notes` returns 1 (false) when neither flag is set, regardless
+  of task text
+- `HUMAN_MODE=true should_claim_notes` returns 0 (true)
+- `WITH_NOTES=true should_claim_notes` returns 0 (true)
+- Task text matching ("human notes", "HUMAN_NOTES") no longer triggers claiming
+- Coder prompt has empty `HUMAN_NOTES_BLOCK` when notes are not claimed
+- `{{IF:HUMAN_NOTES_BLOCK}}` section does not render when notes are not claimed
+- COMPLETE→IN PROGRESS downgrade no longer exists in coder.sh (if present)
+- `--human` flag is accepted and sets `HUMAN_MODE=true`
+- `--human BUG` sets `HUMAN_NOTES_TAG=BUG`
+- `--human FEAT` sets `HUMAN_NOTES_TAG=FEAT`
+- `--human POLISH` sets `HUMAN_NOTES_TAG=POLISH`
+- `--human` without a tag argument does not consume the next positional argument
+  as a tag (only BUG/FEAT/POLISH are valid tag values)
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- `HUMAN_NOTES_BLOCK` must be set to `""` (empty string), not left unset, when
+  notes are not claimed. The template engine treats unset variables differently
+  from empty ones.
+- `should_claim_notes` is called in two places in coder.sh (claiming and resolving).
+  Both must be updated to the parameterless form.
+- The `--human` flag parser must handle edge cases: `--human` as the last argument
+  (no tag), `--human` followed by a non-tag argument (e.g., `--human --complete`
+  should not consume `--complete` as a tag).
+- `HUMAN_MODE` and `HUMAN_NOTES_TAG` must be exported so they're visible to
+  sourced libraries (notes.sh checks `HUMAN_MODE`).
+
+**Seeds Forward:**
+- Milestone 15.1.2 is independent and can run in parallel.
+- Milestone 15.4 builds the `--human` workflow on top of the flag-only gating
+  established here.
+- Milestone 15.3 depends on `should_claim_notes` being flag-only for reliable
+  `finalize_run()` behavior.
+
+#### [DONE] Milestone 15.1.2.1: Resolved Cleanup Function for NON_BLOCKING_LOG.md
+
+Add `clear_resolved_nonblocking_notes()` to lib/drift_cleanup.sh that empties the
+`## Resolved` section of NON_BLOCKING_LOG.md on successful pipeline completion.
+The function prints cleared items to stdout for metrics capture, then removes them
+while preserving the section heading.
+
+**Files to modify:**
+- `lib/drift_cleanup.sh` — Add `clear_resolved_nonblocking_notes()` function
+  after the existing `clear_completed_nonblocking_notes()` (line ~207). The
+  function reads all items from the `## Resolved` section of NON_BLOCKING_LOG.md,
+  prints them to stdout (for metrics capture by the caller), then removes the
+  items while preserving the `## Resolved` heading. Follow the same while-read
+  pattern used by `clear_completed_nonblocking_notes()` for consistency. Return 0
+  on success or if no resolved items exist. Return 0 if NON_BLOCKING_LOG.md
+  doesn't exist.
+
+**Acceptance criteria:**
+- `clear_resolved_nonblocking_notes()` empties `## Resolved` section items and
+  prints them to stdout
+- `clear_resolved_nonblocking_notes()` preserves the `## Resolved` heading itself
+- `clear_resolved_nonblocking_notes()` returns 0 when no resolved items exist
+- `clear_resolved_nonblocking_notes()` returns 0 when NON_BLOCKING_LOG.md doesn't
+  exist
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/drift_cleanup.sh`
+
+**Watch For:**
+- `clear_resolved_nonblocking_notes()` must preserve the `## Resolved` heading
+  itself — only clear the items underneath it. Don't delete blank lines between
+  the heading and the first item.
+- Follow the same pattern as `clear_completed_nonblocking_notes()` which uses
+  a while-read loop with a tmpfile, not AWK for the actual rewrite. The AWK
+  is only used for counting.
+- Items in the Resolved section use `- [x]` checkbox format. Match that pattern
+  when counting and filtering.
+
+**Seeds Forward:**
+- Milestone 15.3 calls `clear_resolved_nonblocking_notes()` from `finalize_run()`.
+- This sub-milestone is independent of 15.1.2.2 and can run in parallel.
+
+#### [DONE] Milestone 15.1.2.2: AUTO_COMMIT Conditional Default
+
+Change `AUTO_COMMIT` default in lib/config_defaults.sh to be conditional: `true`
+when `MILESTONE_MODE=true`, `false` otherwise. Update the existing test file to
+verify the conditional behavior.
+
+**Files to modify:**
+- `lib/config_defaults.sh` — Change the `AUTO_COMMIT` default (lines 128-129)
+  to be conditional on `MILESTONE_MODE`. Replace the unconditional
+  `: "${AUTO_COMMIT:=true}"` with a conditional block: if `MILESTONE_MODE=true`,
+  default to `true`; otherwise default to `false`. The existing `:=` syntax
+  means explicit user config in pipeline.conf still overrides (it's set before
+  defaults are loaded). The conditional must check `MILESTONE_MODE` which is set
+  during flag parsing in tekhton.sh before `config_defaults.sh` is sourced.
+- `tests/test_auto_commit_conditional_default.sh` — Read the existing test file
+  first. Update or verify it covers: milestone mode defaults to true,
+  non-milestone defaults to false, explicit override works in both modes.
+
+**Acceptance criteria:**
+- `AUTO_COMMIT` defaults to `true` in milestone mode
+- `AUTO_COMMIT` defaults to `false` in non-milestone mode
+- Explicit `AUTO_COMMIT=false` in pipeline.conf overrides the milestone default
+- Explicit `AUTO_COMMIT=true` in pipeline.conf overrides the non-milestone default
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/config_defaults.sh`
+
+**Watch For:**
+- The `AUTO_COMMIT` conditional default must be set AFTER `MILESTONE_MODE` is
+  determined in the config loading sequence. Verify the sourcing order in
+  tekhton.sh: flag parsing → config load → config_defaults.sh. If
+  `config_defaults.sh` is sourced before flag parsing, the conditional won't
+  work and the assignment must move to a later point.
+- The existing test file `tests/test_auto_commit_conditional_default.sh` already
+  exists — read it first to understand what's already covered before modifying.
+- `AUTO_COMMIT` was previously defaulting to `true` unconditionally. The change
+  to default `false` in non-milestone mode is a behavior change for users who
+  relied on the `true` default. The comment in config_defaults.sh should note this.
+
+**Seeds Forward:**
+- Milestone 15.2 depends on the `AUTO_COMMIT` conditional default for
+  auto-commit integration in `finalize_run()`.
+- This sub-milestone is independent of 15.1.2.1 and can run in parallel.
+
+#### [DONE] Milestone 15.2.1: mark_milestone_done() Function
+
+Add `mark_milestone_done(milestone_num)` to `lib/milestone_ops.sh` that programmatically
+marks a milestone heading as `[DONE]` in CLAUDE.md. This is the foundational function
+that archival cleanup (15.2.2) and finalize_run (15.3) depend on.
+
+**Files to modify:**
+- `lib/milestone_ops.sh` — Add `mark_milestone_done(milestone_num)` after the existing
+  `clear_milestone_state()` function (line ~285). The function:
+  1. Reads the project's CLAUDE.md (path from `PROJECT_RULES_FILE` or default
+     `"$PROJECT_DIR/CLAUDE.md"`)
+  2. Finds the line matching `^#### Milestone ${milestone_num}:` (without `[DONE]`)
+     using grep. The regex must handle dotted numbers like `13.2.1.1` — escape dots
+     in the pattern: `^#### Milestone ${milestone_num//./\\.}:`
+  3. If found, uses sed to prepend `[DONE] ` making it `#### [DONE] Milestone N: Title`
+  4. Is idempotent — if the line already contains `#### [DONE] Milestone ${milestone_num}:`,
+     returns 0 without modification
+  5. Returns 1 if neither the plain nor [DONE] heading is found
+  6. Uses a tmpfile + mv pattern (consistent with other file-modifying functions in
+     the codebase) rather than sed -i for portability
+
+**Acceptance criteria:**
+- `mark_milestone_done 15` changes `#### Milestone 15:` to `#### [DONE] Milestone 15:` in CLAUDE.md
+- `mark_milestone_done 15` on an already-marked milestone is a no-op (returns 0)
+- `mark_milestone_done 999` returns 1 (milestone not found)
+- `mark_milestone_done 13.2.1.1` correctly handles dotted sub-milestone numbers
+- The function does not modify any other lines in CLAUDE.md
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/milestone_ops.sh`
+
+**Watch For:**
+- The milestone number may contain dots (e.g., `13.2.1.1`). Dots must be escaped in
+  the grep/sed regex so `13.2` doesn't match `13X2`.
+- `PROJECT_RULES_FILE` is the canonical path to CLAUDE.md in the target project. Check
+  how other functions in milestone_ops.sh locate CLAUDE.md and follow the same pattern.
+- The function must handle CLAUDE.md files where the milestone heading has trailing
+  content on subsequent lines (full block) OR is a one-liner (just the heading).
+  `mark_milestone_done` only modifies the heading line itself.
+
+**Seeds Forward:**
+- Milestone 15.2.2 depends on `mark_milestone_done()` being available for the archival
+  flow and uses the `[DONE]` marker as the trigger for removal.
+- Milestone 15.3 calls `mark_milestone_done()` from `finalize_run()`.
+
+#### [DONE] Milestone 15.2.2.1: Archive Function — Remove [DONE] Lines Instead of One-Liner Summaries
+
+Modify `archive_completed_milestone()` in `lib/milestone_archival.sh` so that after
+archiving a milestone block to MILESTONE_ARCHIVE.md, the AWK rewrite removes the
+`[DONE]` line entirely from CLAUDE.md (instead of inserting a one-liner summary).
+Also add insertion of the `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->`
+pointer comment and collapse consecutive blank lines after removal.
+
+**Files to modify:**
+- `lib/milestone_archival.sh` — Modify `archive_completed_milestone()` (lines 110-190):
+  1. Remove `local summary_line` (line 150) — no longer needed since we're deleting
+     rather than replacing with a summary
+  2. Change the AWK block (lines 157-184): instead of `print summary` when the
+     milestone heading is matched, output nothing (just `next`). The `in_block`
+     logic that skips the body lines remains unchanged. The net effect is that
+     the entire milestone block (heading + body) is removed from the output
+  3. After the AWK rewrite produces the tmpfile, add a second pass: check if
+     `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` already exists
+     in the file. If not, find the `### Milestone Plan` heading that contained
+     this milestone (use `_get_initiative_name` to identify the section) and
+     insert the comment on the line after that heading. Use grep to check
+     existence first to avoid duplicates
+  4. Add a third pass on the tmpfile: collapse 3+ consecutive blank lines down
+     to 2 using `awk 'BEGIN{n=0} /^$/{n++; if(n<=2) print; next} {n=0; print}'`
+     or equivalent
+
+**Acceptance criteria:**
+- `archive_completed_milestone()` removes the `[DONE]` heading AND body from
+  CLAUDE.md after archiving — no one-liner summary remains
+- `archive_completed_milestone()` appends the full block to MILESTONE_ARCHIVE.md
+  (existing behavior preserved)
+- The `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment is
+  inserted once per `### Milestone Plan` section and not duplicated on
+  subsequent archival calls
+- Calling `archive_completed_milestone` twice on the same milestone is safe
+  (idempotent — second call returns 1 since milestone is already archived)
+- No consecutive triple-blank-lines remain in CLAUDE.md after archival
+- `archive_all_completed_milestones()` still works (it delegates to the modified
+  function)
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/milestone_archival.sh`
+
+**Watch For:**
+- The AWK block currently uses `print summary` on line 166 to insert the one-liner.
+  Change this to just `next` (skip the line entirely). Do NOT print an empty line —
+  just skip. The blank-line collapsing pass handles any resulting gaps.
+- The `_get_initiative_name` function returns the initiative name, but to find the
+  correct `### Milestone Plan` heading you need to search for `### Milestone Plan`
+  within that initiative's section. The file may have multiple `### Milestone Plan`
+  headings (one per initiative).
+- The archive pointer comment insertion must happen AFTER the AWK rewrite (on the
+  tmpfile or after mv), not before, to avoid the AWK pass interfering with the
+  comment.
+- The blank-line collapsing must preserve single and double blank lines — only
+  collapse when 3+ consecutive blanks appear.
+
+**Seeds Forward:**
+- Milestone 15.2.2.2 uses the updated archival function behavior — after the
+  one-time migration, future archival calls will leave CLAUDE.md clean.
+- Milestone 15.3 integrates `archive_completed_milestone()` (with removal behavior)
+  into the `finalize_run()` call sequence.
+
+#### [DONE] Milestone 15.2.2.2: One-Time CLAUDE.md Migration — Remove Accumulated [DONE] One-Liners
+
+Perform a one-time migration of CLAUDE.md to remove all 26 existing `#### [DONE]
+Milestone N: Title` one-liner lines that accumulated from prior archival runs. Add
+the archive pointer comment in each `### Milestone Plan` section. These one-liners
+have no content block — the full blocks are already in MILESTONE_ARCHIVE.md.
+
+**Files to modify:**
+- `CLAUDE.md` — One-time migration:
+  1. Remove all `#### [DONE] Milestone N: Title` one-liner lines under the
+     "Completed Initiative: Planning Phase Quality Overhaul" section (lines
+     272-276: milestones 1-5)
+  2. Remove all `#### [DONE] Milestone N: Title` one-liner lines under the
+     "Current Initiative: Adaptive Pipeline 2.0" section (lines 301-323:
+     milestones 0 through 14)
+  3. A line is a "one-liner" if the next non-blank line starts with `####`,
+     `###`, `##`, or is EOF. Active milestones with content blocks below
+     the heading must NOT be removed
+  4. Add `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment
+     immediately after each `### Milestone Plan` heading where [DONE] lines
+     were removed
+  5. Remove the orphaned agent output lines ("Based on the codebase analysis,
+     here's the split:" and "Now I have enough context. Here's the split:")
+     that appear between the [DONE] block and the active milestones
+  6. Collapse any resulting triple-or-more consecutive blank lines down to
+     double blank lines
+  7. Verify MILESTONE_ARCHIVE.md still contains all previously archived content
+     (this migration only touches CLAUDE.md, not the archive)
+
+**Acceptance criteria:**
+- CLAUDE.md has zero `#### [DONE]` one-liner lines after migration
+- Active milestone blocks (15.1.1, 15.1.2.1, 15.1.2.2, 15.2.1, 15.2.2, 15.3,
+  15.4, 16, 17-21) are fully intact with all their content
+- `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` appears once in
+  each `### Milestone Plan` section
+- The orphaned agent output text ("Based on the codebase analysis...") is removed
+- MILESTONE_ARCHIVE.md is unchanged (verify with `git diff` on the archive file)
+- No consecutive triple-blank-lines remain
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all `.sh` files (CLAUDE.md is not a shell
+  file but verify no shell files were accidentally modified)
+
+**Watch For:**
+- The one-time migration must distinguish between one-liner summaries and active
+  milestones. A safe heuristic: if the next non-blank line starts with `####`,
+  `###`, `##`, or is EOF, it's a one-liner. Lines 328+ have active milestone
+  content — those must be preserved.
+- Lines 324-326 contain orphaned agent output text that leaked into CLAUDE.md
+  from a prior splitting run. These are not milestone headings but should be
+  cleaned up as part of this migration.
+- After removing ~26 [DONE] lines plus the orphaned text, verify the section
+  structure is correct: each initiative section should have `### Milestone Plan`
+  → `<!-- See MILESTONE_ARCHIVE.md -->` → active milestones.
+- Do NOT touch MILESTONE_ARCHIVE.md. This migration only modifies CLAUDE.md.
+  Run `git diff MILESTONE_ARCHIVE.md` after the migration to confirm zero changes.
+
+**Seeds Forward:**
+- With the migration complete, the updated `archive_completed_milestone()` from
+  15.2.2.1 ensures no new [DONE] one-liners accumulate in future runs.
+- Milestone 15.3 can rely on a clean CLAUDE.md structure when `finalize_run()`
+  calls the archival function.
+#### [DONE] Milestone 15.3: finalize_run() Consolidation
+
+Consolidate all scattered post-pipeline bookkeeping in `tekhton.sh` into a single
+`finalize_run()` function in `lib/hooks.sh`. This is the capstone sub-milestone
+that wires together all fixes from 15.1 and 15.2 into a deterministic, ordered
+finalization sequence.
+
+**Files to modify:**
+- `lib/hooks.sh` — Add a hook registry and `finalize_run()` orchestrator:
+  1. Add `declare -a FINALIZE_HOOKS=()` array and `register_finalize_hook()`
+     function. Each hook is a function name; `finalize_run()` iterates the
+     array in registration order, passing `pipeline_exit_code` to each hook.
+     Hooks that fail log a warning but do not abort the sequence (||
+     log_warn pattern). This makes `finalize_run()` open for extension by
+     V3 without modifying the core sequence — V3 adds dashboard generation,
+     lane completion signaling, and graph updates by registering additional
+     hooks.
+  2. Register the following hooks in this exact order (registration order
+     IS execution order):
+     a. `_hook_final_checks` — wraps `run_final_checks()` (analyze + test)
+     b. `_hook_drift_artifacts` — wraps `process_drift_artifacts()`
+     c. `_hook_record_metrics` — wraps `record_run_metrics()`
+     d. `_hook_cleanup_resolved` — wraps `clear_resolved_nonblocking_notes()`
+        (only if pipeline succeeded)
+     e. `_hook_resolve_notes` — wraps `resolve_human_notes_with_exit_code
+        $pipeline_exit_code`. If CODER_SUMMARY.md is missing but pipeline
+        succeeded (exit 0), mark all [~] → [x] instead of resetting to [ ].
+        Fixes the bug where features are implemented and committed but
+        HUMAN_NOTES shows undone.
+     f. `_hook_archive_reports` — wraps `archive_reports "$LOG_DIR" "$TIMESTAMP"`
+     g. `_hook_mark_done` — wraps `mark_milestone_done "$CURRENT_MILESTONE"`
+        (only if milestone mode AND acceptance passed)
+     h. `_hook_commit` — Auto-commit: if `AUTO_COMMIT=true` (now defaulting
+        to true in milestone mode per 15.1), run `_do_git_commit()` without
+        interactive prompt. If `AUTO_COMMIT=false`, call the existing
+        interactive prompt (reading from `/dev/tty`).
+     i. `_hook_archive_milestone` — wraps `archive_completed_milestone()`
+        (only after commit, only if milestone was marked [DONE])
+     j. `_hook_clear_state` — wraps `clear_milestone_state()` (only after
+        successful milestone archival, prevents stale MILESTONE_STATE.md)
+  3. `finalize_run()` itself is simple: accept `pipeline_exit_code`, iterate
+     `FINALIZE_HOOKS`, call each with the exit code. Hooks d-e, g-j only
+     execute their inner logic when `pipeline_exit_code=0` (each hook checks
+     internally).
+  4. Hooks are registered at source-time (when hooks.sh is sourced), not at
+     call-time. This ensures the sequence is deterministic across all code
+     paths. V3 modules register additional hooks after hooks.sh is sourced.
+- `tekhton.sh` — Replace the scattered post-pipeline section (lines ~940-1149)
+  with a single call to `finalize_run $pipeline_exit_code`. Remove all inline
+  commit prompt logic, inline `archive_completed_milestone()` calls, and
+  inline metrics/drift/archive calls. The `_do_git_commit()` helper moves to
+  `lib/hooks.sh` alongside `finalize_run()`.
+
+**Acceptance criteria:**
+- `finalize_run()` is the ONLY place post-pipeline bookkeeping happens — no
+  straggler calls in `tekhton.sh`
+- Post-pipeline bookkeeping runs in deterministic order as specified above
+- `finalize_run 0` (success) runs all 10 hooks including cleanup, notes
+  resolution, commit, and archival
+- `finalize_run 1` (failure) runs hooks a-c and f only (metrics recorded,
+  reports archived, but no cleanup/commit/archival)
+- `register_finalize_hook` appends to `FINALIZE_HOOKS` array and hooks
+  execute in registration order
+- A failing hook logs a warning but does not abort the remaining hooks
+- Pipeline runs in milestone mode auto-commit without interactive prompt
+- Non-milestone mode with `AUTO_COMMIT=false` still shows interactive prompt
+- Commit includes the milestone's code changes (archival happens AFTER commit)
+- Metrics are recorded BEFORE resolved-item cleanup (counts are captured)
+- `generate_commit_message()` is called within `finalize_run()` before commit
+- `resolve_human_notes` marks [~] → [x] when CODER_SUMMARY.md is missing but
+  pipeline exit code is 0 (success), instead of resetting to [ ]
+- `clear_milestone_state()` is called after milestone archival, leaving no
+  stale MILESTONE_STATE.md for subsequent runs
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- The `finalize_run()` ordering is load-bearing:
+  - Metrics BEFORE cleanup (so resolved counts are captured)
+  - Notes resolution BEFORE archive (so [x] marks are in the archived snapshot)
+  - Commit BEFORE archival (so the commit includes milestone code changes)
+  - `mark_milestone_done` BEFORE commit (so the commit message can reference
+    the milestone status)
+  - `clear_milestone_state()` AFTER archival (state file no longer needed)
+- `finalize_run()` must handle the case where `run_final_checks()` fails.
+  The function should still run metrics/reports/cleanup even if final checks
+  fail — but should NOT commit or archive on failure.
+- The `_do_git_commit()` helper needs access to variables set in tekhton.sh
+  (LOG_DIR, TIMESTAMP, COMMIT_MSG). These should be passed as parameters or
+  exported before calling `finalize_run()`.
+- The interactive commit prompt (`read` from `/dev/tty`) must remain available
+  for non-milestone, non-auto-commit runs. Don't remove it entirely — just
+  move it into `finalize_run()`.
+- `resolve_human_notes_with_exit_code` must still call the existing
+  `resolve_human_notes()` when CODER_SUMMARY.md IS present — the new
+  exit-code-aware path is only the fallback when the summary is missing.
+- `clear_milestone_state()` must only run in milestone mode. In non-milestone
+  runs there is no state file to clear and calling it is harmless but noisy.
+
+**Seeds Forward:**
+- Milestone 16 (Outer Loop) calls `finalize_run()` as its single post-iteration
+  hook. The consolidated function eliminates the need for the outer loop to
+  know about individual bookkeeping steps.
+- Auto-commit in milestone mode (from 15.1's config change, wired here)
+  eliminates the interactive prompt that would block the autonomous loop.
+- Milestone 15.4 (`--human --complete`) reuses `finalize_run()` as its
+  per-note post-pipeline hook.
+- V3 modules extend `finalize_run()` by calling `register_finalize_hook` after
+  hooks.sh is sourced — no modification to the core hook sequence required.
+  Dashboard generation, lane completion signaling, and milestone graph updates
+  each register as additional hooks.
+
+#### [DONE] Milestone 15.4.1: Single-Note Utility Functions in lib/notes.sh
+
+Add the five single-note utility functions to `lib/notes.sh` that form the foundation
+for the `--human` workflow. These functions operate on individual notes rather than
+bulk operations, enabling precise one-at-a-time note processing.
+
+**Files to modify:**
+- `lib/notes.sh` — Add after the existing `resolve_human_notes()` function (line ~197):
+  - `pick_next_note(tag_filter)` — Scans HUMAN_NOTES.md sections in priority order:
+    `## Bugs` first, then `## Features`, then `## Polish`. Within each section,
+    returns the first `- [ ]` line. If `tag_filter` is set (e.g., "BUG"), only
+    scans the corresponding section (`BUG` → `## Bugs`, `FEAT` → `## Features`,
+    `POLISH` → `## Polish`). Returns the full note line including checkbox and tag.
+    Returns empty string if no unchecked notes remain.
+  - `claim_single_note(note_line)` — Marks exactly ONE note from `[ ]` to `[~]` in
+    HUMAN_NOTES.md. The `note_line` parameter is the literal line returned by
+    `pick_next_note`. Escapes regex special characters (brackets, parentheses, dots)
+    in the note text before using sed. Only the first match is marked. Archives
+    pre-run snapshot via existing `_archive_notes_snapshot()` if available, or copies
+    HUMAN_NOTES.md to `HUMAN_NOTES.md.bak`.
+  - `resolve_single_note(note_line, exit_code)` — Resolves a single in-progress note:
+    if `exit_code=0`, sed-replace the `[~]` version of `note_line` with `[x]`. If
+    non-zero, replace `[~]` back to `[ ]`. Returns 0 if the note was found and
+    resolved, 1 if not found.
+  - `extract_note_text(note_line)` — Strips the `- [ ] ` or `- [~] ` or `- [x] `
+    checkbox prefix, returning the rest (including tag like `[BUG]`). Uses parameter
+    expansion or sed.
+  - `count_unchecked_notes(tag_filter)` — Counts remaining `- [ ]` lines in
+    HUMAN_NOTES.md. If `tag_filter` is set, counts only within the matching section.
+    Returns the count as stdout. Returns 0 if file doesn't exist.
+
+**Acceptance criteria:**
+- `pick_next_note ""` returns the first unchecked note from Bugs, then Features, then Polish (priority order)
+- `pick_next_note "BUG"` only returns notes from the `## Bugs` section
+- `pick_next_note "FEAT"` only returns notes from the `## Features` section
+- `pick_next_note "POLISH"` only returns notes from the `## Polish` section
+- `pick_next_note` returns empty string when all notes are `[x]` or `[~]`
+- `claim_single_note` marks exactly ONE note `[~]`, leaving all others unchanged
+- `claim_single_note` correctly escapes regex special characters in note text (brackets, parens, dots)
+- `resolve_single_note "$note" 0` changes `[~]` → `[x]`
+- `resolve_single_note "$note" 1` changes `[~]` → `[ ]`
+- `resolve_single_note` returns 1 when the note line is not found
+- `extract_note_text "- [ ] [BUG] Fix the thing"` returns `[BUG] Fix the thing`
+- `count_unchecked_notes ""` returns total count of `[ ]` notes across all sections
+- `count_unchecked_notes "BUG"` returns count of `[ ]` notes in Bugs section only
+- All functions return 0 / empty gracefully when HUMAN_NOTES.md doesn't exist
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/notes.sh`
+
+**Watch For:**
+- `pick_next_note` must handle section structure. HUMAN_NOTES.md has `## Bugs`,
+  `## Features`, `## Polish` headings. The function must track which section it's
+  in and stop scanning a section when it hits the next `## ` heading.
+- `claim_single_note` must escape ALL sed-special characters in the note text:
+  `[`, `]`, `(`, `)`, `.`, `*`, `+`, `?`, `{`, `}`, `\`, `/`, `&`. Use a helper
+  function `_escape_sed_pattern()` or `sed 's/[[\.*^$()+?{|/]/\\&/g'`.
+- The priority mapping is: tag `BUG` → section `## Bugs`, tag `FEAT` → section
+  `## Features`, tag `POLISH` → section `## Polish`. This is NOT alphabetical.
+- Use tmpfile + mv pattern for all file modifications (consistent with existing
+  notes.sh functions). Never use `sed -i` for portability.
+
+**Seeds Forward:**
+- Milestone 15.4.2 uses these functions for `--human` mode orchestration in tekhton.sh
+- Milestone 15.4.3 integrates `resolve_single_note()` into `finalize_run()` hooks
+
+#### [DONE] Milestone 15.4.2: `--human` Mode Orchestration in tekhton.sh
+
+Wire the single-note functions from 15.4.1 into tekhton.sh to implement the
+`--human` single-note workflow and `--human --complete` chaining loop. Add flag
+validation to reject invalid combinations (`--human --milestone`, `--human "task"`).
+
+**Files to modify:**
+- `tekhton.sh` — Add `--human` mode orchestration after flag parsing and config
+  loading (before `_run_pipeline_stages`):
+  1. **Flag validation** (after all flags are parsed, before pipeline runs):
+     - If `HUMAN_MODE=true` and `MILESTONE_MODE=true`: log error
+       "Cannot combine --human with --milestone" and exit 1
+     - If `HUMAN_MODE=true` and `TASK` is non-empty (user passed a task string):
+       log error "Cannot combine --human with an explicit task" and exit 1
+     - If `HUMAN_MODE=true` and `WITH_NOTES=true`: log warning
+       "--with-notes is redundant with --human (notes are already active)" but
+       continue (not an error)
+  2. **Single-note mode** (when `HUMAN_MODE=true` and `COMPLETE_MODE` is not set):
+     - Call `pick_next_note "$HUMAN_NOTES_TAG"`
+     - If empty: log "No unchecked notes" (or "No unchecked [TAG] notes") and exit 0
+     - Call `extract_note_text` on the picked note and set `TASK` to the result
+     - Call `claim_single_note` for the picked note
+     - Store the picked note line in `CURRENT_NOTE_LINE` (exported) for
+       `resolve_single_note` in finalize hooks
+     - Proceed to `_run_pipeline_stages()` normally
+  3. **Human-complete mode** (when `HUMAN_MODE=true` and `COMPLETE_MODE=true`):
+     - Initialize `HUMAN_ATTEMPT=0` and record start time
+     - Outer loop: while `count_unchecked_notes "$HUMAN_NOTES_TAG"` > 0:
+       a. Increment `HUMAN_ATTEMPT`, check against `MAX_PIPELINE_ATTEMPTS`
+       b. Check `AUTONOMOUS_TIMEOUT` against elapsed wall-clock time
+       c. Call `pick_next_note` → `extract_note_text` → set `TASK`
+       d. Call `claim_single_note`
+       e. Set `CURRENT_NOTE_LINE`, export it
+       f. Run `_run_pipeline_stages()`
+       g. Call `finalize_run $?` (which resolves the note via hook)
+       h. Check if note is still `[ ]` (read back from file) → break on failure
+       i. Continue to next note on success
+     - Each iteration is independent: `AUTO_COMMIT=true` ensures commit between notes
+
+**Acceptance criteria:**
+- `--human` with no unchecked notes exits 0 with "No unchecked notes" message
+- `--human` picks the highest-priority unchecked note (BUG > FEAT > POLISH)
+- `--human BUG` only picks `[BUG]` notes
+- `--human FEAT` only picks `[FEAT]` notes
+- TASK is set to the note's text content (e.g., `[BUG] Fix the thing`)
+- Pipeline runs the coder with the note text as the task
+- `--human --milestone` is rejected with a clear error message
+- `--human "some task"` is rejected with a clear error message
+- `--with-notes --human` logs a warning but continues
+- `--human` without a task argument does NOT require a task string
+- `--human --complete` chains through multiple notes, one per iteration
+- `--human --complete` stops on first failure (note still `[ ]`)
+- `--human --complete` respects `AUTONOMOUS_TIMEOUT` and `MAX_PIPELINE_ATTEMPTS`
+- Each note in `--human --complete` gets its own commit
+- `CURRENT_NOTE_LINE` is exported and available to finalize hooks
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `tekhton.sh`
+
+**Watch For:**
+- The `--human --complete` loop must NOT reuse M16's outer loop directly. M16
+  retries the SAME task on failure; `--human --complete` advances to the NEXT
+  note on success and stops on failure. Different iteration pattern.
+- `CURRENT_NOTE_LINE` must be set BEFORE `_run_pipeline_stages()` and remain
+  available through `finalize_run()`. Export it so sourced libraries can access it.
+- The `--human` flag parsing already exists (lines 534-543 in tekhton.sh). The
+  orchestration logic goes AFTER config loading, not in the flag parsing section.
+- When checking if a note is still `[ ]` after `finalize_run`, re-read the file —
+  don't cache. `resolve_single_note` modifies the file in place.
+- `MAX_PIPELINE_ATTEMPTS` and `AUTONOMOUS_TIMEOUT` may not be defined yet if M16
+  isn't implemented. Use `: "${MAX_PIPELINE_ATTEMPTS:=5}"` and
+  `: "${AUTONOMOUS_TIMEOUT:=7200}"` defaults inline.
+
+**Seeds Forward:**
+- Milestone 15.4.3 wires `resolve_single_note()` into the finalize hook to
+  complete the workflow end-to-end
+- M16's `--complete` flag provides the same safety bounds reused here
+
+#### [DONE] Milestone 15.4.3: Finalize Hook Integration for Single-Note Resolution
+
+Modify the `_hook_resolve_notes` hook in `lib/finalize.sh` to detect `HUMAN_MODE`
+and call `resolve_single_note()` instead of bulk `resolve_human_notes()`. This
+completes the end-to-end `--human` workflow: pick → claim → pipeline → resolve.
+
+**Files to modify:**
+- `lib/finalize.sh` — Modify `_hook_resolve_notes()` (lines 85-100):
+  1. At the top of the function, check if `HUMAN_MODE=true` AND
+     `CURRENT_NOTE_LINE` is non-empty
+  2. If yes: call `resolve_single_note "$CURRENT_NOTE_LINE" "$exit_code"`
+     and return. Skip the bulk `resolve_human_notes` path entirely.
+  3. If no: fall through to the existing bulk resolution logic (unchanged)
+  4. Log which path was taken: "Resolving single note" vs "Resolving all
+     claimed notes"
+- `tests/test_human_workflow.sh` — Create a test file that validates the
+  end-to-end `--human` workflow:
+  1. Test `pick_next_note` priority ordering with a multi-section HUMAN_NOTES.md
+  2. Test `claim_single_note` marks exactly one note
+  3. Test `resolve_single_note` success and failure paths
+  4. Test `extract_note_text` strips checkbox prefix correctly
+  5. Test `count_unchecked_notes` with and without tag filter
+  6. Test flag validation: `--human --milestone` rejected, `--human "task"` rejected
+
+**Acceptance criteria:**
+- `finalize_run 0` in `HUMAN_MODE` calls `resolve_single_note` with exit code 0,
+  marking the note `[x]`
+- `finalize_run 1` in `HUMAN_MODE` calls `resolve_single_note` with exit code 1,
+  resetting the note to `[ ]`
+- `finalize_run` without `HUMAN_MODE` still calls bulk `resolve_human_notes`
+  (existing behavior preserved)
+- `CURRENT_NOTE_LINE` empty in `HUMAN_MODE` logs a warning and falls through to
+  bulk resolution (defensive)
+- On success (exit 0), the note is marked `[x]` in HUMAN_NOTES.md
+- On failure (exit non-zero), the note is reset to `[ ]` in HUMAN_NOTES.md
+- Notes are never auto-injected based on task text matching (flag-only gating)
+- Test file validates all single-note functions and flag validation
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- `resolve_single_note` is defined in `lib/notes.sh` but called from
+  `lib/finalize.sh`. Ensure `notes.sh` is sourced before `finalize.sh` in
+  `tekhton.sh` (check the source order).
+- `CURRENT_NOTE_LINE` contains the ORIGINAL note line (with `[ ]` prefix) but
+  after `claim_single_note` it's `[~]` in the file. `resolve_single_note` must
+  match the `[~]` version. Either: (a) store the claimed version, or (b) have
+  `resolve_single_note` reconstruct the `[~]` pattern from the original. Option
+  (b) is safer — the function knows it's looking for `[~]`.
+- The test file must create a temporary HUMAN_NOTES.md with realistic section
+  structure (## Bugs, ## Features, ## Polish) and multiple notes per section.
+- Don't modify the existing `_hook_resolve_notes` behavior for non-human-mode
+  runs. The conditional must be a clean if/else, not a replacement.
+
+**Seeds Forward:**
+- The single-note claim/resolve pattern established here could eventually replace
+  bulk `claim_human_notes()` / `resolve_human_notes()` entirely.
+- V3 could add `--human --watch` that monitors HUMAN_NOTES.md for new items
+  and processes them automatically using these functions.
+- M16's `--complete` outer loop reuses the safety bounds (`MAX_PIPELINE_ATTEMPTS`,
+  `AUTONOMOUS_TIMEOUT`) validated here.
