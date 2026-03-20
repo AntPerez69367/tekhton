@@ -68,7 +68,7 @@ assert "No bare horizontal rule '---' lines in CLAUDE.md (found: $horiz_count)" 
   "$([ "$horiz_count" -eq 0 ] && echo 0 || echo 1)"
 
 # --- Criterion 4: Active milestone blocks intact ---
-active_milestones="15.1.1 15.1.2.1 15.1.2.2 15.2.1 15.2.2.1 15.2.2.2 15.3 15.4 16 17 18 19 20 21"
+active_milestones="15.1.1 15.1.2.1 15.1.2.2 15.2.1 15.2.2.1 15.2.2.2 15.3 15.4.1 15.4.2 15.4.3 16 17 18 19 20 21"
 for ms in $active_milestones; do
   ms_escaped="${ms//./\\.}"
   count=$(grep -c "^#### Milestone ${ms_escaped}[: ]" "$CLAUDE_MD" 2>/dev/null || true)

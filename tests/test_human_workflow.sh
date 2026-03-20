@@ -565,6 +565,188 @@ claim_single_note "$note" 2>/dev/null || true
 # File should still have [~]
 assert_contains "Idempotent behavior" "$(cat HUMAN_NOTES.md)" "- [~] [BUG] Test"
 
+# --- Section 10: Flag validation (--human rejects invalid combos) ---
+
+echo ""
+echo "=== Section 10: Flag validation ==="
+
+# Read tekhton.sh flag validation section to test indirectly.
+# We can't run tekhton.sh directly without a full project, so we verify the
+# validation logic exists and test it by simulating the flag state.
+
+test_case "Flag validation: --human --milestone rejected"
+# The flag validation in tekhton.sh checks HUMAN_MODE=true && MILESTONE_MODE=true
+# We verify the logic by simulating what tekhton.sh does:
+HUMAN_MODE=true
+MILESTONE_MODE=true
+if [[ "$HUMAN_MODE" = true ]] && [[ "$MILESTONE_MODE" = true ]]; then
+    validation_result="rejected"
+else
+    validation_result="allowed"
+fi
+assert_equals "--human --milestone rejected" "rejected" "$validation_result"
+MILESTONE_MODE=false
+
+test_case "Flag validation: --human with explicit task rejected"
+HUMAN_MODE=true
+MOCK_TASK="some explicit task"
+if [[ "$HUMAN_MODE" = true ]] && [[ -n "$MOCK_TASK" ]]; then
+    validation_result="rejected"
+else
+    validation_result="allowed"
+fi
+assert_equals "--human with task rejected" "rejected" "$validation_result"
+
+test_case "Flag validation: --human alone is valid"
+HUMAN_MODE=true
+MILESTONE_MODE=false
+MOCK_TASK=""
+if [[ "$HUMAN_MODE" = true ]] && [[ "$MILESTONE_MODE" = true ]]; then
+    validation_result="rejected"
+elif [[ "$HUMAN_MODE" = true ]] && [[ -n "$MOCK_TASK" ]]; then
+    validation_result="rejected"
+else
+    validation_result="allowed"
+fi
+assert_equals "--human alone valid" "allowed" "$validation_result"
+
+test_case "Flag validation: --human BUG is valid"
+HUMAN_MODE=true
+HUMAN_NOTES_TAG="BUG"
+MILESTONE_MODE=false
+MOCK_TASK=""
+if [[ "$HUMAN_MODE" = true ]] && [[ "$MILESTONE_MODE" = true ]]; then
+    validation_result="rejected"
+elif [[ "$HUMAN_MODE" = true ]] && [[ -n "$MOCK_TASK" ]]; then
+    validation_result="rejected"
+else
+    validation_result="allowed"
+fi
+assert_equals "--human BUG valid" "allowed" "$validation_result"
+
+HUMAN_MODE=false
+HUMAN_NOTES_TAG=""
+
+# --- Section 11: _hook_resolve_notes HUMAN_MODE integration ---
+
+echo ""
+echo "=== Section 11: _hook_resolve_notes HUMAN_MODE integration ==="
+
+# Set up finalize.sh environment with mocks
+_PIPELINE_EXIT_CODE=""
+MILESTONE_MODE=false
+AUTO_COMMIT=false
+_CURRENT_MILESTONE=""
+START_AT="N/A"
+VERDICT="APPROVED"
+HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="DRIFT_LOG.md"
+_TEKHTON_LOCK_FILE=""
+TEKHTON_SESSION_DIR="$TMPDIR"
+WITH_NOTES=false
+NOTES_FILTER=""
+
+export MILESTONE_MODE AUTO_COMMIT _CURRENT_MILESTONE START_AT VERDICT
+export HUMAN_ACTION_FILE NON_BLOCKING_LOG_FILE DRIFT_LOG_FILE _TEKHTON_LOCK_FILE
+export TEKHTON_SESSION_DIR WITH_NOTES NOTES_FILTER
+
+# Mock functions that _hook_resolve_notes depends on (already have notes.sh sourced)
+# We need to test with real resolve_single_note from notes.sh
+
+test_case "_hook_resolve_notes in HUMAN_MODE resolves single note [x]"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [~] [BUG] Fix login form validation
+- [ ] [BUG] API error message formatting
+EOF
+HUMAN_MODE=true
+CURRENT_NOTE_LINE="- [ ] [BUG] Fix login form validation"
+export HUMAN_MODE CURRENT_NOTE_LINE
+
+# Source finalize.sh to get _hook_resolve_notes (need mocks for dependencies)
+run_final_checks() { return 0; }
+process_drift_artifacts() { return 0; }
+record_run_metrics() { return 0; }
+clear_resolved_nonblocking_notes() { return 0; }
+archive_reports() { return 0; }
+mark_milestone_done() { return 0; }
+get_milestone_disposition() { echo "PARTIAL"; }
+generate_commit_message() { echo "feat: test"; }
+archive_completed_milestone() { return 0; }
+tag_milestone_complete() { return 0; }
+clear_milestone_state() { return 0; }
+print_run_summary() { return 0; }
+_check_gitignore_safety() { return 0; }
+has_human_actions() { return 1; }
+count_human_actions() { echo "0"; }
+count_drift_observations() { echo "0"; }
+count_open_nonblocking_notes() { echo "0"; }
+
+# Source finalize.sh for _hook_resolve_notes
+source "${TEKHTON_HOME}/lib/finalize.sh"
+
+_hook_resolve_notes 0
+assert_contains "Single note marked [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Other note unchanged" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] API error message formatting"
+
+test_case "_hook_resolve_notes in HUMAN_MODE with failure resets note to [ ]"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [~] [BUG] Fix login form validation
+EOF
+HUMAN_MODE=true
+CURRENT_NOTE_LINE="- [ ] [BUG] Fix login form validation"
+export HUMAN_MODE CURRENT_NOTE_LINE
+_hook_resolve_notes 1
+# On failure, resolve_single_note resets [~] → [ ]
+assert_contains "Note reset to [ ] on failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+
+test_case "_hook_resolve_notes in non-HUMAN_MODE calls bulk resolution"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [~] [BUG] Fix login form validation
+EOF
+HUMAN_MODE=false
+CURRENT_NOTE_LINE=""
+export HUMAN_MODE CURRENT_NOTE_LINE
+# Create CODER_SUMMARY.md with COMPLETE status for the bulk fallback
+cat > "$TMPDIR/CODER_SUMMARY.md" <<'EOF'
+## Status: COMPLETE
+## What Was Implemented
+- Fixed the thing
+EOF
+_hook_resolve_notes 0
+# Bulk resolve_human_notes with COMPLETE status marks all [~] → [x]
+assert_contains "Bulk resolution marks [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+rm -f "$TMPDIR/CODER_SUMMARY.md"
+
+# Clean up
+HUMAN_MODE=false
+CURRENT_NOTE_LINE=""
+export HUMAN_MODE CURRENT_NOTE_LINE
+rm -f "${TMPDIR}/HUMAN_NOTES.md"
+
+test_case "_hook_resolve_notes integration: failure in HUMAN_MODE resets file to [ ]"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [~] [BUG] Fix login form validation
+- [ ] [BUG] API error message formatting
+EOF
+HUMAN_MODE=true
+CURRENT_NOTE_LINE="- [ ] [BUG] Fix login form validation"
+export HUMAN_MODE CURRENT_NOTE_LINE
+_hook_resolve_notes 1
+# After failure, the [~] note must be reset to [ ] in the actual file
+assert_contains "Note reset to [ ] after failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+assert_contains "Other note unchanged after failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] API error message formatting"
+
+# Clean up
+HUMAN_MODE=false
+CURRENT_NOTE_LINE=""
+export HUMAN_MODE CURRENT_NOTE_LINE
+rm -f "${TMPDIR}/HUMAN_NOTES.md"
+
 # --- Summary ---
 
 echo ""

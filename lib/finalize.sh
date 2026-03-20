@@ -5,7 +5,8 @@ set -euo pipefail
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: hooks.sh, notes.sh, drift_cleanup.sh, milestone_ops.sh,
-#          milestone_archival.sh, metrics.sh, drift_artifacts.sh sourced first.
+#          milestone_archival.sh, metrics.sh, drift_artifacts.sh,
+#          finalize_display.sh sourced first.
 # Expects: LOG_DIR, TIMESTAMP, LOG_FILE, TASK, MILESTONE_MODE, AUTO_COMMIT,
 #          _CURRENT_MILESTONE (set by caller/tekhton.sh)
 #
@@ -14,6 +15,10 @@ set -euo pipefail
 #   finalize_run           — execute all registered hooks in order
 #   _do_git_commit         — stage, commit, and log output
 # =============================================================================
+
+# Source display helper
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/finalize_display.sh"
 
 # --- Hook registry -----------------------------------------------------------
 
@@ -82,15 +87,33 @@ _hook_cleanup_resolved() {
 }
 
 # e. Resolve human notes with exit code awareness
+#    In HUMAN_MODE with a CURRENT_NOTE_LINE, resolves just the single note
+#    via resolve_single_note(). This runs on BOTH success and failure so that
+#    failure resets [~] → [ ]. Otherwise falls through to bulk resolution
+#    (success-only for bulk path).
 _hook_resolve_notes() {
     local exit_code="$1"
-    [[ "$exit_code" -ne 0 ]] && return 0
     if [[ ! -f "HUMAN_NOTES.md" ]]; then
         return 0
     fi
+
+    # Single-note resolution for --human mode (runs on success AND failure)
+    if [[ "${HUMAN_MODE:-false}" = true ]]; then
+        if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+            log "Resolving single note (--human mode, exit_code=$exit_code)"
+            resolve_single_note "$CURRENT_NOTE_LINE" "$exit_code" || true
+            return 0
+        else
+            warn "HUMAN_MODE active but CURRENT_NOTE_LINE is empty — falling through to bulk resolution"
+        fi
+    fi
+
+    # Bulk resolution for standard (non-human) mode — success only
+    [[ "$exit_code" -ne 0 ]] && return 0
     local remaining_claimed
     remaining_claimed=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
     if [[ "$remaining_claimed" -gt 0 ]]; then
+        log "Resolving all claimed notes (bulk mode)"
         # Set _PIPELINE_EXIT_CODE so resolve_human_notes can use it
         # for the fallback path when CODER_SUMMARY.md is missing
         _PIPELINE_EXIT_CODE="$exit_code"
@@ -155,7 +178,6 @@ _hook_commit() {
         fi
     fi
     echo
-
     # Print action items summary
     _print_action_items
 
@@ -238,64 +260,6 @@ _hook_clear_state() {
     disposition=$(get_milestone_disposition 2>/dev/null || echo "")
     if [[ "$disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$disposition" == COMPLETE_AND_WAIT ]]; then
         clear_milestone_state
-    fi
-}
-
-# --- Action items summary (extracted from tekhton.sh) ------------------------
-
-_print_action_items() {
-    local action_items=()
-
-    # Check for tester bugs
-    if [[ -f "TESTER_REPORT.md" ]] && \
-       awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
-        local bug_count
-        bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
-        action_items+=("$(echo -e "${YELLOW}  ⚠ TESTER_REPORT.md — ${bug_count} bug(s) found (see ## Bugs Found)${NC}")")
-    fi
-
-    # Check for test failures from final checks
-    if [[ "${FINAL_CHECK_RESULT:-0}" -ne 0 ]]; then
-        action_items+=("$(echo -e "${YELLOW}  ⚠ Test suite — final checks failed (see output above)${NC}")")
-    fi
-
-    # Check for human action items
-    if has_human_actions 2>/dev/null; then
-        local ha_count
-        ha_count=$(count_human_actions)
-        action_items+=("$(echo -e "${YELLOW}  ⚠ ${HUMAN_ACTION_FILE} — ${ha_count} item(s) needing manual work${NC}")")
-    fi
-
-    # Check for non-blocking notes (info only)
-    if [[ -f "${NON_BLOCKING_LOG_FILE:-}" ]] && [[ -s "${NON_BLOCKING_LOG_FILE:-}" ]]; then
-        local nb_count
-        nb_count=$(count_open_nonblocking_notes 2>/dev/null || echo 0)
-        if [[ "$nb_count" -gt 0 ]]; then
-            action_items+=("$(echo -e "${CYAN}  ℹ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)${NC}")")
-        fi
-    fi
-
-    # Check for drift observations (info only)
-    if [[ -f "${DRIFT_LOG_FILE:-}" ]] && [[ -s "${DRIFT_LOG_FILE:-}" ]]; then
-        local drift_count
-        drift_count=$(count_drift_observations 2>/dev/null || echo 0)
-        if [[ "$drift_count" -gt 0 ]]; then
-            action_items+=("$(echo -e "${CYAN}  ℹ ${DRIFT_LOG_FILE} — ${drift_count} unresolved drift observation(s)${NC}")")
-        fi
-    fi
-
-    if [[ ${#action_items[@]} -gt 0 ]]; then
-        echo -e "${BOLD}══════════════════════════════════════${NC}"
-        echo -e "${BOLD}  Action Items${NC}"
-        echo -e "${BOLD}══════════════════════════════════════${NC}"
-        for item in "${action_items[@]}"; do
-            echo -e "$item"
-        done
-        echo -e "${BOLD}══════════════════════════════════════${NC}"
-        echo
-    else
-        success "No action items — clean run."
-        echo
     fi
 }
 

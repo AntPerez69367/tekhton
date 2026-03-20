@@ -200,6 +200,8 @@ resolve_human_notes() {
 # These enable precise one-at-a-time note processing for --human mode.
 
 # _escape_sed_pattern — Escapes regex special characters for safe sed matching.
+# Currently unused: claim_single_note/resolve_single_note use exact string
+# matching instead. Retained for 15.4.2/15.4.3 which may need sed-based matching.
 # Usage: escaped=$(_escape_sed_pattern "$text")
 _escape_sed_pattern() {
     # shellcheck disable=SC2016
@@ -348,18 +350,8 @@ resolve_single_note() {
 #   → "[BUG] Fix the thing"
 extract_note_text() {
     local note_line="$1"
-    # Strip "- [ ] ", "- [~] ", or "- [x] " prefix (6 chars)
+    # Strip "- [ ] ", "- [~] ", or "- [x] " prefix using glob ? for the checkbox char
     local text="${note_line#- \[?\] }"
-    # If the simple strip didn't work, try each pattern
-    if [[ "$text" = "$note_line" ]]; then
-        text="${note_line#- \[ \] }"
-    fi
-    if [[ "$text" = "$note_line" ]]; then
-        text="${note_line#- \[~\] }"
-    fi
-    if [[ "$text" = "$note_line" ]]; then
-        text="${note_line#- \[x\] }"
-    fi
     echo "$text"
 }
 
