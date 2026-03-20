@@ -2690,3 +2690,106 @@ completes the end-to-end `--human` workflow: pick → claim → pipeline → res
   and processes them automatically using these functions.
 - M16's `--complete` outer loop reuses the safety bounds (`MAX_PIPELINE_ATTEMPTS`,
   `AUTONOMOUS_TIMEOUT`) validated here.
+
+---
+
+## Archived: 2026-03-20 — Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 18: Project Crawler & Index Generator
+<!-- milestone-meta
+id: "18"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
+
+Shell-driven breadth-first crawler that traverses a project directory and produces
+PROJECT_INDEX.md — a structured, token-budgeted manifest of the project's
+architecture, file inventory, dependency structure, and sampled key files. No LLM
+calls. The index is the foundation for all downstream synthesis.
+
+**Files to create:**
+- `lib/crawler.sh` — Project crawler library:
+  - `crawl_project(project_dir, budget_chars)` — Main entry point. Orchestrates
+    the crawl phases and writes PROJECT_INDEX.md. Budget defaults to 120,000
+    chars (~30k tokens). Returns 0 on success.
+  - `_crawl_directory_tree(project_dir, max_depth)` — Breadth-first directory
+    traversal. Produces annotated tree with: directory purpose heuristic (src,
+    test, docs, config, build output, assets), file count per directory, total
+    lines per directory. Respects `.gitignore` via `git ls-files` when in a git
+    repo, falls back to hardcoded exclusion list otherwise. Max depth default: 6.
+  - `_crawl_file_inventory(project_dir)` — Catalogues every tracked file with:
+    path, extension, line count, last-modified date, size category (tiny <50
+    lines, small <200, medium <500, large <1000, huge >1000). Groups by directory
+    and annotates purpose. Output is a markdown table.
+  - `_crawl_dependency_graph(project_dir, languages)` — Extracts dependency
+    information from manifest files: `package.json` (dependencies,
+    devDependencies), `Cargo.toml` ([dependencies]), `pyproject.toml`
+    ([project.dependencies]), `go.mod` (require blocks), `Gemfile`,
+    `build.gradle`, `pom.xml` (simplified). Produces a "Key Dependencies"
+    section with version constraints and purpose annotations for well-known
+    packages (e.g., `express` → "HTTP server framework", `pytest` → "Testing
+    framework").
+  - `_crawl_sample_files(project_dir, file_list, budget_remaining)` — Reads
+    and includes the content of high-value files: README.md, CONTRIBUTING.md,
+    ARCHITECTURE.md (or similar), main entry point(s), primary config files,
+    one representative test file, one representative source file. Each file
+    include is prefixed with path and truncated to fit budget. Priority order:
+    README > entry points > config > architecture docs > test samples > source
+    samples.
+  - `_crawl_test_structure(project_dir)` — Identifies test directory layout,
+    test framework (from detection results), approximate test count, and
+    coverage configuration if present. Produces a "Test Infrastructure" section.
+  - `_crawl_config_inventory(project_dir)` — Lists all configuration files
+    (dotfiles, YAML/TOML/JSON configs, CI/CD pipelines, Docker files,
+    environment templates) with one-line purpose annotations.
+  - `_budget_allocator(total_budget, section_sizes)` — Distributes the token
+    budget across index sections. Fixed allocations: tree (10%), inventory (15%),
+    dependencies (10%), config (5%), tests (5%). Remaining 55% goes to sampled
+    file content. If a section underflows its allocation, surplus redistributes
+    to file sampling.
+
+**Files to modify:**
+- `tekhton.sh` — source `lib/crawler.sh`
+
+**Acceptance criteria:**
+- `crawl_project` produces a valid PROJECT_INDEX.md with all sections populated
+  for a project with 100+ files
+- Output size stays within the specified budget (±5%) regardless of project size
+- Breadth-first traversal captures all top-level directories even in repos with
+  deep nesting
+- `.gitignore` patterns are respected — node_modules, .git, build artifacts are
+  excluded
+- File inventory correctly categorizes files by size and groups by directory
+- Dependency extraction correctly parses package.json, Cargo.toml, and
+  pyproject.toml
+- Sampled files are truncated to fit budget, not omitted entirely
+- Budget allocator redistributes surplus from thin sections to file sampling
+- Crawler completes in under 30 seconds for a 10,000-file repo (no LLM calls)
+- Safe on repos with binary files, symlinks, empty directories, and no git
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/crawler.sh`
+
+**Watch For:**
+- Monorepos need special handling. If the root contains a `packages/` or
+  `apps/` directory with independent manifests, each should be crawled as a
+  sub-project with its own dependency block. Cap at 5 sub-projects to prevent
+  budget explosion.
+- Binary files must be detected and skipped during sampling. Use `file --mime`
+  or check for null bytes in the first 512 bytes.
+- Very large files (>1000 lines) should only have their first 50 + last 20
+  lines sampled, with a `... (N lines omitted)` marker.
+- The budget allocator must be conservative. It's better to produce a slightly
+  under-budget index than to exceed the context window downstream.
+- `git ls-files` may not be available in non-git directories. The fallback
+  exclusion list must match the patterns used by `_generate_codebase_summary()`
+  for consistency.
+- Line counting with `wc -l` on thousands of files can be slow. Consider
+  batching with `find ... -exec wc -l {} +` rather than one `wc` per file.
+
+**Seeds Forward:**
+- Milestone 19 (smart init) embeds the index in the --init flow
+- Milestone 20 (incremental rescan) reuses `_crawl_file_inventory` with a
+  git-diff filter
+- Milestone 21 (synthesis) feeds PROJECT_INDEX.md to the agent for CLAUDE.md
+  generation
