@@ -1137,6 +1137,13 @@ After _run_pipeline_stages returns non-zero:
 - `RUN_SUMMARY.json` must be valid JSON. Use `printf` with proper escaping
   for string values, not heredoc with unescaped variables. File paths in
   `files_changed` may contain special characters.
+- **Test stdin safety:** `run_tests.sh` redirects stdin from `/dev/null`.
+  Tests that call `finalize_run()` must still set `AUTO_COMMIT=true` OR
+  `SKIP_FINAL_CHECKS=true` to prevent `_hook_commit` from attempting
+  interactive reads. Every test suite that calls `finalize_run` must reset
+  ALL relevant state variables (`SKIP_FINAL_CHECKS`, `AUTO_COMMIT`,
+  `MILESTONE_MODE`, `_CURRENT_MILESTONE`, `FINAL_CHECK_RESULT`,
+  `_COMMIT_SUCCEEDED`) — do not rely on state inherited from prior suites.
 - The `_hook_emit_run_summary` hook should run on BOTH success and failure
   paths (unlike hooks d-j in M15.3 which are success-only). The `outcome`
   field distinguishes the cases. V3's steward needs failure data as much as
