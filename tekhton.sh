@@ -149,8 +149,8 @@ NOTES_FILTER=""
 MILESTONE_MODE=false
 AUTO_ADVANCE=false
 WITH_NOTES=false
-HUMAN_MODE=false
-HUMAN_NOTES_TAG=""
+export HUMAN_MODE=false
+export HUMAN_NOTES_TAG=""
 COMPLETE_MODE=false
 CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
@@ -290,6 +290,8 @@ _check_pipeline_lock
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/config.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
+source "${TEKHTON_HOME}/lib/notes_single.sh"
+source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
