@@ -82,13 +82,26 @@ GLOSSARY.md, prior reports, and non-blocking notes to every agent.
 - **MCP integration** — works as a tool the agent can call, not pre-injected context
 - **Free, open-source** (github.com/oraios/serena)
 
+**Architecture details:**
+- Built on **Solid-LSP** (`src/solidlsp`), a synchronous Python wrapper around
+  Microsoft's `multilspy` — deliberate sync design to avoid asyncio contamination
+- **Two-tier persistent cache** in `.solidlsp/cache/<language_id>/`: raw LSP
+  responses + processed DocumentSymbol trees with parent/child relationships
+- Cache keyed by **content hash** — edits auto-invalidate, no stale reads
+- **Lazy language server init** — servers start only when a file of that language
+  is first accessed (startup cost scales with languages used, not supported)
+- **Serialized task queue** — tool calls are sequential, not parallel
+- Persistent **project memory** (`.serena/memories/`) stores project understanding
+  across sessions — avoids re-discovering structure each time
+- ~36 tools total, ~26 exposed by default. 21.8k GitHub stars, MIT licensed.
+
 **Limitations:**
-- Requires LSP servers to be installed and running (Python needs Pyright, Rust
-  needs rust-analyzer, etc.)
+- Requires LSP servers installed (Pyright, rust-analyzer, gopls, etc.)
 - LSP startup can be slow for large projects (initial analysis pass)
 - No cross-file relevance ranking — agent must know what to ask for
-- Agent-driven discovery still burns tokens on tool calls
-- JetBrains plugin available as alternative to raw LSP
+- Agent-driven discovery still burns tokens on tool calls (though <10ms cached)
+- Serialized task queue means no parallel symbol lookups
+- JetBrains plugin available as alternative backend
 
 **Source:** [github.com/oraios/serena](https://github.com/oraios/serena)
 
