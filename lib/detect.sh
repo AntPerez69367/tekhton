@@ -123,7 +123,8 @@ _has_source_files() {
 _find_source_files() {
     local dir="$1"
     if git -C "$dir" rev-parse --git-dir &>/dev/null; then
-        git -C "$dir" ls-files 2>/dev/null | grep -Ev "(^|/)(${_DETECT_EXCLUDE_DIRS})/" || true
+        # Limit to top 2 directory levels (matching non-git fallback's -maxdepth 2)
+        git -C "$dir" ls-files 2>/dev/null | grep -Ev "(^|/)(${_DETECT_EXCLUDE_DIRS})/" | awk -F/ 'NF<=2' || true
     else
         find "$dir" -maxdepth 2 -type f \
             -not -path '*/.git/*' \

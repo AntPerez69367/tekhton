@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # metrics_dashboard.sh — Metrics dashboard and summary helpers
 #
