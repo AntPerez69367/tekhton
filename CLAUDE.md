@@ -1103,9 +1103,9 @@ Pipeline Stage Flow (v3):
 
 ### Milestone Plan
 
-#### Milestone 22: Indexer Infrastructure & Setup Command
+#### Milestone 1: Indexer Infrastructure & Setup Command
 Add the shell-side orchestration layer, Python dependency detection, setup command,
-and configuration keys. This milestone builds the framework that Milestones 23-27
+and configuration keys. This milestone builds the framework that Milestones 2-6
 plug into. No actual indexing logic yet — just the plumbing.
 
 Files to create:
@@ -1151,11 +1151,11 @@ Watch For:
   root (1 level deep to stay fast), not walk the entire tree.
 
 Seeds Forward:
-- Milestone 23 implements the Python tool that `run_repo_map()` invokes
-- Milestone 24 wires the repo map output into pipeline stages
-- Milestone 25 extends the setup command with `--with-lsp` for Serena
+- Milestone 2 implements the Python tool that `run_repo_map()` invokes
+- Milestone 3 wires the repo map output into pipeline stages
+- Milestone 4 extends the setup command with `--with-lsp` for Serena
 
-#### Milestone 23: Tree-Sitter Repo Map Generator
+#### Milestone 2: Tree-Sitter Repo Map Generator
 Implement the Python tool that parses source files with tree-sitter, extracts
 definition and reference tags, builds a file-relationship graph, ranks files by
 PageRank relevance to the current task, and emits a token-budgeted repo map
@@ -1238,12 +1238,12 @@ Watch For:
   and under 5 seconds on cached runs. Profile early.
 
 Seeds Forward:
-- Milestone 24 consumes `REPO_MAP.md` in pipeline stages
-- Milestone 26 extends the cache with cross-run task→file associations
-- The tag extraction format is reused by Milestone 25's Serena integration
+- Milestone 3 consumes `REPO_MAP.md` in pipeline stages
+- Milestone 5 extends the cache with cross-run task→file associations
+- The tag extraction format is reused by Milestone 4's Serena integration
   for cache warming
 
-#### Milestone 24: Pipeline Stage Integration
+#### Milestone 3: Pipeline Stage Integration
 Wire the repo map into all pipeline stages, replacing or supplementing full
 ARCHITECTURE.md injection. Each stage receives a different slice of the map
 optimized for its role. Integrate with v2's context accounting (Milestone 1)
@@ -1316,14 +1316,14 @@ Watch For:
   highly-connected files. Cap at top 20 callers by PageRank.
 
 Seeds Forward:
-- Milestone 25 (Serena) enhances the repo map with live symbol data, giving
+- Milestone 4 (Serena) enhances the repo map with live symbol data, giving
   agents even more precise context
-- Milestone 26 (Cross-Run Cache) uses task→file history from this milestone
+- Milestone 5 (Cross-Run Cache) uses task→file history from this milestone
   to improve future repo map rankings
 - The prompt template patterns established here (`{{IF:REPO_MAP_CONTENT}}`)
-  are reused by Milestone 25 for LSP tool instructions
+  are reused by Milestone 4 for LSP tool instructions
 
-#### Milestone 25: Serena MCP Integration
+#### Milestone 4: Serena MCP Integration
 Add optional LSP-powered symbol resolution via Serena as an MCP server. When
 enabled, agents gain `find_symbol`, `find_referencing_symbols`, and
 `get_symbol_definition` tools that provide live, accurate cross-reference data.
@@ -1379,7 +1379,7 @@ Acceptance criteria:
   tools (agents still have the static repo map)
 - Agent CLI invocations include `--mcp-config` when Serena is available
 - Prompt templates conditionally inject Serena tool usage instructions
-- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 24
+- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 3
 - Serena process is always cleaned up on exit (no orphaned processes)
 - All existing tests pass
 - `bash -n lib/mcp.sh tools/setup_serena.sh` passes
@@ -1399,13 +1399,13 @@ Watch For:
   Detect CLI version and fall back gracefully.
 
 Seeds Forward:
-- Milestone 26 can use Serena's type information to enrich the tag cache with
+- Milestone 5 can use Serena's type information to enrich the tag cache with
   parameter types and return types (richer signatures)
 - Future v3+ milestones for parallel agents (DAG execution) will need per-agent
   MCP server instances or a shared server with locking — design the lifecycle
   management with this in mind
 
-#### Milestone 26: Cross-Run Cache & Personalized Ranking
+#### Milestone 5: Cross-Run Cache & Personalized Ranking
 Make the indexer persistent and adaptive across pipeline runs. The tag cache
 survives between runs with mtime-based invalidation. Task→file association
 history improves PageRank personalization over time — files that were relevant
@@ -1482,7 +1482,7 @@ Seeds Forward:
   if the indexer consistently saves 70% of tokens, the pipeline can allocate
   the savings to richer prompt content
 
-#### Milestone 27: Indexer Tests & Documentation
+#### Milestone 6: Indexer Tests & Documentation
 Comprehensive test coverage for all indexing functionality: shell orchestration,
 Python tools, pipeline integration, fallback behavior, and Serena lifecycle.
 Update project documentation and repository layout.
