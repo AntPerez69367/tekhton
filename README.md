@@ -4,6 +4,8 @@
   <h1>Tekhton</h1>
 
   <p><strong>One intent. Many hands.</strong></p>
+
+  <p><em>v2.0 — Adaptive Pipeline</em></p>
 </div>
 
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
@@ -11,6 +13,32 @@ Give it a task description and it orchestrates a **Scout → Coder → Reviewer 
 with automatic rework routing, build gates, dynamic turn limits, architecture drift
 prevention, transient error retry, turn-exhaustion continuation, milestone splitting,
 state persistence, and resume support — or hand it `--complete` and walk away.
+
+## What's New in v2.0
+
+Tekhton 2.0 makes the pipeline **adaptive** — aware of its own context economics,
+capable of milestone-to-milestone progression, able to interrupt itself when
+assumptions break, and able to improve from its own run history. All v2 features
+are additive or opt-in; existing v1 workflows remain unchanged.
+
+**Highlights:**
+
+- **`--complete` autonomous loop** — wraps the entire pipeline in an outer loop that retries until the task passes acceptance or recovery options are exhausted
+- **`--auto-advance` milestone chaining** — after each milestone passes acceptance, the pipeline advances to the next automatically
+- **`--human` notes mode** — pick the next item from `HUMAN_NOTES.md` as the task; combine with `--complete` to process all notes in batch
+- **`--replan` brownfield replanning** — delta-based update of DESIGN.md and CLAUDE.md from accumulated drift and codebase evolution
+- **`--metrics` dashboard** — run history, per-task-type averages, scout accuracy, and adaptive turn calibration
+- **`--init` brownfield intelligence** — auto-detects tech stack, crawls the project, and generates production-quality CLAUDE.md and DESIGN.md from codebase evidence
+- **Transient error retry** — API errors (500, 429, 529), OOM kills, and network failures trigger automatic retry with exponential backoff
+- **Turn-exhaustion continuation** — agents that hit their turn limit with substantive progress are automatically re-invoked with a fresh budget
+- **Milestone auto-split** — oversized milestones are automatically decomposed into sub-milestones and retried
+- **Context budgeting** — token accounting prevents context window overflow with configurable compression strategies
+- **Specialist reviews** — opt-in security, performance, and API contract review passes after the main reviewer approves
+- **Autonomous debt sweeps** — post-success cleanup stage addresses non-blocking technical debt automatically
+- **Error taxonomy** — structured error classification with transience detection, recovery suggestions, and sensitive data redaction
+- **Security hardening** — safe config parsing, per-session temp files, prompt injection mitigation, git safety checks
+- **Milestone archival** — completed milestones are automatically archived from CLAUDE.md to keep it under context limits
+- **Post-coder turn recalibration** — reviewer/tester turn limits are recalculated using actual coder data instead of scout guesses
 
 ## Requirements
 
@@ -53,6 +81,11 @@ tekhton --auto-advance "Start with Milestone 1"
 
 # Process all human notes in batch
 tekhton --human --complete
+
+# Onboard an existing project (brownfield)
+cd /path/to/existing/project
+/path/to/tekhton/tekhton.sh --init    # Detects stack, crawls, generates docs
+tekhton --replan                      # Update docs after codebase changes
 ```
 
 After `--init`, your project will contain:
@@ -437,7 +470,7 @@ higher-quality document updates.
 | `--no-commit` | Skip auto-commit (prompt instead) |
 | `--metrics` | Print run metrics dashboard and exit |
 | `--status` | Print saved pipeline state and exit |
-| `--version` | Print version and exit |
+| `--version`, `-v` | Print version and exit |
 | `--help` | Show usage information |
 
 Running `tekhton` with no arguments checks for saved pipeline state and offers to resume.
@@ -506,6 +539,89 @@ sudo apt-get install -y shellcheck
 # macOS
 brew install shellcheck
 ```
+
+## Changelog
+
+### v2.0 — Adaptive Pipeline (March 2026)
+
+22 milestones delivered across the Adaptive Pipeline initiative. Key changes by category:
+
+**Autonomous Operation**
+- Outer orchestration loop (`--complete`) with safety bounds: max pipeline attempts, wall-clock timeout, agent call limits, stuck-detection
+- Milestone state machine with acceptance checking and `--auto-advance` for multi-milestone chaining
+- `--human` mode for processing `HUMAN_NOTES.md` items as tasks, with batch support via `--complete`
+- Turn-exhaustion continuation — agents that hit turn limits with progress automatically get a fresh budget (up to 3 continuations)
+- Pre-flight milestone sizing gate with automatic splitting when scope exceeds turn budget
+- Null-run auto-split — failed milestone attempts trigger decomposition and retry without human intervention
+
+**Resilience & Error Handling**
+- Transient error retry with exponential backoff (30s → 60s → 120s) for API 500/429/529, OOM, and network failures
+- Error taxonomy with 4 top-level categories (UPSTREAM, ENVIRONMENT, AGENT_SCOPE, PIPELINE) and structured classification
+- Sensitive data redaction in error reports, log summaries, and state files
+- File-change activity detection prevents false kills when agents work silently (JSON output mode)
+- Real-time API error detection in FIFO monitoring stream
+- Structured error reporting boxes with Unicode/ASCII fallback
+
+**Context & Intelligence**
+- Token accounting — character counts, estimated tokens, and context window percentage for every agent call
+- Context compiler — task-scoped context assembly injects only relevant sections instead of full files
+- Context budget enforcement with configurable compression strategies (truncate, summarize headings, omit)
+- Post-coder turn recalibration — reviewer/tester limits recalculated from actual coder turns, files modified, and diff size
+- Adaptive turn calibration from run history when enough data accumulates
+
+**Brownfield Intelligence**
+- Tech stack detection engine — identifies languages, frameworks, entry points, and infers build/test/lint commands
+- Project crawler & index generator — produces `PROJECT_INDEX.md` with file inventory, dependency analysis, and sampled key files
+- Incremental rescan — only processes files changed since last scan via `git diff`
+- Agent-assisted project synthesis — generates CLAUDE.md and DESIGN.md from codebase evidence
+- `--init` now auto-detects tech stack and populates `pipeline.conf` intelligently for brownfield projects
+
+**Review & Quality**
+- Specialist review framework — opt-in security, performance, and API contract review passes
+- Custom specialist support via `SPECIALIST_CUSTOM_*` config convention
+- Autonomous debt sweeps — post-success cleanup stage addresses `NON_BLOCKING_LOG.md` items using jr coder model
+- Mid-run clarification protocol — agents surface blocking questions, pipeline pauses for human input
+- Brownfield replan (`--replan`) — delta-based DESIGN.md and CLAUDE.md updates from codebase drift
+
+**Metrics & Observability**
+- Run metrics collection to `.claude/logs/metrics.jsonl` with per-stage turns, timing, and outcomes
+- `--metrics` dashboard with per-task-type averages, scout accuracy, error breakdown
+- Structured agent run summary blocks appended to log files (tail-friendly diagnostics)
+- Milestone commit signatures (`[MILESTONE N ✓]` / `[MILESTONE N — partial]`) in git history
+- Milestone archival to `MILESTONE_ARCHIVE.md` — keeps CLAUDE.md under context limits
+
+**Security**
+- Safe config parsing — rejects `$(`, backticks, `;`, `|`, `&` in config values
+- Per-session temp directory via `mktemp -d` with signal-trapped cleanup
+- Pipeline locking — PID-validated lock file prevents concurrent runs
+- Anti-prompt-injection directives in all agent system prompts
+- File content delimiters in prompts mark untrusted content boundaries
+- Git safety — warns if `.gitignore` is missing `.env` or key patterns
+- Config bounds — numeric values clamped to hard upper limits
+- Sensitive data redaction in error reports and state files
+
+**Pipeline Lifecycle**
+- Notes gating with flag-only claiming and `--human` orchestration
+- Consolidated `finalize_run()` hook sequence
+- Single-note utility functions for note selection and resolution
+- Resolved note cleanup for `NON_BLOCKING_LOG.md`
+- `AUTO_COMMIT` conditional default behavior
+
+### v1.0 — Foundation (March 2026)
+
+- Scout → Coder → Reviewer → Tester multi-agent pipeline
+- Dynamic turn limits via Scout complexity estimation
+- Architecture drift detection, ACPs, and architect audit remediation
+- Build gate with Jr → Sr coder escalation
+- `--plan` interactive planning with three-phase interview
+- Deep design doc templates (15–25 sections per project type)
+- CLAUDE.md generation with 12 mandated sections
+- Human notes injection with `[BUG]`, `[FEAT]`, `[POLISH]` tags
+- Pipeline state persistence and resume support
+- FIFO-isolated agent invocation with activity timeout
+- Null-run detection and Windows compatibility
+- Dependency constraint validation (Dart, Python, TypeScript)
+- `--milestone` mode with 2× turn limits and upgraded tester model
 
 ## License
 

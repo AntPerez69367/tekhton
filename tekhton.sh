@@ -31,6 +31,7 @@
 #   --skip-audit          Skip architect audit even if threshold is reached
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
+#   --version, -v         Print version and exit
 #
 # Requirements:
 #   - claude CLI authenticated and on PATH
@@ -103,7 +104,12 @@ _tekhton_cleanup() {
 trap _tekhton_cleanup EXIT
 
 # --- Version -----------------------------------------------------------------
-TEKHTON_VERSION="v1"
+# Format: MAJOR.MINOR.PATCH
+#   MAJOR = initiative version (1, 2, 3, ...)
+#   MINOR = last completed milestone within this initiative (resets each major)
+#   PATCH = hotfixes between milestones
+# Updated on each milestone completion.
+TEKHTON_VERSION="2.21.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -167,7 +173,7 @@ STAGE_SUMMARY=""
 
 # --- Early --version check (runs before config exists) ----------------------
 
-if [ "${1:-}" = "--version" ]; then
+if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
     echo "Tekhton ${TEKHTON_VERSION}"
     exit 0
 fi
@@ -349,7 +355,7 @@ usage() {
     echo "  --init --full             Run init + synthesis in one command"
     echo "  --status                  Print saved pipeline state and exit (no run)"
     echo "  --metrics                 Print run metrics dashboard and exit"
-    echo "  --version                 Print version and exit"
+    echo "  --version, -v             Print version and exit"
     echo "  --help, -h                Show this help and exit"
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
     echo "                            upgraded tester model"

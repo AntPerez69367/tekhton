@@ -143,6 +143,17 @@ agent roles.
 6. **Template engine.** Prompts use `{{VAR}}` substitution and `{{IF:VAR}}...{{ENDIF:VAR}}`
    conditionals. No other templating system.
 
+## Versioning
+
+`TEKHTON_VERSION` in `tekhton.sh` uses **MAJOR.MINOR.PATCH**:
+- **MAJOR** = initiative version (2 for V2, 3 for V3, etc.)
+- **MINOR** = last completed milestone number within this initiative (resets to 0 each major)
+- **PATCH** = hotfixes between milestones
+
+Milestone numbering restarts with each major version. When a milestone is completed,
+update the `TEKHTON_VERSION` line in `tekhton.sh` to bump MINOR to the milestone
+number. Example: completing V3 Milestone 4 → `3.4.0`.
+
 ## Template Variables (Prompt Engine)
 
 Available variables in prompt templates — set by the pipeline before rendering:
