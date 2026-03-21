@@ -379,6 +379,12 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 ### Milestone Plan
 
 #### Milestone 19: Smart Init Orchestrator
+<!-- milestone-meta
+id: "19"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
 
 Replace the current `--init` with an intelligent, interactive initialization flow
 that uses tech stack detection (M17) and the project crawler (M18) to auto-populate

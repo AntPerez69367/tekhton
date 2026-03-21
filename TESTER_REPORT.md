@@ -1,17 +1,15 @@
 ## Planned Tests
-(No coverage gaps identified)
+- [x] `tests/test_init_smart_config.sh` — _generate_smart_config() output for Node.js, Rust, Python; confidence annotations; model scaling by file count
+- [x] `tests/test_prompt_helpers.sh` — non-interactive fallbacks for prompt_confirm, prompt_choice, prompt_input
+- [x] `tests/test_init_smart_init.sh` — run_smart_init() integration: Node.js/Rust/Python project detection produces correct config values
 
 ## Test Run Results
-Passed: 0  Failed: 0
+Passed: 114  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-(No test files required)
-
-## Status Summary
-
-All observations in NON_BLOCKING_LOG.md are resolved (20 items marked [x]). The REVIEWER_REPORT.md "Coverage Gaps" section is empty, indicating no additional test coverage is required for this implementation cycle.
-
-The single non-blocking note in REVIEWER_REPORT.md concerns `lib/drift_cleanup.sh` being 318 lines, which is a pre-existing code organization issue outside the scope of test coverage.
+- [x] `tests/test_init_smart_config.sh`
+- [x] `tests/test_prompt_helpers.sh`
+- [x] `tests/test_init_smart_init.sh`
