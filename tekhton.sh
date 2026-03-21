@@ -21,6 +21,8 @@
 #   --start-at review     Skip coder; requires CODER_SUMMARY.md
 #   --start-at tester     Resume tester from existing TESTER_REPORT.md
 #   --start-at test       Skip coder + reviewer; requires REVIEWER_REPORT.md
+#   --rescan              Incrementally update PROJECT_INDEX.md from git changes
+#   --rescan --full       Force full re-crawl regardless of change volume
 #   --metrics             Print run metrics dashboard and exit
 #   --notes-filter X      Inject only [X] notes (BUG, FEAT, POLISH)
 #   --init-notes          Create blank HUMAN_NOTES.md template
@@ -222,6 +224,25 @@ if [ "${1:-}" = "--replan" ]; then
     exit 0
 fi
 
+# --- Early --rescan check (runs before execution pipeline) ------------------
+
+if [ "${1:-}" = "--rescan" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/detect.sh"
+    source "${TEKHTON_HOME}/lib/detect_commands.sh"
+    source "${TEKHTON_HOME}/lib/detect_report.sh"
+    source "${TEKHTON_HOME}/lib/crawler.sh"
+    source "${TEKHTON_HOME}/lib/rescan.sh"
+
+    local_full=""
+    if [ "${2:-}" = "--full" ]; then
+        local_full="full"
+    fi
+
+    rescan_project "$PROJECT_DIR" 120000 "$local_full"
+    exit 0
+fi
+
 # --- Acquire pipeline lock (execution pipeline only) -------------------------
 _check_pipeline_lock
 
@@ -253,6 +274,7 @@ source "${TEKHTON_HOME}/lib/detect.sh"
 source "${TEKHTON_HOME}/lib/detect_commands.sh"
 source "${TEKHTON_HOME}/lib/detect_report.sh"
 source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_deps.sh (via crawler_content.sh)
+source "${TEKHTON_HOME}/lib/rescan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
@@ -282,6 +304,8 @@ usage() {
     echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
     echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
     echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
+    echo "  --rescan                  Incrementally update PROJECT_INDEX.md from git changes"
+    echo "  --rescan --full           Force full re-crawl regardless of change volume"
     echo "  --status                  Print saved pipeline state and exit (no run)"
     echo "  --metrics                 Print run metrics dashboard and exit"
     echo "  --version                 Print version and exit"
@@ -311,6 +335,7 @@ usage() {
     echo "  tekhton --init                           # First-time setup"
     echo "  tekhton --plan                           # Interactive planning phase"
     echo "  tekhton --replan                         # Update existing plan from drift/changes"
+    echo "  tekhton --rescan                         # Update PROJECT_INDEX.md incrementally"
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
     echo "  tekhton --milestone \"Feat: payment system\""

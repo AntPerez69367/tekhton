@@ -48,3 +48,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-20
 - **Rationale**: adding `lib/crawler.sh`, `lib/crawler_inventory.sh`, `lib/crawler_content.sh`, `lib/crawler_deps.sh` to ARCHITECTURE.md Layer 3 is a purely additive and accurate documentation update. No code changes 
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-10: Rescan sources detect/crawler in early-exit block (Task: "Implement Milestone 20: Incremental Rescan & Index Maintenance")
+- **Date**: 2026-03-21
+- **Rationale**: Follows the exact same minimal-source pattern as the existing `--init` and `--replan` early-exit blocks. Backward compatible; no existing behavior changed. ARCHITECTURE.md update note is correct.
+- **Source**: Accepted ACP from pipeline run

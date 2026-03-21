@@ -8,8 +8,42 @@
 # =============================================================================
 
 # _generate_codebase_summary — Produces a bounded directory tree + recent git log.
-# Output capped at ~200 lines of tree + 20 git log entries.
+# If PROJECT_INDEX.md exists and is recent (within 5 runs / current), use it
+# instead of the ad-hoc tree+git-log generation for higher-quality replan context.
+# Output capped at ~200 lines of tree + 20 git log entries (fallback path).
 _generate_codebase_summary() {
+    local index_file="${PROJECT_DIR}/PROJECT_INDEX.md"
+
+    # Prefer PROJECT_INDEX.md when available and reasonably current
+    if [[ -f "$index_file" ]]; then
+        local index_commit
+        index_commit=$(grep '<!-- Scan-Commit:' "$index_file" 2>/dev/null | \
+            sed 's/.*<!-- Scan-Commit: *\(.*\) *-->.*/\1/' | tr -d '[:space:]' || true)
+
+        local is_current=false
+        if [[ -n "$index_commit" ]] && [[ "$index_commit" != "non-git" ]]; then
+            # Check if the scan commit is an ancestor of HEAD (i.e., still in history)
+            if git -C "$PROJECT_DIR" merge-base --is-ancestor "$index_commit" HEAD 2>/dev/null; then
+                # Check distance: if <=50 commits behind, consider it current enough
+                local distance
+                distance=$(git -C "$PROJECT_DIR" rev-list --count "${index_commit}..HEAD" 2>/dev/null || echo "999")
+                [[ "$distance" -le 50 ]] && is_current=true
+            fi
+        elif [[ "$index_commit" == "non-git" ]]; then
+            # Non-git projects: index exists, use it
+            is_current=true
+        fi
+
+        if [[ "$is_current" == true ]]; then
+            log "Using PROJECT_INDEX.md for replan context (scan commit: ${index_commit:-n/a})"
+            cat "$index_file"
+            return 0
+        else
+            log "PROJECT_INDEX.md exists but is stale — falling back to ad-hoc summary"
+        fi
+    fi
+
+    # Fallback: ad-hoc summary generation
     local summary=""
 
     if command -v tree &>/dev/null; then

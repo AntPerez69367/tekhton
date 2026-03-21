@@ -378,7 +378,13 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ### Milestone Plan
 
-#### Milestone 20: Incremental Rescan & Index Maintenance
+#### [DONE] Milestone 20: Incremental Rescan & Index Maintenance
+<!-- milestone-meta
+id: "20"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
 
 Add `--rescan` command that updates PROJECT_INDEX.md incrementally using git diff
 since the last scan. This keeps the project index current without repeating the
