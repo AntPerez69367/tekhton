@@ -8,6 +8,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
+TEKHTON_SESSION_DIR="$TMPDIR"
 
 # --- Set up minimal config environment ---
 DRIFT_LOG_FILE="DRIFT_LOG.md"
@@ -24,6 +25,7 @@ CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
+source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
 
 FAIL=0
 
@@ -68,7 +70,7 @@ assert_eq "dependency constraints default" "" "$DEPENDENCY_CONSTRAINTS_FILE"
 # Test 2: --init copies architect.md to agents directory
 # =============================================================================
 cd "$TMPDIR"
-bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
+TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
 [ -f ".claude/agents/architect.md" ] || { echo "FAIL: architect.md not created by --init"; FAIL=1; }
 assert_file_contains "architect role content" ".claude/agents/architect.md" "architecture audit agent"
 cd - > /dev/null

@@ -29,17 +29,17 @@ run_stage_architect() {
 
     export DRIFT_LOG_CONTENT="(No drift log found)"
     if [ -f "$drift_file" ]; then
-        DRIFT_LOG_CONTENT=$(cat "$drift_file")
+        DRIFT_LOG_CONTENT=$(_wrap_file_content "DRIFT_LOG" "$(_safe_read_file "$drift_file" "DRIFT_LOG")")
     fi
 
     export ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
     if [ -f "$adl_file" ]; then
-        ARCHITECTURE_LOG_CONTENT=$(cat "$adl_file")
+        ARCHITECTURE_LOG_CONTENT=$(_wrap_file_content "ARCHITECTURE_LOG" "$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")")
     fi
 
     export ARCHITECTURE_CONTENT="(No architecture file found)"
     if [ -f "${ARCHITECTURE_FILE}" ]; then
-        ARCHITECTURE_CONTENT=$(cat "${ARCHITECTURE_FILE}")
+        ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
     fi
 
     DRIFT_OBSERVATION_COUNT=$(count_drift_observations)
@@ -47,7 +47,7 @@ run_stage_architect() {
     # Dependency constraints (P5 — optional, may not exist yet)
     export DEPENDENCY_CONSTRAINTS_CONTENT=""
     if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE}" ]; then
-        DEPENDENCY_CONSTRAINTS_CONTENT=$(cat "${DEPENDENCY_CONSTRAINTS_FILE}")
+        DEPENDENCY_CONSTRAINTS_CONTENT=$(_wrap_file_content "DEPENDENCY_CONSTRAINTS" "$(_safe_read_file "${DEPENDENCY_CONSTRAINTS_FILE}" "DEPENDENCY_CONSTRAINTS")")
     fi
 
     # --- Invoke architect agent ----------------------------------------------
@@ -70,6 +70,14 @@ run_stage_architect() {
         "$AGENT_TOOLS_ARCHITECT"
     print_run_summary
     success "Architect agent finished."
+
+    # --- UPSTREAM error detection (12.2) ----------------------------------------
+
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        warn "Architect hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
+        warn "Drift observations remain unresolved — will retry next audit cycle."
+        return 0
+    fi
 
     # --- Validate output -----------------------------------------------------
 
@@ -172,7 +180,11 @@ run_stage_architect() {
         log "Running expedited review of architect remediation..."
 
         export ARCHITECTURE_CONTENT
-        ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(not found)")
+        if [ -f "${ARCHITECTURE_FILE}" ]; then
+            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+        else
+            ARCHITECTURE_CONTENT="(not found)"
+        fi
         export PRIOR_BLOCKERS_BLOCK=""
         ARCHITECT_REVIEW_PROMPT=$(render_prompt "architect_review")
 
@@ -189,32 +201,71 @@ run_stage_architect() {
 
     # --- Resolve drift observations ------------------------------------------
 
-    # Extract the "Drift Observations to Resolve" section from the plan
-    local resolve_section
-    resolve_section=$(awk '/^## Drift Observations to Resolve/{found=1; next} found && /^##/{exit} found{print}' \
-        ARCHITECT_PLAN.md 2>/dev/null || true)
+    local pre_resolve_count
+    pre_resolve_count=$(count_drift_observations)
 
-    if [ -n "$resolve_section" ]; then
-        log "Marking addressed drift observations as resolved..."
-        # Build pattern list from resolve section lines
-        local resolve_patterns=()
-        while IFS= read -r line; do
-            line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
-            [ -z "$line" ] && continue
-            # Skip placeholder / boilerplate lines
-            echo "$line" | grep -qiE '^\s*None\b' && continue
-            echo "$line" | grep -qE '^\s*-+\s*$' && continue
-            # Escape regex special characters for safe grep matching
-            local escaped
-            # shellcheck disable=SC2016
-            escaped=$(printf '%s' "$line" | sed 's/[.[\*^$()+?{|]/\\&/g')
-            resolve_patterns+=("$escaped")
-        done <<< "$resolve_section"
+    if [ "$pre_resolve_count" -gt 0 ]; then
+        # Extract Out of Scope items — these stay unresolved for next audit cycle
+        local oos_section
+        oos_section=$(awk '/^## Out of Scope/{found=1; next} found && /^##/{exit} found{print}' \
+            ARCHITECT_PLAN.md 2>/dev/null || true)
 
-        if [ ${#resolve_patterns[@]} -gt 0 ]; then
-            resolve_drift_observations "${resolve_patterns[@]}"
-            log "Resolved ${#resolve_patterns[@]} observation(s) in drift log."
+        local oos_items=()
+        if [ -n "$oos_section" ]; then
+            # Join multi-line bullets: accumulate continuation lines (lines
+            # that don't start with a bullet marker) into the previous bullet.
+            local _oos_current=""
+            local cleaned
+            while IFS= read -r line; do
+                cleaned="${line#"${line%%[![:space:]]*}"}"
+                [ -z "$cleaned" ] && continue
+                if [[ "$cleaned" =~ ^[-*][[:space:]]+(.*) ]]; then
+                    # New bullet — flush previous
+                    if [ -n "$_oos_current" ]; then
+                        oos_items+=("$_oos_current")
+                    fi
+                    _oos_current="${BASH_REMATCH[1]}"
+                else
+                    # Continuation line — append to current bullet
+                    if [ -n "$_oos_current" ]; then
+                        _oos_current="${_oos_current} ${cleaned}"
+                    else
+                        _oos_current="$cleaned"
+                    fi
+                fi
+            done <<< "$oos_section"
+            # Flush last bullet
+            if [ -n "$_oos_current" ]; then
+                oos_items+=("$_oos_current")
+            fi
+
+            # Filter out placeholder entries
+            local _filtered_oos=()
+            for entry in "${oos_items[@]}"; do
+                echo "$entry" | grep -qiE '^\s*None\b' && continue
+                echo "$entry" | grep -qiE '^\s*N/?A\b' && continue
+                echo "$entry" | grep -qiE '^No (items?|observations?)\b' && continue
+                echo "$entry" | grep -qE '^\s*-+\s*$' && continue
+                _filtered_oos+=("$entry")
+            done
+            oos_items=("${_filtered_oos[@]+"${_filtered_oos[@]}"}")
         fi
+
+        # Resolve ALL unresolved observations — the architect reviewed them all.
+        # This replaces fragile pattern-matching that silently failed when the
+        # architect paraphrased observations instead of copying them verbatim.
+        log "Resolving all ${pre_resolve_count} drift observations..."
+        resolve_all_drift_observations
+
+        # Re-add Out of Scope items as new unresolved entries
+        if [ ${#oos_items[@]} -gt 0 ]; then
+            log "Re-adding ${#oos_items[@]} out-of-scope item(s) to drift log..."
+            append_drift_entries "${oos_items[@]}"
+        fi
+
+        local post_resolve_count
+        post_resolve_count=$(count_drift_observations)
+        log "Drift resolution: ${pre_resolve_count} → ${post_resolve_count} unresolved."
     fi
 
     # --- Surface design doc observations to human ----------------------------
@@ -224,27 +275,50 @@ run_stage_architect() {
         ARCHITECT_PLAN.md 2>/dev/null || true)
 
     if [ -n "$design_section" ]; then
-        # Filter out non-actionable lines: section subtitles, separators, "None"
-        local filtered_lines=""
+        # Join multi-line bullets, then filter out non-actionable entries.
+        local _design_items=()
+        local _ds_current=""
+        local cleaned
         while IFS= read -r line; do
-            local cleaned
-            cleaned=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
+            cleaned="${line#"${line%%[![:space:]]*}"}"
             [ -z "$cleaned" ] && continue
-            # Skip placeholder / boilerplate lines
-            echo "$cleaned" | grep -qiE '^\s*-?\s*None\.?\s*$' && continue
-            echo "$cleaned" | grep -qE '^\s*-+\s*$' && continue
-            echo "$cleaned" | grep -qiE '^\*?\(route to human' && continue
-            filtered_lines+="${cleaned}"$'\n'
+            if [[ "$cleaned" =~ ^[-*][[:space:]]+(.*) ]]; then
+                # New bullet — flush previous
+                if [ -n "$_ds_current" ]; then
+                    _design_items+=("$_ds_current")
+                fi
+                _ds_current="${BASH_REMATCH[1]}"
+            else
+                # Continuation line
+                if [ -n "$_ds_current" ]; then
+                    _ds_current="${_ds_current} ${cleaned}"
+                else
+                    _ds_current="$cleaned"
+                fi
+            fi
         done <<< "$design_section"
+        if [ -n "$_ds_current" ]; then
+            _design_items+=("$_ds_current")
+        fi
 
-        # Only append if there are real actionable lines
-        filtered_lines=$(echo "$filtered_lines" | sed '/^$/d')
-        if [ -n "$filtered_lines" ]; then
+        # Filter out placeholder / boilerplate entries
+        local _filtered_design=()
+        for entry in "${_design_items[@]+"${_design_items[@]}"}"; do
+            echo "$entry" | grep -qiE '^\s*None\b' && continue
+            echo "$entry" | grep -qiE '^\s*N/?A\b' && continue
+            echo "$entry" | grep -qiE '^No (design|doc|observations?|issues?|action|items?)\b' && continue
+            echo "$entry" | grep -qiE '^(All|No) (drift |design )?(observations?|items?) (are|have been|were)\b' && continue
+            echo "$entry" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
+            echo "$entry" | grep -qE '^\s*-+\s*$' && continue
+            echo "$entry" | grep -qiE '^\*?\(route to human' && continue
+            _filtered_design+=("$entry")
+        done
+
+        if [ ${#_filtered_design[@]} -gt 0 ]; then
             log "Adding design doc observations to human action file..."
-            while IFS= read -r line; do
-                [ -z "$line" ] && continue
-                append_human_action "architect" "$line"
-            done <<< "$filtered_lines"
+            for entry in "${_filtered_design[@]}"; do
+                append_human_action "architect" "$entry"
+            done
         fi
     fi
 

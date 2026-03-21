@@ -17,7 +17,8 @@ run_build_gate() {
     log "Running build gate (${stage_label})..."
 
     # Capture analyze errors only (warnings are ok, errors are not)
-    ANALYZE_OUTPUT=$(${ANALYZE_CMD} 2>&1)
+    # Use bash -c instead of unquoted expansion to avoid word-splitting issues
+    ANALYZE_OUTPUT=$(bash -c "${ANALYZE_CMD}" 2>&1)
     ANALYZE_ERRORS=$(echo "$ANALYZE_OUTPUT" | grep -E "${ANALYZE_ERROR_PATTERN}" || true)
 
     if [ -n "$ANALYZE_ERRORS" ]; then
@@ -46,7 +47,8 @@ EOF
 
     # Also run a quick compile check (no device needed)
     if [ -n "${BUILD_CHECK_CMD}" ]; then
-        COMPILE_OUTPUT=$(eval "${BUILD_CHECK_CMD}")
+        # Use bash -c instead of eval to avoid arbitrary code execution
+        COMPILE_OUTPUT=$(bash -c "${BUILD_CHECK_CMD}" 2>&1)
         if echo "$COMPILE_OUTPUT" | grep -q "${BUILD_ERROR_PATTERN}"; then
             COMPILE_ERRORS=$(echo "$COMPILE_OUTPUT" | grep "${BUILD_ERROR_PATTERN}" | head -20)
             warn "Build gate FAILED (${stage_label}) — compile errors found:"
@@ -75,7 +77,8 @@ EOF
             log "Running dependency constraint validation: ${validation_cmd}"
             local constraint_output=""
             local constraint_exit=0
-            constraint_output=$(eval "$validation_cmd" 2>&1) || constraint_exit=$?
+            # Use bash -c instead of eval to avoid arbitrary code execution
+            constraint_output=$(bash -c "$validation_cmd" 2>&1) || constraint_exit=$?
 
             if [ "$constraint_exit" -ne 0 ]; then
                 warn "Build gate FAILED (${stage_label}) — dependency constraint violations:"
@@ -100,6 +103,31 @@ EOF
     return 0
 }
 
+# --- Summary accuracy check ---------------------------------------------------
+# Cross-checks CODER_SUMMARY.md "Files Modified" section against actual git diff.
+# Logs a warning when the summary underreports changes. Non-blocking — informational only.
+_warn_summary_drift() {
+    [[ -f "CODER_SUMMARY.md" ]] || return 0
+
+    # Count files actually changed (tracked modifications + staged)
+    local actual_count=0
+    if command -v git &>/dev/null; then
+        actual_count=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]')
+        actual_count="${actual_count:-0}"
+    fi
+    [[ "$actual_count" -gt 0 ]] || return 0
+
+    # Check if summary mentions files or claims none modified
+    local files_section=""
+    files_section=$(sed -n '/^## Files Modified/,/^## /p' CODER_SUMMARY.md 2>/dev/null \
+        | head -20 || true)
+
+    if [[ -z "$files_section" ]] || echo "$files_section" | grep -qi "no files\|none\|N/A"; then
+        warn "CODER_SUMMARY.md reports no files modified but git shows ${actual_count} changed file(s)."
+        warn "Summary accuracy drift detected — review CODER_SUMMARY.md before committing."
+    fi
+}
+
 # COMPLETION GATE — runs after coder, before build gate
 # Blocks pipeline progression if coder did not self-report completion
 #
@@ -122,10 +150,18 @@ run_completion_gate() {
 
     if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
         log "Completion gate PASSED — coder self-reported COMPLETE."
+        _warn_summary_drift
         return 0
     fi
 
-    # Status is missing or ambiguous — treat as incomplete
+    # Status is missing or ambiguous — check if substantive work exists.
+    # If files were modified, treat as IN PROGRESS rather than hard-failing.
+    if command -v is_substantive_work &>/dev/null && is_substantive_work; then
+        warn "Completion gate — Status field missing but substantive work detected."
+        warn "Treating as IN PROGRESS. Reviewer will assess actual changes."
+        return 1
+    fi
+
     warn "Completion gate FAILED — CODER_SUMMARY.md has no clear Status field."
     warn "Expected '## Status' line with COMPLETE or IN PROGRESS."
     return 1

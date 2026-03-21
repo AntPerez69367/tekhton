@@ -19,12 +19,15 @@ against CLAUDE.md, DESIGN.md, and ARCHITECTURE.md.
 - [ ] No bashisms beyond Bash 4
 
 ### Architecture Boundary (Blockers)
-- [ ] No modifications to existing execution pipeline files (`lib/*.sh`,
-      `stages/architect.sh`, `stages/coder.sh`, `stages/review.sh`,
-      `stages/tester.sh`, existing `prompts/*.prompt.md`)
+- [ ] For **planning-only tasks**: no modifications to execution pipeline files
+      (`stages/architect.sh`, `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`,
+      existing `prompts/*.prompt.md` outside `plan_*.prompt.md`). Planning code lives in
+      `lib/plan.sh`, `stages/plan_*.sh`, `prompts/plan_*.prompt.md`, `templates/plans/*.md`.
+- [ ] For **2.0 milestone tasks** (as listed in CLAUDE.md): modifications to `lib/*.sh`
+      and `stages/*.sh` are authorized when the CLAUDE.md milestone spec explicitly names
+      those files in its "Files to modify" list.
 - [ ] `--plan` block follows same pattern as `--init` (early exit)
-- [ ] New code is in the correct files (`lib/plan.sh`, `stages/plan_*.sh`,
-      `prompts/plan_*.prompt.md`, `templates/plans/*.md`)
+- [ ] New code is in the correct files for the task type (see above)
 
 ### Template Engine (Blockers)
 - [ ] Prompt templates use `{{VAR}}` / `{{IF:VAR}}` syntax only

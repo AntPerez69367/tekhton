@@ -1,16 +1,34 @@
 #!/usr/bin/env bash
-# =============================================================================
+set -euo pipefail
 # notes.sh — Human notes management (three-state tracking)
-#
-# Sourced by tekhton.sh — do not run directly.
-# Expects: NOTES_FILTER, LOG_DIR, TIMESTAMP (set by caller)
-# Expects: log() from common.sh
-#
-# Note states:
-#   [ ] — not started, available for work
-#   [~] — in scope for this pipeline run (transient, never persists between runs)
-#   [x] — completed
-# =============================================================================
+# Sourced by tekhton.sh. Expects: NOTES_FILTER, LOG_DIR, TIMESTAMP, log()
+# States: [ ] not started, [~] in-scope this run (transient), [x] completed
+
+# should_claim_notes — Returns 0 (true) if human notes should be claimed for
+# this run. Notes are only injected when an explicit flag is set:
+#   --with-notes (WITH_NOTES=true)
+#   --human      (HUMAN_MODE=true)
+#   --notes-filter X (NOTES_FILTER non-empty)
+# Task text is never inspected. This prevents phantom notes injection.
+# Usage: should_claim_notes
+should_claim_notes() {
+    # --with-notes flag forces claiming
+    if [[ "${WITH_NOTES:-false}" = "true" ]]; then
+        return 0
+    fi
+
+    # --human flag forces claiming
+    if [[ "${HUMAN_MODE:-false}" = "true" ]]; then
+        return 0
+    fi
+
+    # Active notes filter implies intent to address notes
+    if [[ -n "${NOTES_FILTER:-}" ]]; then
+        return 0
+    fi
+
+    return 1
+}
 
 # Reads HUMAN_NOTES.md and returns unchecked items count
 count_human_notes() {
@@ -116,11 +134,13 @@ resolve_human_notes() {
                 if [ "$action" = "complete" ]; then
                     # Find the [~] line containing this text and mark [x]
                     if grep -q "^- \[~\].*${escaped_text}" HUMAN_NOTES.md 2>/dev/null; then
+                        # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
                         sed -i "0,/^- \[~\]\(.*${escaped_text}\)/s//- [x]\1/" HUMAN_NOTES.md
                         completed=$((completed + 1))
                     fi
                 elif [ "$action" = "reset" ]; then
                     if grep -q "^- \[~\].*${escaped_text}" HUMAN_NOTES.md 2>/dev/null; then
+                        # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
                         sed -i "0,/^- \[~\]\(.*${escaped_text}\)/s//- [ ]\1/" HUMAN_NOTES.md
                         reset=$((reset + 1))
                     fi
@@ -134,7 +154,14 @@ resolve_human_notes() {
             remaining=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
             if [ "$remaining" -gt 0 ]; then
                 sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md
-                log "HUMAN_NOTES.md — ${remaining} unmentioned [~] item(s) reset to [ ]."
+                warn "HUMAN_NOTES.md — ${remaining} unmentioned [~] item(s) reset to [ ]."
+                log "Some human notes were not fully addressed."
+            fi
+
+            # If nothing was completed or explicitly addressed, notes were ignored
+            if [ "$completed" -eq 0 ] && [ "$reset" -eq 0 ]; then
+                warn "Coder wrote ## Human Notes Status section but did not address any notes."
+                log "Some human notes were not fully addressed."
             fi
             return
         fi
@@ -148,11 +175,31 @@ resolve_human_notes() {
 
     if [[ "$coder_status" == *"COMPLETE"* ]]; then
         # Coder finished but didn't use structured reporting — mark all claimed as done
+        # NOTE: Without structured reporting we can't verify, but trust COMPLETE status
         sed -i 's/^- \[~\] /- [x] /' HUMAN_NOTES.md
         log "HUMAN_NOTES.md — all [~] items marked [x] (coder status: COMPLETE, no structured report)."
+        warn "Coder did not produce structured ## Human Notes Status section."
+    # Fallback for success without CODER_SUMMARY.md: _PIPELINE_EXIT_CODE is set to 0 by
+    # tekhton.sh:991 before calling this function when pipeline succeeds. The elif path fires
+    # only when CODER_SUMMARY.md is absent but exit code is clean (features implemented and
+    # committed). This guard exists to allow test harnesses to set _PIPELINE_EXIT_CODE to
+    # non-zero to simulate failure scenarios.
+    elif [[ -n "${_PIPELINE_EXIT_CODE:-}" ]] && [[ "${_PIPELINE_EXIT_CODE}" -eq 0 ]]; then
+        # Pipeline succeeded (exit 0) but CODER_SUMMARY.md is missing or incomplete.
+        # Features were implemented and committed — treat as success rather than resetting.
+        sed -i 's/^- \[~\] /- [x] /' HUMAN_NOTES.md
+        log "HUMAN_NOTES.md — all [~] items marked [x] (pipeline succeeded, no structured report)."
     else
         # Coder didn't finish or no summary — reset everything
         sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md
         log "HUMAN_NOTES.md — all [~] items reset to [ ] (coder incomplete or missing summary)."
     fi
 }
+
+# --- Single-note functions extracted to lib/notes_single.sh ---
+# Provides: _escape_sed_pattern, _section_for_tag, pick_next_note,
+#   claim_single_note, resolve_single_note, extract_note_text, count_unchecked_notes
+
+# --- NON_BLOCKING_LOG batch functions extracted to lib/notes_cleanup.sh ---
+# Provides: count_unresolved_notes, select_cleanup_batch,
+#   mark_note_resolved, mark_note_deferred

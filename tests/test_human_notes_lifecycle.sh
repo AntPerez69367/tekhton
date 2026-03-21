@@ -10,6 +10,9 @@
 #   5. resolve fallback (no summary) → all reset to [ ]
 #   6. [~] never persists after resolve
 #   7. Notes filter respects tags
+#   8-9. Structured resolve edge cases (partial mentions, already [x])
+#  10. Pipeline exit code awareness — missing summary, pipeline succeeded → [x]
+#  11. Pipeline exit code awareness — missing summary, pipeline failed → [ ]
 # =============================================================================
 set -euo pipefail
 
@@ -257,6 +260,47 @@ assert_file_contains "9.1 mentioned COMPLETED → [x]" "$notes_file" '^\- \[x\] 
 # Unmentioned [~] items should be reset to [ ] (safety net)
 assert_file_not_contains "9.2 no [~] remain (safety reset)" "$notes_file" '^\- \[~\]'
 assert_file_contains "9.3 unmentioned FEAT reset to [ ]" "$notes_file" '^\- \[ \] \[FEAT\] Feature one'
+
+# =============================================================================
+# Phase 10: pipeline exit code awareness — missing summary, pipeline succeeded
+# =============================================================================
+
+cat > "$notes_file" << 'EOF'
+# Human Playtester Notes
+
+- [~] [BUG] Bug one
+- [~] [FEAT] Feature one
+EOF
+
+rm -f "${TMPDIR}/CODER_SUMMARY.md"
+_PIPELINE_EXIT_CODE=0
+resolve_human_notes 2>/dev/null
+
+assert_file_contains "10.1 pipeline success + no summary → [x]" "$notes_file" '^\- \[x\] \[BUG\] Bug one'
+assert_file_contains "10.2 pipeline success + no summary → [x]" "$notes_file" '^\- \[x\] \[FEAT\] Feature one'
+assert_file_not_contains "10.3 no [~] remain" "$notes_file" '^\- \[~\]'
+
+# =============================================================================
+# Phase 11: pipeline exit code awareness — missing summary, pipeline failed
+# =============================================================================
+
+cat > "$notes_file" << 'EOF'
+# Human Playtester Notes
+
+- [~] [BUG] Bug one
+- [~] [FEAT] Feature one
+EOF
+
+rm -f "${TMPDIR}/CODER_SUMMARY.md"
+_PIPELINE_EXIT_CODE=1
+resolve_human_notes 2>/dev/null
+
+assert_file_contains "11.1 pipeline failed + no summary → [ ]" "$notes_file" '^\- \[ \] \[BUG\] Bug one'
+assert_file_contains "11.2 pipeline failed + no summary → [ ]" "$notes_file" '^\- \[ \] \[FEAT\] Feature one'
+assert_file_not_contains "11.3 no [~] remain" "$notes_file" '^\- \[~\]'
+
+# Clean up pipeline exit code
+unset _PIPELINE_EXIT_CODE
 
 # =============================================================================
 # Done

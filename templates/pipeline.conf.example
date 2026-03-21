@@ -32,13 +32,17 @@ REQUIRED_TOOLS="claude git"
 #   Senior Coder     CLAUDE_CODER_MODEL        Complex implementation
 #   Jr Coder         CLAUDE_JR_CODER_MODEL     Simple fixes, build-gate rework
 #   Scout            CLAUDE_SCOUT_MODEL        File discovery, complexity est.
-#   Reviewer         CLAUDE_STANDARD_MODEL     Code review + verdict
+#   Reviewer         CLAUDE_REVIEWER_MODEL     Code review + verdict
 #   Architect        CLAUDE_ARCHITECT_MODEL    Drift audit, remediation planning
 #   Tester           CLAUDE_TESTER_MODEL       Test authoring (upgradeable in --milestone)
+# Base model — all agent-specific variables default to this in lib/config.sh
+CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+
+# Agent-specific overrides (comment out any line to fall back to CLAUDE_STANDARD_MODEL)
 CLAUDE_CODER_MODEL="claude-opus-4-6"
 CLAUDE_JR_CODER_MODEL="claude-haiku-4-5"
 CLAUDE_SCOUT_MODEL="claude-haiku-4-5"
-CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+CLAUDE_REVIEWER_MODEL="claude-sonnet-4-6"
 CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-haiku-4-5"
 
@@ -70,6 +74,7 @@ SEED_CONTRACTS_MAX_TURNS=20
 # MILESTONE_REVIEWER_MAX_TURNS=15
 # MILESTONE_TESTER_MAX_TURNS=60
 # MILESTONE_TESTER_MODEL="claude-sonnet-4-6"
+# MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER=3  # Applied to AGENT_ACTIVITY_TIMEOUT in milestone mode
 
 # --- Review loop -------------------------------------------------------------
 MAX_REVIEW_CYCLES=2
@@ -137,6 +142,18 @@ NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
 # Inject accumulated non-blocking notes into coder prompt when count exceeds this
 NON_BLOCKING_INJECTION_THRESHOLD=8
 
+# --- Usage tracking and commit behavior-------------------------------------
+# Usage threshold: pause before running the next pipeline stage if Claude API
+# usage has exceeded this percentage. Set to 0 (default) to disable.
+# Example: 90 pauses if "claude usage" output shows ≥90% consumed.
+# USAGE_THRESHOLD_PCT=0
+
+# Auto-commit: when true, automatically commits successful pipeline runs without
+# prompting the user. The commit message includes a summary, file list, and
+# change statistics. Default: true. Set to false to always prompt.
+# Use --no-commit flag to skip auto-commit for a single run.
+# AUTO_COMMIT=true
+
 # --- Human notes configuration ----------------------------------------------
 # Valid categories for --notes-filter (pipe-separated for case matching)
 NOTES_FILTER_CATEGORIES="BUG|FEAT|POLISH"
@@ -159,6 +176,10 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 # "null run" (died during discovery without doing productive work).
 # AGENT_NULL_RUN_THRESHOLD=2
 
+# Max directory depth for file-change detection (find -maxdepth). Increase for
+# deeply nested project structures. Default 8 works for most projects.
+# AGENT_FILE_SCAN_DEPTH=8
+
 # --- Dynamic turn limits ----------------------------------------------------
 # When enabled, the scout estimates task complexity and adjusts turn limits
 # for coder, reviewer, and tester stages. Recommended values are clamped to
@@ -168,7 +189,7 @@ DYNAMIC_TURNS_ENABLED=true
 # Bounds for dynamic turn adjustment (only used when DYNAMIC_TURNS_ENABLED=true)
 # CODER_MIN_TURNS=15
 # CODER_MAX_TURNS_CAP=200
-# REVIEWER_MIN_TURNS=5
+# REVIEWER_MIN_TURNS=10
 # REVIEWER_MAX_TURNS_CAP=30
 # TESTER_MIN_TURNS=10
 # TESTER_MAX_TURNS_CAP=100
@@ -191,6 +212,209 @@ DYNAMIC_TURNS_ENABLED=true
 
 # Max turns for CLAUDE.md generation
 # PLAN_GENERATION_MAX_TURNS=30
+
+# --- Context budget (token accounting) ----------------------------------------
+# Controls context size measurement and budget warnings for agent prompts.
+# The pipeline measures how much of the model's context window is consumed
+# by injected context blocks (architecture, notes, prior reports, etc.).
+
+# Enable context budget measurement and warnings (true/false)
+CONTEXT_BUDGET_ENABLED=true
+
+# Maximum percentage of the model's context window to use for injected context.
+# When exceeded, a warning is logged. Default: 50 (leaves room for agent output).
+CONTEXT_BUDGET_PCT=50
+
+# Character-to-token ratio for estimation. Lower = more conservative estimates.
+# Real tokenizers typically produce ~3.5 chars/token; 4 is a safe approximation.
+CHARS_PER_TOKEN=4
+
+# --- Clarification protocol ---------------------------------------------------
+# When enabled, agents can surface blocking questions to the human. The pipeline
+# pauses, collects answers, and resumes with the answers injected into context.
+
+# Master toggle for clarification protocol (true/false)
+# CLARIFICATION_ENABLED=true
+
+# Master toggle for mid-run replanning (true/false)
+# When enabled, reviewers can issue REPLAN_REQUIRED verdict to trigger a replan menu.
+# REPLAN_ENABLED=true
+
+# --- Brownfield replan (--replan) ---------------------------------------------
+# The --replan command updates existing DESIGN.md and CLAUDE.md based on
+# accumulated drift observations, architecture decisions, and codebase changes.
+# It produces a delta document for human review before applying changes.
+
+# Model for the replan agent (defaults to PLAN_GENERATION_MODEL)
+# REPLAN_MODEL="opus"
+
+# Max turns for the replan agent (defaults to PLAN_GENERATION_MAX_TURNS)
+# REPLAN_MAX_TURNS=50
+
+# --- Context compiler (task-scoped context assembly) -------------------------
+# When enabled, agents receive only the sections of large artifacts relevant
+# to their current task, instead of full-file injection. Uses keyword extraction
+# from the task string and scout/coder reports to filter context blocks.
+# Falls back to full injection when keyword extraction yields zero matches.
+# Off by default — enable after verifying context budget reports show oversized prompts.
+CONTEXT_COMPILER_ENABLED=false
+
+# --- Auto-advance (--auto-advance) -------------------------------------------
+# When enabled via --auto-advance flag, the pipeline will loop through
+# milestones automatically after each passes acceptance criteria.
+
+# Enable auto-advance (also activated by --auto-advance CLI flag)
+# AUTO_ADVANCE_ENABLED=false
+
+# Maximum milestones to complete per invocation (prevents runaway loops)
+# AUTO_ADVANCE_LIMIT=3
+
+# Prompt user for confirmation between milestones (true = interactive)
+# AUTO_ADVANCE_CONFIRM=true
+
+# Create a git tag (milestone-N-complete) on milestone completion.
+# Useful for worktree-based parallel development as a merge-readiness signal.
+# Tags are local — push manually when ready.
+# MILESTONE_TAG_ON_COMPLETE=false
+
+# Archive file for completed milestone definitions. When a milestone is completed,
+# its full definition is moved from CLAUDE.md to this file, keeping CLAUDE.md
+# under context window limits for long-running projects.
+# MILESTONE_ARCHIVE_FILE=MILESTONE_ARCHIVE.md
+
+# --- Milestone pre-flight sizing and auto-split --------------------------------
+# When enabled, the pipeline checks if a milestone's scout estimate exceeds the
+# turn cap. If it does, the milestone is automatically split into 2-4 sub-milestones.
+# On null-run detection, the pipeline can auto-split and retry without human intervention.
+
+# Enable pre-flight milestone sizing gate (default: true)
+# MILESTONE_SPLIT_ENABLED=true
+
+# Model for the splitting agent (defaults to CLAUDE_CODER_MODEL / opus-class)
+# MILESTONE_SPLIT_MODEL="claude-opus-4-6"
+
+# Turn limit for the splitting agent (short — decomposition, not implementation)
+# Hard cap: 50 (values above 50 are clamped automatically)
+# MILESTONE_SPLIT_MAX_TURNS=15
+
+# Split when scout estimate exceeds cap by this percentage (default: 120 = 20% over)
+# MILESTONE_SPLIT_THRESHOLD_PCT=120
+
+# Auto-split and retry when coder produces a null-run on a milestone (default: true)
+# MILESTONE_AUTO_RETRY=true
+
+# Maximum recursive split depth. Prevents infinite splitting:
+# N → N.1 → N.1.1 but N.1.1 cannot split further at depth 3.
+# MILESTONE_MAX_SPLIT_DEPTH=3
+
+# --- Autonomous debt sweep (cleanup) -----------------------------------------
+# After a successful pipeline run, if accumulated non-blocking notes exceed the
+# threshold, a low-cost jr coder agent sweeps through a batch of items.
+# Items requiring architectural changes are tagged [DEFERRED] and excluded from
+# future sweeps. Build gate failure in cleanup is a warning, not a pipeline failure.
+
+# Master toggle for cleanup sweeps (default: false — opt-in)
+# CLEANUP_ENABLED=false
+
+# Maximum items to address per sweep (higher = more turns consumed)
+# CLEANUP_BATCH_SIZE=5
+
+# Turn budget for the cleanup agent (deliberately low — jr coder model)
+# CLEANUP_MAX_TURNS=15
+
+# Minimum unresolved non-blocking notes before a sweep triggers
+# CLEANUP_TRIGGER_THRESHOLD=5
+
+# --- Specialist reviewers (opt-in focused review passes) ---------------------
+# After the main reviewer approves, enabled specialists run focused review passes.
+# Findings tagged [BLOCKER] re-enter the rework loop. [NOTE] items go to
+# NON_BLOCKING_LOG.md. All specialists are disabled by default.
+
+# Security specialist — injection risks, auth bypass, secrets exposure
+# SPECIALIST_SECURITY_ENABLED=false
+# SPECIALIST_SECURITY_MODEL="claude-sonnet-4-6"
+# SPECIALIST_SECURITY_MAX_TURNS=8
+
+# Performance specialist — N+1 queries, unbounded loops, memory leaks
+# SPECIALIST_PERFORMANCE_ENABLED=false
+# SPECIALIST_PERFORMANCE_MODEL="claude-sonnet-4-6"
+# SPECIALIST_PERFORMANCE_MAX_TURNS=8
+
+# API contract specialist — schema consistency, backward compatibility
+# SPECIALIST_API_ENABLED=false
+# SPECIALIST_API_MODEL="claude-sonnet-4-6"
+# SPECIALIST_API_MAX_TURNS=8
+
+# Custom specialists: create a prompt template in your project's prompts/
+# directory and add config entries following this naming convention:
+# SPECIALIST_CUSTOM_MYCHECK_ENABLED=true
+# SPECIALIST_CUSTOM_MYCHECK_PROMPT="specialist_mycheck"
+# SPECIALIST_CUSTOM_MYCHECK_MODEL="claude-sonnet-4-6"
+# SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
+
+# --- Turn exhaustion continuation (auto-continue on turn limit) ---------------
+# When an agent hits its turn limit but made substantive progress (modified files,
+# meaningful summary), the pipeline automatically re-invokes it with fresh turns
+# and prior-progress context. Eliminates the most common human-in-the-loop scenario.
+
+# Master toggle for turn exhaustion continuation (default: true)
+# CONTINUATION_ENABLED=true
+
+# Maximum continuation attempts per stage before escalating to split or exit
+# (default: 3, hard cap: 10)
+# MAX_CONTINUATION_ATTEMPTS=3
+
+# --- Transient error retry ---------------------------------------------------
+# When an agent call fails due to a transient error (API 500, rate limit, OOM),
+# the pipeline automatically retries with exponential backoff before giving up.
+# Delay doubles each attempt: BASE_DELAY -> 2x -> 4x, capped at MAX_DELAY.
+
+# Master toggle for transient error retry (default: true)
+# TRANSIENT_RETRY_ENABLED=true
+
+# Maximum retry attempts per agent call (default: 3, hard cap: 10)
+# MAX_TRANSIENT_RETRIES=3
+
+# Initial backoff delay in seconds (default: 30, hard cap: 300)
+# TRANSIENT_RETRY_BASE_DELAY=30
+
+# Maximum backoff delay in seconds (default: 120, hard cap: 600)
+# TRANSIENT_RETRY_MAX_DELAY=120
+
+# --- Run metrics (workflow learning) -----------------------------------------
+# Collects per-run JSONL metrics to .claude/logs/metrics.jsonl. Enables adaptive
+# turn calibration that adjusts scout recommendations based on historical accuracy.
+# View the dashboard with: tekhton --metrics
+
+# Master toggle for metrics collection (default: true)
+# METRICS_ENABLED=true
+
+# Minimum completed runs before adaptive calibration kicks in (default: 5)
+# METRICS_MIN_RUNS=5
+
+# Use historical accuracy to adjust scout turn recommendations (default: true)
+# METRICS_ADAPTIVE_TURNS=true
+
+# --- Outer orchestration loop (--complete) ------------------------------------
+# The --complete flag wraps the pipeline in a retry loop that runs until the
+# milestone passes acceptance criteria or all recovery options are exhausted.
+# Combines transient retry, turn continuation, milestone splitting, and error
+# classification into a single autonomous loop.
+
+# Master toggle for --complete outer loop (default: true)
+# COMPLETE_MODE_ENABLED=true
+
+# Maximum full pipeline cycles per --complete invocation (default: 5)
+# MAX_PIPELINE_ATTEMPTS=5
+
+# Wall-clock timeout in seconds for --complete mode (default: 7200 = 2 hours)
+# AUTONOMOUS_TIMEOUT=7200
+
+# Maximum total agent invocations across all loop iterations (default: 20)
+# MAX_AUTONOMOUS_AGENT_CALLS=20
+
+# Enable stuck-detection: exit loop if git diff is identical between iterations
+# AUTONOMOUS_PROGRESS_CHECK=true
 
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)

@@ -566,6 +566,72 @@ remains for users who explicitly need it, with a logged warning.
 - All changes are transparent to agents — they see the same logical context, just
   with security delimiters and validated inputs
 
+## System Design: Agent Output Monitoring And Null-Run Detection
+
+### Problem
+The FIFO-based agent monitoring in `lib/agent.sh` uses a named pipe (FIFO) to
+stream agent output and detect activity. The foreground loop reads from the FIFO
+with a `read -t` timeout (`AGENT_ACTIVITY_TIMEOUT`, default 600s). If no output
+arrives within the timeout window, the agent is killed and classified as unresponsive.
+
+This design has a critical failure mode: when the Claude CLI runs with
+`--output-format json`, it produces **no streaming output** — the entire response
+is emitted as a single JSON blob at completion. For long-running agents (e.g.,
+milestone-scoped coder runs of 100+ turns), the FIFO receives nothing for the
+entire execution duration. The activity timeout fires, kills a healthy agent that
+has been actively writing files, and the pipeline then (correctly, per its logic)
+reports 0 turns and declares a null_run — even though all work was completed
+successfully on disk.
+
+A secondary issue: the `--output-format json` mode was adopted for structured
+exit-code and turn-count extraction. Without it, the pipeline must parse unstructured
+text output to determine agent results, which is fragile.
+
+### Design
+
+**Phase 1 — File-Change Activity Detection**:
+- Before declaring an agent dead after activity timeout, check whether the working
+  tree has changed since the last check. Use `git status --porcelain` (or
+  `find -newer` against a timestamp marker file) to detect file modifications.
+- If files changed during the timeout window, reset the activity timer and continue
+  monitoring. The agent is working; it's just not producing pipe output.
+- Activity detection precedence: FIFO output > file changes > nothing (kill).
+
+**Phase 2 — Dual-Mode Output Handling**:
+- When `--output-format json` is used, switch to a polling-based activity check
+  instead of relying on FIFO streaming. The FIFO remains for text-mode runs.
+- Polling checks: (1) is the agent PID still running? (2) have any files changed
+  since last check? (3) has the JSON output file grown?
+- Retain the FIFO path for backward compatibility and for text-mode invocations
+  where streaming output works correctly.
+
+**Phase 3 — Null-Run Hardening**:
+- After killing an agent or after normal completion, always check for file changes
+  before declaring a null_run. If files were modified, the run was NOT null — extract
+  what information we can from the changes themselves.
+- Parse `git diff --stat` to estimate scope of completed work.
+- When turns cannot be extracted from JSON output (because the agent was killed
+  mid-execution), estimate turns from file change count and `git log` since run start.
+- Add a `CODER_SUMMARY.md` existence check as an additional signal: if the coder
+  produced its summary artifact, the run completed regardless of FIFO status.
+
+### Config Keys
+```bash
+MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER=3   # Already implemented: multiplies
+                                          # AGENT_ACTIVITY_TIMEOUT in milestone mode
+# No new config keys for Phase 1-3 — these are correctness fixes, not features.
+```
+
+### Why This Design
+- The FIFO architecture is sound for text-mode streaming. The problem is specifically
+  the interaction between `--output-format json` and activity-timeout monitoring.
+- File-change detection is a reliable secondary signal because the Claude CLI writes
+  files to disk as the agent works, even when output is buffered.
+- Null-run hardening prevents loss of completed work — the most damaging failure mode
+  in the current pipeline (agent completes 100+ turns of work, pipeline discards it).
+- The `MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER` (default 3x, already in `lib/config.sh`)
+  is a stop-gap mitigation while this deeper fix is implemented.
+
 ## System Design: Researcher And Security Agent Roles
 
 ### Problem

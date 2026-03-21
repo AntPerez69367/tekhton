@@ -6,6 +6,65 @@
 # Expects all pipeline globals to be set (TASK, LOG_FILE, TIMESTAMP, etc.)
 # =============================================================================
 
+# _switch_to_sub_milestone — After a milestone split, update state to target
+# the first sub-milestone (N.1). Sets _CURRENT_MILESTONE, TASK, and milestone
+# state. Must be called in the same scope (not a subshell) so variable
+# assignments propagate to the caller.
+#
+# Arguments:
+#   $1 — current milestone number (the one that was just split)
+#   $2 — path to CLAUDE.md
+_switch_to_sub_milestone() {
+    local _ms_num="$1"
+    local _claude_md="$2"
+    local _first_sub="${_ms_num}.1"
+    # Title may be empty if the split agent used a heading format that
+    # get_milestone_title doesn't match — task still proceeds with the number alone.
+    local _first_title
+    _first_title=$(get_milestone_title "$_first_sub" "$_claude_md" 2>/dev/null) || true
+
+    _CURRENT_MILESTONE="$_first_sub"
+    TASK="Implement Milestone ${_first_sub}: ${_first_title}"
+    log "Task updated: ${TASK}"
+
+    init_milestone_state "$_first_sub" "$(get_milestone_count "$_claude_md")"
+}
+
+# _reconstruct_coder_summary — Synthesize a minimal CODER_SUMMARY.md from git state.
+# Called when the coder agent did substantive work but failed to produce or
+# maintain the summary file. This allows the pipeline to proceed to review
+# instead of crashing. The reviewer will assess actual file changes.
+_reconstruct_coder_summary() {
+    local _files_changed=""
+    local _diff_stat=""
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+        _files_changed=$(git diff --name-only HEAD 2>/dev/null | head -30)
+        _diff_stat=$(git diff --stat HEAD 2>/dev/null | tail -5)
+    fi
+
+    cat > CODER_SUMMARY.md <<RECON_EOF
+## Status: IN PROGRESS
+
+## Summary
+CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
+failed to produce or maintain it. The following files were modified based
+on git diff. The reviewer should assess actual changes directly.
+
+## Files Modified
+$(while IFS= read -r _f; do [ -n "$_f" ] && echo "- $_f"; done <<< "$_files_changed")
+
+## Git Diff Summary
+\`\`\`
+${_diff_stat}
+\`\`\`
+
+## Remaining Work
+Unable to determine — coder did not report remaining items.
+Review the task description against actual changes to identify gaps.
+RECON_EOF
+    warn "Reconstructed CODER_SUMMARY.md ($(wc -l < CODER_SUMMARY.md) lines) from git state."
+}
+
 # run_stage_coder — Runs the full coder stage including:
 #   1. Optional scout sub-agent (for BUG/FEAT notes)
 #   2. Context block construction (architecture, glossary, milestone, prior reports)
@@ -44,9 +103,11 @@ run_stage_coder() {
         # Build architecture block for scout if available
         ARCHITECTURE_BLOCK=""
         if [ -f "${ARCHITECTURE_FILE}" ]; then
+            local _arch_content
+            _arch_content=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
             ARCHITECTURE_BLOCK="
 ## Architecture Map (use this to find files — do NOT explore blindly)
-$(cat "${ARCHITECTURE_FILE}")"
+$(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         fi
 
         SCOUT_PROMPT=$(render_prompt "scout")
@@ -70,9 +131,56 @@ $(cat "${ARCHITECTURE_FILE}")"
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
 $(cat SCOUT_REPORT.md)
 "
+            # --- Pre-flight milestone sizing gate ---------------------------------
+            # After scout estimates complexity, check if the milestone is oversized.
+            # If so, split it into sub-milestones and re-scout the first one.
+            if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
+                if ! check_milestone_size "$_CURRENT_MILESTONE" "${SCOUT_REC_CODER_TURNS:-0}"; then
+                    log "Milestone ${_CURRENT_MILESTONE} exceeds sizing threshold. Splitting..."
+
+                    if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                        # Update to target the first sub-milestone
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+
+                        # Archive original scout report and re-scout narrower scope
+                        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
+                        rm "SCOUT_REPORT.md"
+
+                        log "Re-running scout for narrower sub-milestone ${_CURRENT_MILESTONE}..."
+
+                        SCOUT_PROMPT=$(render_prompt "scout")
+                        run_agent \
+                            "Scout (post-split)" \
+                            "$CLAUDE_SCOUT_MODEL" \
+                            "${SCOUT_MAX_TURNS}" \
+                            "$SCOUT_PROMPT" \
+                            "$LOG_FILE" \
+                            "$AGENT_TOOLS_SCOUT"
+
+                        if [ -f "SCOUT_REPORT.md" ]; then
+                            print_run_summary
+                            success "Post-split scout finished."
+                            apply_scout_turn_limits "SCOUT_REPORT.md"
+                            BUG_SCOUT_CONTEXT="
+## Scout Report (pre-located relevant files — read THESE files, not the whole project)
+$(cat SCOUT_REPORT.md)
+"
+                            cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+                            rm "SCOUT_REPORT.md"
+                        else
+                            warn "Post-split scout did not produce SCOUT_REPORT.md — coder will explore independently."
+                        fi
+                    else
+                        warn "Milestone split failed — proceeding with original scope."
+                    fi
+                fi
+            fi
+
             # Archive scout report with the run
-            cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-            rm "SCOUT_REPORT.md"
+            if [ -f "SCOUT_REPORT.md" ]; then
+                cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+                rm "SCOUT_REPORT.md"
+            fi
         elif was_null_run; then
             print_run_summary
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
@@ -114,9 +222,11 @@ ${BUG_SCOUT_CONTEXT}"
     # Architecture context
     export ARCHITECTURE_BLOCK=""
     if [ -f "${ARCHITECTURE_FILE}" ]; then
+        local _arch_main
+        _arch_main=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
         ARCHITECTURE_BLOCK="
 ## Architecture Map (read FIRST — saves you 10+ turns of exploration)
-$(cat "${ARCHITECTURE_FILE}")"
+$(_wrap_file_content "ARCHITECTURE" "$_arch_main")"
     fi
 
     export GLOSSARY_BLOCK=""
@@ -141,13 +251,15 @@ This is a milestone-sized task. Before writing any code:
     # Prior reviewer context (unresolved blockers from a previous run)
     export PRIOR_REVIEWER_CONTEXT=""
     if [ -f "REVIEWER_REPORT.md" ] && [ "$START_AT" = "coder" ]; then
+        local _reviewer_content
+        _reviewer_content=$(_safe_read_file "REVIEWER_REPORT.md" "REVIEWER_REPORT")
         PRIOR_REVIEWER_CONTEXT="
 ## Prior Reviewer Report (unresolved blockers from last run)
 The previous pipeline run ended with these unresolved items.
 Fix the Complex and Simple Blockers listed below — do not re-implement anything already done.
 Non-Blocking Notes are optional improvements if turns allow.
 
-$(cat REVIEWER_REPORT.md)"
+$(_wrap_file_content "REVIEWER_REPORT" "$_reviewer_content")"
     fi
 
     # Prior progress context (partial git diff from turn-limit resume)
@@ -171,12 +283,14 @@ Pick up from where the previous run left off — read the modified files first t
     # Prior tester bugs
     export PRIOR_TESTER_CONTEXT=""
     if [ -f "TESTER_REPORT.md" ] && grep -q "^### Bugs Found\|^## Bugs\|BUG-" TESTER_REPORT.md 2>/dev/null; then
+        local _tester_content
+        _tester_content=$(_safe_read_file "TESTER_REPORT.md" "TESTER_REPORT")
         PRIOR_TESTER_CONTEXT="
 ## Bugs Found by Tester (must fix)
 The tester identified these bugs in the last run. Fix all BUG-* items before
 doing anything else. Do not re-implement anything already working.
 
-$(cat TESTER_REPORT.md)"
+$(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
     fi
 
     # Accumulated non-blocking notes (injected when above threshold)
@@ -188,21 +302,50 @@ $(cat TESTER_REPORT.md)"
         local nb_notes
         nb_notes=$(get_open_nonblocking_notes)
         NON_BLOCKING_CONTEXT="
-## Accumulated Tech Debt (${nb_count} items — address what you can)
+## Accumulated Tech Debt (${nb_count} items)
 These are non-blocking reviewer notes that have accumulated over multiple runs.
-Address as many as your remaining turns allow. For each item you address,
-note the file and what you changed. Items you cannot reach are fine to skip.
+If your task specifies which items to address, follow the task scope exactly.
+Otherwise, address as many as your remaining turns allow. For each item you
+address, note the file and what you changed. Items you cannot reach are fine to skip.
 
 ${nb_notes}"
         warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
     fi
 
-    # --- Invoke coder agent --------------------------------------------------
+    # --- Clarification context (from prior pause) ----------------------------
 
-    # Mark human notes as in-progress before coder runs
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+    load_clarifications_content
+    export CLARIFICATIONS_CONTENT
+
+    # --- Context compiler (task-scoped filtering) ----------------------------
+    # NOTE: build_context_packet is called before should_claim_notes intentionally.
+    # It takes explicit args (not HUMAN_NOTES_BLOCK global), so the ordering is safe.
+
+    build_context_packet "coder" "$TASK" "$CLAUDE_CODER_MODEL"
+
+    # --- Context budget reporting --------------------------------------------
+
+    # Mark human notes as in-progress before coder runs (only when task is about notes)
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
         claim_human_notes
+    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+        log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
+        HUMAN_NOTES_BLOCK=""
     fi
+
+    _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"
+    _add_context_component "Glossary" "$GLOSSARY_BLOCK"
+    _add_context_component "Milestone" "$MILESTONE_BLOCK"
+    _add_context_component "Human Notes" "$HUMAN_NOTES_BLOCK"
+    _add_context_component "Prior Reviewer" "$PRIOR_REVIEWER_CONTEXT"
+    _add_context_component "Prior Progress" "$PRIOR_PROGRESS_CONTEXT"
+    _add_context_component "Prior Tester" "$PRIOR_TESTER_CONTEXT"
+    _add_context_component "Non-Blocking Notes" "$NON_BLOCKING_CONTEXT"
+    _add_context_component "Scout Report" "$BUG_SCOUT_CONTEXT"
+    _add_context_component "Clarifications" "$CLARIFICATIONS_CONTENT"
+    log_context_report "coder" "$CLAUDE_CODER_MODEL"
+
+    # --- Invoke coder agent --------------------------------------------------
 
     CODER_PROMPT=$(render_prompt "coder")
 
@@ -215,6 +358,25 @@ ${nb_notes}"
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
     print_run_summary
+
+    # Export actual coder turns for post-coder recalibration (Milestone 9)
+    export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
+
+    # --- UPSTREAM error detection (12.2) — API failures are not scope issues ---
+
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        error "Coder agent hit an API error: ${AGENT_ERROR_MESSAGE}"
+        write_pipeline_state \
+            "coder" \
+            "upstream_error" \
+            "${MILESTONE_MODE:+--milestone }--start-at coder" \
+            "$TASK" \
+            "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. This is transient — re-run the same command."
+
+        error "State saved. This was an API failure, not a scope issue. Re-run the same command."
+        exit 1
+    fi
+
     success "Coder agent finished."
 
     # --- Null run detection ---------------------------------------------------
@@ -227,6 +389,24 @@ ${nb_notes}"
         # Reset claimed notes — coder didn't produce any work
         if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
             resolve_human_notes
+        fi
+
+        # --- Null-run auto-split for milestone mode ---
+        # Instead of saving state and exiting, try to split the milestone
+        # and re-run from scout stage with the narrower sub-milestone.
+        if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
+            if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                # Split succeeded — update state and re-run from scout
+                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+
+                # Recursive call to run_stage_coder creates nested call frames up to
+                # MILESTONE_MAX_SPLIT_DEPTH deep. With default of 3, this is safe.
+                local _depth
+                _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                run_stage_coder
+                return
+            fi
         fi
 
         write_pipeline_state \
@@ -244,16 +424,86 @@ ${nb_notes}"
     # --- Post-coder validation -----------------------------------------------
 
     if [ ! -f "CODER_SUMMARY.md" ]; then
-        error "Coder did not produce CODER_SUMMARY.md. Check the log: ${LOG_FILE}"
-        error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
-        # Reset claimed notes — coder didn't produce any work
-        resolve_human_notes
-        exit 1
+        # If substantive work was done, reconstruct summary and continue
+        if is_substantive_work; then
+            warn "Coder did not produce CODER_SUMMARY.md but substantive work detected."
+            _reconstruct_coder_summary
+        else
+            error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
+            error "Check the log: ${LOG_FILE}"
+            error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            # Reset claimed notes — coder didn't produce any work
+            resolve_human_notes
+            exit 1
+        fi
     fi
 
     # Resolve human notes based on coder's structured reporting
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+    # Only resolve if notes were actually claimed (marked [~]) for this run
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
         resolve_human_notes
+    fi
+
+    # --- Post-coder clarification detection ------------------------------------
+
+    if detect_clarifications "CODER_SUMMARY.md"; then
+        if ! handle_clarifications; then
+            # User aborted — save state for resume
+            write_pipeline_state \
+                "coder" \
+                "clarification_abort" \
+                "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                "$TASK" \
+                "Clarification collection aborted by user. Partial answers in CLARIFICATIONS.md."
+            error "Pipeline paused for clarification. Re-run to resume."
+            exit 1
+        fi
+
+        # Re-run coder with clarification answers if blocking items were answered
+        local blocking_file="${TEKHTON_SESSION_DIR}/clarify_blocking.txt"
+        if [[ -s "$blocking_file" ]]; then
+            log "Re-running coder with clarification answers..."
+
+            # Reload clarifications into context
+            load_clarifications_content
+            export CLARIFICATIONS_CONTENT
+
+            CODER_PROMPT=$(render_prompt "coder")
+
+            run_agent \
+                "Coder (post-clarification)" \
+                "$CLAUDE_CODER_MODEL" \
+                "${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}" \
+                "$CODER_PROMPT" \
+                "$LOG_FILE" \
+                "$AGENT_TOOLS_CODER"
+            print_run_summary
+            success "Post-clarification coder finished."
+
+            # Update actual coder turns to reflect post-clarification run
+            # so reviewer/tester recalibration uses the most recent data
+            export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
+
+            # --- Null run detection for post-clarification run ---
+            if was_null_run; then
+                error "Post-clarification coder was a null run — produced no meaningful work."
+                write_pipeline_state \
+                    "coder" \
+                    "null_run_post_clarification" \
+                    "--start-at coder" \
+                    "$TASK" \
+                    "Post-clarification coder used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Consider: clarification answers may be incomplete, or agent couldn't translate them into code changes."
+
+                error "State saved with exit reason 'null_run_post_clarification'. Re-run to retry."
+                exit 1
+            fi
+
+            # Re-check for CODER_SUMMARY.md
+            if [[ ! -f "CODER_SUMMARY.md" ]]; then
+                error "Post-clarification coder did not produce CODER_SUMMARY.md."
+                exit 1
+            fi
+        fi
     fi
 
     # Check if coder left status as IN PROGRESS (hit turn limit mid-work)
@@ -261,70 +511,224 @@ ${nb_notes}"
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
         warn "Coder summary shows IN PROGRESS — coder hit turn limit before finishing."
 
-        # Determine if enough was done to proceed to review
-        IMPLEMENTED_LINES=$(grep -c "^- " CODER_SUMMARY.md 2>/dev/null || echo "0")
-        IMPLEMENTED_LINES=$(echo "$IMPLEMENTED_LINES" | tr -d '[:space:]')
+        # --- Turn exhaustion continuation loop (Milestone 14) ---
+        if [[ "${CONTINUATION_ENABLED:-true}" = "true" ]] && is_substantive_work; then
+            local _cont_attempt=0
+            local _cont_max="${MAX_CONTINUATION_ATTEMPTS:-3}"
+            local _cumulative_turns="${ACTUAL_CODER_TURNS:-0}"
 
-        # Capture git diff context for resume
-        GIT_DIFF_STAT=""
-        if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-            GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20)
+            while [[ "$_cont_attempt" -lt "$_cont_max" ]]; do
+                _cont_attempt=$((_cont_attempt + 1))
+                log "Coder hit turn limit with progress (attempt ${_cont_attempt}/${_cont_max}). Continuing..."
+
+                # Build continuation context and inject into prompt
+                local _next_budget="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+                export CONTINUATION_CONTEXT
+                CONTINUATION_CONTEXT=$(build_continuation_context "coder" "$_cont_attempt" "$_cont_max" "$_cumulative_turns" "$_next_budget")
+
+                CODER_PROMPT=$(render_prompt "coder")
+
+                run_agent \
+                    "Coder (continuation ${_cont_attempt})" \
+                    "$CLAUDE_CODER_MODEL" \
+                    "$_next_budget" \
+                    "$CODER_PROMPT" \
+                    "$LOG_FILE" \
+                    "$AGENT_TOOLS_CODER"
+                print_run_summary
+
+                _cumulative_turns=$((_cumulative_turns + ${LAST_AGENT_TURNS:-0}))
+                export ACTUAL_CODER_TURNS="$_cumulative_turns"
+
+                # Check for UPSTREAM errors in continuation
+                if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+                    error "Continuation coder hit an API error: ${AGENT_ERROR_MESSAGE}"
+                    write_pipeline_state \
+                        "coder" \
+                        "upstream_error" \
+                        "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                        "$TASK" \
+                        "API error during continuation attempt ${_cont_attempt}: ${AGENT_ERROR_MESSAGE}."
+                    error "State saved. Re-run the same command."
+                    exit 1
+                fi
+
+                # Check if continuation completed
+                if [[ ! -f "CODER_SUMMARY.md" ]]; then
+                    warn "Continuation ${_cont_attempt} did not produce CODER_SUMMARY.md."
+                    # Recover: if substantive work exists, synthesize a minimal summary
+                    # so the pipeline can proceed to review instead of crashing.
+                    if is_substantive_work; then
+                        warn "Substantive work detected — reconstructing CODER_SUMMARY.md from git state."
+                        _reconstruct_coder_summary
+                    else
+                        break
+                    fi
+                fi
+
+                CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+                if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
+                    success "Coder completed after ${_cont_attempt} continuation(s) (${_cumulative_turns} total turns)."
+                    # Export for metrics
+                    export CONTINUATION_ATTEMPTS="$_cont_attempt"
+                    # Clear continuation context so it doesn't leak into downstream prompts
+                    export CONTINUATION_CONTEXT=""
+                    break 2  # Break out of both continuation while and the outer if
+                fi
+
+                # Check if continuation made substantive progress worth continuing further
+                if ! is_substantive_work; then
+                    warn "Continuation ${_cont_attempt} did not produce substantive additional work."
+                    break
+                fi
+            done
+
+            # Export continuation attempts for metrics regardless of outcome
+            export CONTINUATION_ATTEMPTS="${_cont_attempt}"
+            # Clear continuation context
+            export CONTINUATION_CONTEXT=""
+
+            # Re-check status after continuation loop
+            CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+            if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
+                # Continuation succeeded — fall through to completion gate
+                :
+            elif [[ "$_cont_attempt" -ge "$_cont_max" ]]; then
+                warn "Coder exhausted all ${_cont_max} continuation attempts."
+                # Escalate: milestone mode -> try auto-split, otherwise save state
+                if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                    if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        local _depth
+                        _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                        warn "Auto-split after continuation exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                        run_stage_coder
+                        return
+                    fi
+                fi
+                # Fall through to save-state-and-exit below
+            fi
         fi
 
-        if [ "$IMPLEMENTED_LINES" -gt 3 ]; then
-            RESUME_FLAG="--milestone --start-at coder"
-            RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
-        else
-            RESUME_FLAG="--milestone"
-            RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended. Consider either a higher cycle limit or a more specific task description. If the coder struggled to get started, try adding more implementation guidance to the task or breaking it into smaller pieces."
-        fi
+        # If we reach here and status is still IN PROGRESS, check if we have
+        # enough work to proceed to review instead of halting.
+        CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+        if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
+            IMPLEMENTED_LINES=$(grep -c "^- " CODER_SUMMARY.md 2>/dev/null || echo "0")
+            IMPLEMENTED_LINES=$(echo "$IMPLEMENTED_LINES" | tr -d '[:space:]')
 
-        # Write state with git diff context so resume knows exactly where coder left off
-        local _state_notes="${RESUME_NOTE}"
-        if [ -n "$GIT_DIFF_STAT" ]; then
-            _state_notes="${_state_notes}
+            GIT_DIFF_STAT=""
+            if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+                GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20)
+            fi
+
+            # If continuations were exhausted and substantive work exists,
+            # proceed to review instead of halting. The reviewer catches gaps.
+            if [[ "${_cont_attempt:-0}" -ge "${_cont_max:-3}" ]] && is_substantive_work; then
+                warn "Continuations exhausted with IN PROGRESS status but substantive work exists."
+                warn "Proceeding to review — reviewer will identify remaining gaps."
+                # Skip the state-save-and-exit — fall through to completion gate
+                :
+            elif [[ "$IMPLEMENTED_LINES" -gt 3 ]]; then
+                RESUME_FLAG="--milestone --start-at coder"
+                RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
+
+                local _state_notes="${RESUME_NOTE}"
+                if [[ -n "$GIT_DIFF_STAT" ]]; then
+                    _state_notes="${_state_notes}
 
 ## Partial Git Changes (files touched before turn limit)
 \`\`\`
 ${GIT_DIFF_STAT}
 \`\`\`"
+                fi
+
+                write_pipeline_state \
+                    "coder" \
+                    "turn_limit" \
+                    "$RESUME_FLAG" \
+                    "$TASK" \
+                    "$_state_notes"
+
+                warn "Check the log: ${LOG_FILE}"
+                warn "State saved — re-run with no arguments to resume."
+                exit 1
+            else
+                # Minimal output — try auto-split in milestone mode
+                if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                    if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        local _depth
+                        _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                        warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                        run_stage_coder
+                        return
+                    fi
+                fi
+
+                RESUME_FLAG="--milestone"
+                RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended."
+
+                local _state_notes="${RESUME_NOTE}"
+                if [[ -n "$GIT_DIFF_STAT" ]]; then
+                    _state_notes="${_state_notes}
+
+## Partial Git Changes (files touched before turn limit)
+\`\`\`
+${GIT_DIFF_STAT}
+\`\`\`"
+                fi
+
+                write_pipeline_state \
+                    "coder" \
+                    "turn_limit" \
+                    "$RESUME_FLAG" \
+                    "$TASK" \
+                    "$_state_notes"
+
+                warn "Check the log: ${LOG_FILE}"
+                warn "State saved — re-run with no arguments to resume."
+                exit 1
+            fi
         fi
-
-        write_pipeline_state \
-            "coder" \
-            "turn_limit" \
-            "$RESUME_FLAG" \
-            "$TASK" \
-            "$_state_notes"
-
-        warn "Check the log: ${LOG_FILE}"
-        warn "State saved — re-run with no arguments to resume."
-        exit 1
     fi
 
     # --- Completion gate -----------------------------------------------------
 
     if ! run_completion_gate; then
-        warn "Coder did not complete — blocking reviewer and tester."
-
-        GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20 || echo "no changes")
-
-        if [ "$MILESTONE_MODE" = true ]; then
-            RESUME_FLAG="--milestone --start-at coder"
+        # If substantive work exists (files modified, meaningful diff), proceed
+        # to review anyway. The reviewer will assess actual changes. This prevents
+        # the pipeline from halting when the coder did real work but failed to
+        # set the Status field correctly.
+        if is_substantive_work; then
+            warn "Completion gate failed but substantive work detected."
+            warn "Proceeding to review — reviewer will assess actual changes."
+            # Ensure CODER_SUMMARY.md exists for downstream stages
+            if [[ ! -f "CODER_SUMMARY.md" ]]; then
+                _reconstruct_coder_summary
+            fi
         else
-            RESUME_FLAG="--start-at coder"
+            warn "Coder did not complete — blocking reviewer and tester."
+
+            GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20 || echo "no changes")
+
+            if [ "$MILESTONE_MODE" = true ]; then
+                RESUME_FLAG="--milestone --start-at coder"
+            else
+                RESUME_FLAG="--start-at coder"
+            fi
+
+            write_pipeline_state \
+                "coder" \
+                "incomplete" \
+                "$RESUME_FLAG" \
+                "$TASK" \
+                "Coder hit turn limit mid-implementation. Reviewer and tester were NOT run. Resume will continue coder work before proceeding."
+
+            error "Pipeline halted at completion gate."
+            error "State saved — re-run with no arguments to resume."
+            exit 1
         fi
-
-        write_pipeline_state \
-            "coder" \
-            "incomplete" \
-            "$RESUME_FLAG" \
-            "$TASK" \
-            "Coder hit turn limit mid-implementation. Reviewer and tester were NOT run. Resume will continue coder work before proceeding."
-
-        error "Pipeline halted at completion gate."
-        error "State saved — re-run with no arguments to resume."
-        exit 1
     fi
 
     # --- Build gate (with one retry) -----------------------------------------
@@ -335,7 +739,7 @@ ${GIT_DIFF_STAT}
             BUILD_GATE_RETRY=1
             warn "Invoking coder to fix build errors (1 retry allowed)..."
             export BUILD_ERRORS_CONTENT
-            BUILD_ERRORS_CONTENT=$(cat BUILD_ERRORS.md)
+            BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" "$(_safe_read_file BUILD_ERRORS.md "BUILD_ERRORS")")
             BUILD_FIX_PROMPT=$(render_prompt "build_fix")
 
             run_agent \

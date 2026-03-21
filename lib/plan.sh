@@ -21,12 +21,38 @@ PLAN_STATE_FILE="${PROJECT_DIR:-}/.claude/PLAN_STATE.md"
 load_plan_config() {
     local conf_file="${PROJECT_DIR:-}/.claude/pipeline.conf"
     if [[ -f "$conf_file" ]]; then
-        # Intentionally sources the entire pipeline.conf, which imports all
-        # pipeline keys (ANALYZE_CMD, BUILD_CHECK_CMD, etc.) into the planning
-        # environment. This is harmless — all planning keys have safe defaults
-        # and execution-only keys are unused during --plan.
-        # shellcheck source=/dev/null
-        source <(sed 's/\r$//' "$conf_file")
+        # Use the safe config parser from config.sh if available (execution pipeline),
+        # otherwise use a minimal inline parser (--plan mode, config.sh not sourced).
+        if declare -f _parse_config_file &>/dev/null; then
+            _parse_config_file "$conf_file"
+        else
+            # Minimal safe parser for --plan mode: reads key=value lines,
+            # rejects command substitution ($( and backticks).
+            local _line_num=0
+            while IFS= read -r _line || [[ -n "$_line" ]]; do
+                _line_num=$((_line_num + 1))
+                _line="${_line//$'\r'/}"
+                [[ -z "$_line" ]] && continue
+                [[ "$_line" =~ ^[[:space:]]*# ]] && continue
+                if ! [[ "$_line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*) ]]; then
+                    continue
+                fi
+                local _key="${BASH_REMATCH[1]}"
+                local _val="${BASH_REMATCH[2]}"
+                _val="${_val#"${_val%%[![:space:]]*}"}"
+                _val="${_val%"${_val##*[![:space:]]}"}"
+                if [[ "$_val" =~ ^\"(.*)\"$ ]]; then
+                    _val="${BASH_REMATCH[1]}"
+                elif [[ "$_val" =~ ^\'(.*)\'$ ]]; then
+                    _val="${BASH_REMATCH[1]}"
+                fi
+                if [[ "$_val" == *"\$("* ]] || [[ "$_val" == *"\`"* ]]; then
+                    echo "[✗] pipeline.conf:${_line_num}: REJECTED — value for '${_key}' contains command substitution." >&2
+                    exit 1
+                fi
+                declare -gx "$_key=$_val"
+            done < "$conf_file"
+        fi
     fi
 }
 
@@ -247,6 +273,9 @@ _extract_template_sections() {
     }
     ' "$template"
 }
+
+# --- Brownfield Replan --------------------------------------------------------
+# Extracted to lib/replan.sh — sourced separately by tekhton.sh.
 
 # --- Main Entry Point --------------------------------------------------------
 

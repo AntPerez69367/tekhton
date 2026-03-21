@@ -22,7 +22,19 @@ run_stage_tester() {
         TESTER_PROMPT=$(render_prompt "tester_resume")
     else
         export ARCHITECTURE_CONTENT
-        ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(${ARCHITECTURE_FILE} not found)")
+        if [ -f "${ARCHITECTURE_FILE}" ]; then
+            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+        else
+            ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
+        fi
+
+        # --- Context compiler (task-scoped filtering) ------------------------
+        build_context_packet "tester" "$TASK" "$CLAUDE_TESTER_MODEL"
+
+        # --- Context budget reporting ----------------------------------------
+        _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
+        log_context_report "tester" "$CLAUDE_TESTER_MODEL"
+
         TESTER_PROMPT=$(render_prompt "tester")
     fi
 
@@ -36,27 +48,25 @@ run_stage_tester() {
         "$AGENT_TOOLS_TESTER"
     export TESTER_EXIT=$?
 
-    # --- SIGKILL retry --------------------------------------------------------
-    # Exit 137 (SIGKILL) is typically OOM in WSL2. Retry once after a cooldown
-    # to give the system time to reclaim memory.
-
-    if was_null_run && [ "$LAST_AGENT_EXIT_CODE" -eq 137 ]; then
-        warn "SIGKILL detected — retrying tester in 15 seconds..."
-        sleep 15
-        run_agent \
-            "Tester (retry)" \
-            "$CLAUDE_TESTER_MODEL" \
-            "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
-            "$TESTER_PROMPT" \
-            "$LOG_FILE" \
-            "$AGENT_TOOLS_TESTER"
-        TESTER_EXIT=$?  # exported above
-    fi
-
-    # --- Null run detection ---------------------------------------------------
+    # --- UPSTREAM error detection (12.2) ----------------------------------------
 
     local resume_flag="--start-at test"
     [ "$MILESTONE_MODE" = true ] && resume_flag="--milestone --start-at test"
+
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        warn "Tester hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
+        write_pipeline_state \
+            "tester" \
+            "upstream_error" \
+            "$resume_flag" \
+            "${TASK}" \
+            "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. Re-run the same command."
+        warn "State saved — this was an API failure, not a scope issue. Re-run."
+        export SKIP_FINAL_CHECKS=true
+        return
+    fi
+
+    # --- Null run detection ---------------------------------------------------
 
     if was_null_run; then
         warn "Tester was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."
@@ -78,8 +88,30 @@ run_stage_tester() {
 
     if [ ! -f "TESTER_REPORT.md" ]; then
         warn "Tester did not produce TESTER_REPORT.md."
-        warn "Check the log: ${LOG_FILE}"
-        warn "Re-run with: $0 --start-at test \"${TASK}\""
+        # Check if test files were created despite missing report
+        local _test_file_count=0
+        if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+            _test_file_count=$(git diff --name-only HEAD 2>/dev/null | grep -ciE 'test|spec' || echo "0")
+        fi
+        if [[ "$_test_file_count" -gt 0 ]]; then
+            warn "Tester created ${_test_file_count} test file(s) but no report — synthesizing minimal TESTER_REPORT.md."
+            local _test_files
+            _test_files=$(git diff --name-only HEAD 2>/dev/null | grep -iE 'test|spec' | head -20 || true)
+            cat > TESTER_REPORT.md <<TESTER_EOF
+## Test Summary
+TESTER_REPORT.md was synthesized by the pipeline. The tester agent created
+test files but did not produce a report. Review the test files directly.
+
+## Test Files Created
+$(echo "$_test_files" | sed 's/^/- [x] `/' | sed 's/$/`/')
+
+## Bugs Found
+- None reported (tester did not produce a structured report)
+TESTER_EOF
+        else
+            warn "Check the log: ${LOG_FILE}"
+            warn "Re-run with: $0 --start-at test \"${TASK}\""
+        fi
     else
         REMAINING=$(grep -c "^- \[ \]" TESTER_REPORT.md || true)
         REMAINING=$(echo "$REMAINING" | tr -d '[:space:]')
@@ -88,7 +120,8 @@ run_stage_tester() {
         if grep -q "Compilation failed" "$LOG_FILE" || grep -q "Failed to load" "$LOG_FILE"; then
             error "One or more test files failed to compile. The tester report may be inaccurate."
             error "Compilation errors detected in:"
-            grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=/  /' | sed 's/:.*//' | sort -u | tee -a "$LOG_FILE"
+            _failed_paths=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=/  /' | sed 's/:.*//' | sort -u)
+            echo "$_failed_paths"
             warn "Fix the failing test files, then resume with: $0 --start-at tester \"${TASK}\""
             # Mark affected test files as unchecked in TESTER_REPORT.md so resume picks them up
             FAILED_FILES=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=//' | sed 's/:.*//' | sort -u)
@@ -104,17 +137,90 @@ run_stage_tester() {
         elif [ "$REMAINING" -gt 0 ]; then
             warn "Tester completed partial run — ${REMAINING} planned test(s) not yet written."
 
-            local resume_tester_flag="--start-at tester"
-            [ "$MILESTONE_MODE" = true ] && resume_tester_flag="--milestone --start-at tester"
+            # --- Turn exhaustion continuation for tester (Milestone 14) ---
+            local _tester_continued=false
+            if [[ "${CONTINUATION_ENABLED:-true}" = "true" ]]; then
+                # Check if substantive test files were created
+                local _test_files_created=0
+                if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+                    _test_files_created=$(git diff --stat HEAD 2>/dev/null | grep -c '|' || echo "0")
+                    _test_files_created=$(echo "$_test_files_created" | tr -d '[:space:]')
+                fi
 
-            write_pipeline_state \
-                "tester" \
-                "partial_tests" \
-                "$resume_tester_flag" \
-                "${TASK}" \
-                "${REMAINING} test(s) remaining — TESTER_REPORT.md has the checklist"
+                if [[ "$_test_files_created" -ge 1 ]]; then
+                    local _tcont_attempt=0
+                    local _tcont_max="${MAX_CONTINUATION_ATTEMPTS:-3}"
+                    local _tcumulative_turns="${LAST_AGENT_TURNS:-0}"
 
-            warn "State saved — re-run with no arguments to resume."
+                    while [[ "$_tcont_attempt" -lt "$_tcont_max" ]] && [[ "$REMAINING" -gt 0 ]]; do
+                        _tcont_attempt=$((_tcont_attempt + 1))
+                        log "Tester hit turn limit with ${REMAINING} tests remaining (attempt ${_tcont_attempt}/${_tcont_max}). Continuing..."
+
+                        local _tnext_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
+                        export CONTINUATION_CONTEXT
+                        CONTINUATION_CONTEXT=$(build_continuation_context "tester" "$_tcont_attempt" "$_tcont_max" "$_tcumulative_turns" "$_tnext_budget")
+
+                        TESTER_PROMPT=$(render_prompt "tester_resume")
+
+                        run_agent \
+                            "Tester (continuation ${_tcont_attempt})" \
+                            "$CLAUDE_TESTER_MODEL" \
+                            "$_tnext_budget" \
+                            "$TESTER_PROMPT" \
+                            "$LOG_FILE" \
+                            "$AGENT_TOOLS_TESTER"
+
+                        _tcumulative_turns=$((_tcumulative_turns + ${LAST_AGENT_TURNS:-0}))
+
+                        # Check for API errors
+                        if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+                            warn "Tester continuation hit API error. Saving state."
+                            export CONTINUATION_ATTEMPTS="${_tcont_attempt}"
+                            export CONTINUATION_CONTEXT=""
+                            write_pipeline_state \
+                                "tester" \
+                                "upstream_error" \
+                                "$resume_flag" \
+                                "${TASK}" \
+                                "API error during tester continuation ${_tcont_attempt}."
+                            export SKIP_FINAL_CHECKS=true
+                            return
+                        fi
+
+                        # Re-check remaining tests
+                        if [[ -f "TESTER_REPORT.md" ]]; then
+                            REMAINING=$(grep -c "^- \[ \]" TESTER_REPORT.md || true)
+                            REMAINING=$(echo "$REMAINING" | tr -d '[:space:]')
+                        fi
+                    done
+
+                    export CONTINUATION_ATTEMPTS="${_tcont_attempt}"
+                    export CONTINUATION_CONTEXT=""
+
+                    if [[ "$REMAINING" -eq 0 ]]; then
+                        _tester_continued=true
+                        print_run_summary
+                        success "Tester completed after ${_tcont_attempt} continuation(s) — all planned tests written."
+                        clear_pipeline_state
+                    else
+                        warn "Tester still has ${REMAINING} test(s) remaining after ${_tcont_attempt} continuation(s)."
+                    fi
+                fi
+            fi
+
+            if [[ "$_tester_continued" = false ]]; then
+                local resume_tester_flag="--start-at tester"
+                [ "$MILESTONE_MODE" = true ] && resume_tester_flag="--milestone --start-at tester"
+
+                write_pipeline_state \
+                    "tester" \
+                    "partial_tests" \
+                    "$resume_tester_flag" \
+                    "${TASK}" \
+                    "${REMAINING} test(s) remaining — TESTER_REPORT.md has the checklist"
+
+                warn "State saved — re-run with no arguments to resume."
+            fi
         else
             print_run_summary
             success "Tester agent finished — all planned tests written and passing."

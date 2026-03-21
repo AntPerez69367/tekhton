@@ -57,7 +57,7 @@ run_plan_generate() {
         echo "Date: $(date)"
         echo "Model: ${PLAN_GENERATION_MODEL}"
         echo "Max Turns: ${PLAN_GENERATION_MAX_TURNS}"
-        echo "Design file: ${design_file} ($(wc -l < "$design_file" | tr -d ' ') lines)"
+        echo "Design file: ${design_file} ($(count_lines < "$design_file") lines)"
         echo "=== System Prompt ==="
         echo "$prompt"
         echo "=== Session Start ==="
@@ -86,7 +86,7 @@ run_plan_generate() {
         local claude_md="${PROJECT_DIR}/CLAUDE.md"
         printf '%s\n' "$claude_md_content" > "$claude_md"
         local line_count
-        line_count=$(wc -l < "$claude_md" | tr -d ' ')
+        line_count=$(count_lines < "$claude_md")
         success "CLAUDE.md generated (${line_count} lines)."
         log "Log saved: ${log_file}"
         return 0

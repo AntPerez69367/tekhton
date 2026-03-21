@@ -7,6 +7,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
+TEKHTON_SESSION_DIR="$TMPDIR"
 
 # Set config defaults
 DRIFT_LOG_FILE="DRIFT_LOG.md"
@@ -20,6 +21,7 @@ TASK="Test task"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
+source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
 
 FAIL=0
 

@@ -1,13 +1,10 @@
 # Drift Log
 
 ## Metadata
-- Last audit: 2026-03-12
-- Runs since audit: 5
+- Last audit: 2026-03-21
+- Runs since audit: 3
 
 ## Unresolved Observations
+- [2026-03-21 | "Resolve all observations in NON_BLOCKING_LOG.md. For each unresolved item, apply the fix, then mark it resolved. Continue until no unresolved observations remain."] `stages/init_synthesize.sh` — file is 533 lines, exceeding the 300-line ceiling defined in reviewer.md. The coder's changes actually removed a line, so this was not introduced here, but it should be tracked for a future split (e.g., extract `_compress_synthesis_context` and `_synthesize_*` helpers into a `lib/init_synthesize_helpers.sh`).
 
 ## Resolved
-- [RESOLVED 2026-03-12] [2026-03-12 | "Implement  Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md"] `CLAUDE.md` Template Variables table calls the design content variable `PLAN_DESIGN_CONTENT`, but `stages/plan_generate.sh` exports it as `DESIGN_CONTENT` and `prompts/plan_generate.prompt.md` uses `{{DESIGN_CONTENT}}`. Fixed: renamed `PLAN_DESIGN_CONTENT` to `DESIGN_CONTENT` in the Template Variables table.
-- [RESOLVED 2026-03-12] [2026-03-11 | "Implement Milestone 7: Tests + Documentation"] CLAUDE.md:167-323 — The "Current Initiative" section describes milestones 1-7 as if they are pending work. Already resolved: header changed to "Completed Initiative", summary paragraph updated, all milestones marked [DONE].
-- [RESOLVED 2026-03-11] `lib/drift.sh:61-93` and `lib/drift.sh:465-496` — the AWK continuation-line joining block remains duplicated verbatim between `append_drift_observations()` and `append_nonblocking_notes()`. Extracted into `_awk_join_bullets()` shared helper.
-- [RESOLVED 2026-03-11] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] `prompts/plan_generate.prompt.md` instructs the agent to write CLAUDE.md "in the current working directory" without naming the path explicitly. Fixed: prompt now uses explicit `{{PROJECT_DIR}}/CLAUDE.md` path.

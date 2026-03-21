@@ -17,6 +17,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
+TEKHTON_SESSION_DIR="$TMPDIR"
 
 DRIFT_LOG_FILE="DRIFT_LOG.md"
 ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
@@ -27,6 +28,7 @@ TASK="human action lifecycle test"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
+source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
 
 FAIL=0
 

@@ -40,6 +40,11 @@ for role in coder reviewer tester jr-coder; do
 done
 echo "# Rules" > "${PROJECT_DIR}/CLAUDE.md"
 
+# Clear any environment variables that might leak from a prior pipeline run
+# (declare -gx in _parse_config_file exports config values into the environment)
+unset ARCHITECTURE_LOG_FILE DRIFT_LOG_FILE HUMAN_ACTION_FILE
+unset DRIFT_OBSERVATION_THRESHOLD DRIFT_RUNS_SINCE_AUDIT_THRESHOLD DESIGN_FILE
+
 # Source common + config
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/config.sh"
@@ -73,6 +78,12 @@ DRIFT_OBSERVATION_THRESHOLD=15
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=10
 DESIGN_FILE="docs/design.md"
 EOF
+
+# Clear variables before reloading so each test starts from a clean slate.
+# Without this, a future Test 3 re-verifying defaults would see stale values
+# from Test 2's pipeline.conf (same class of bug as the original unset fix).
+unset ARCHITECTURE_LOG_FILE DRIFT_LOG_FILE HUMAN_ACTION_FILE
+unset DRIFT_OBSERVATION_THRESHOLD DRIFT_RUNS_SINCE_AUDIT_THRESHOLD DESIGN_FILE
 
 # Reload config with custom values
 load_config

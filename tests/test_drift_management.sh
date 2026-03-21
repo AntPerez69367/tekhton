@@ -7,6 +7,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
+TEKHTON_SESSION_DIR="$TMPDIR"
 
 # Set config defaults that drift.sh expects
 DRIFT_LOG_FILE="DRIFT_LOG.md"
@@ -18,6 +19,7 @@ TASK="Implement test feature"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
+source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
 
 FAIL=0
 

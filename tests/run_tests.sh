@@ -29,14 +29,14 @@ run_test() {
         return
     fi
 
-    if bash "$test_file" > /dev/null 2>&1; then
+    if bash "$test_file" < /dev/null > /dev/null 2>&1; then
         echo -e "${GREEN}PASS${NC} ${test_name}"
         PASS=$((PASS + 1))
     else
         echo -e "${RED}FAIL${NC} ${test_name}"
         # Re-run with output for debugging
         echo "  --- output ---"
-        bash "$test_file" 2>&1 | sed 's/^/  /' || true
+        bash "$test_file" < /dev/null 2>&1 | sed 's/^/  /' || true
         echo "  --- end ---"
         FAIL=$((FAIL + 1))
     fi
