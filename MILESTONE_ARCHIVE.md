@@ -2888,3 +2888,86 @@ and guide the user to the appropriate next step (--plan or --replan).
 - Milestone 20 (incremental rescan) adds `--rescan` for index updates
 - Milestone 21 (agent synthesis) uses PROJECT_INDEX.md to generate full
   CLAUDE.md and DESIGN.md
+
+---
+
+## Archived: 2026-03-21 — Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 20: Incremental Rescan & Index Maintenance
+<!-- milestone-meta
+id: "20"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
+
+Add `--rescan` command that updates PROJECT_INDEX.md incrementally using git diff
+since the last scan. This keeps the project index current without repeating the
+full crawl cost. Integrates with the existing `--replan` flow so brownfield
+projects can keep their index and documents in sync as the codebase evolves.
+
+**Files to create:**
+- `lib/rescan.sh` — Incremental rescan library:
+  - `rescan_project(project_dir, budget_chars)` — Main entry point. If
+    PROJECT_INDEX.md exists and has a `Last-Scan` timestamp, performs
+    incremental scan. Otherwise falls back to full crawl.
+  - `_get_changed_files_since_scan(project_dir, last_scan_commit)` — Uses
+    `git diff --name-status` to get added, modified, deleted, and renamed
+    files since the recorded scan commit. Returns structured list.
+  - `_update_index_sections(index_file, changed_files, detection_results)` —
+    Surgically updates the affected sections of PROJECT_INDEX.md:
+    - File inventory: add new files, remove deleted files, update modified
+      file line counts
+    - Directory tree: regenerate only if new directories were created or
+      directories were removed
+    - Dependencies: regenerate if any manifest file changed
+    - Sampled files: re-sample if any sampled file was modified or deleted
+    - Config inventory: regenerate if config files changed
+  - `_record_scan_metadata(index_file, commit_hash)` — Writes scan metadata
+    to PROJECT_INDEX.md header: scan timestamp, git commit hash, file count,
+    total lines, scan duration.
+  - `_detect_significant_changes(changed_files)` — Flags changes that likely
+    require CLAUDE.md/DESIGN.md updates: new directories, new manifest files,
+    new entry points, deleted core files, framework changes. Returns a
+    "change significance" score: `trivial` (only content changes),
+    `moderate` (new files in existing structure), `major` (structural changes,
+    new dependencies, new directories).
+
+**Files to modify:**
+- `tekhton.sh` — Add `--rescan` flag parsing. When active, run rescan and exit.
+  Add `--rescan --full` variant that forces full re-crawl.
+- `lib/replan_brownfield.sh` — In `_generate_codebase_summary()`, if
+  PROJECT_INDEX.md exists and is recent (within 5 runs), use it instead of
+  the ad-hoc tree+git-log generation. Fall back to the existing approach if
+  no index exists.
+
+**Acceptance criteria:**
+- `--rescan` on a repo with 10 changed files completes in under 5 seconds
+- `--rescan` updates the file inventory to reflect added, deleted, and
+  modified files
+- `--rescan` regenerates the dependency section when package.json changes
+- `--rescan` re-samples modified key files while preserving unchanged samples
+- `--rescan --full` performs a complete re-crawl regardless of change volume
+- Scan metadata (commit hash, timestamp) is correctly recorded and used for
+  subsequent incremental scans
+- Change significance correctly identifies structural changes (new dirs, new
+  deps) vs trivial changes (content edits)
+- `--replan` consumes PROJECT_INDEX.md when available, improving replan quality
+- Missing git history (non-git repo) falls back to full crawl gracefully
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all new/modified files
+
+**Watch For:**
+- `git diff --name-status` may not capture all changes if the user has
+  uncommitted work. Consider using `git status --porcelain` as well to
+  capture working tree changes.
+- Renamed files (`R100 old/path new/path`) need special handling — the old
+  path should be removed from inventory and the new path added.
+- The scan commit hash must be validated on rescan. If the recorded commit
+  no longer exists (rebased away), fall back to full crawl.
+- Incremental dependency parsing must handle the case where a manifest file
+  was deleted (remove that language's dependency section entirely).
+
+**Seeds Forward:**
+- Milestone 21 uses the up-to-date index for synthesis
+- Future V3 `--watch` mode could trigger automatic rescan on file changes
