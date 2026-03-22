@@ -4,7 +4,9 @@
 #
 # Sourced by tekhton.sh — do not run directly.
 # Provides: check_indexer_available(), run_repo_map(), get_repo_map_slice(),
-#           invalidate_repo_map_cache(), detect_repo_languages()
+#           invalidate_repo_map_cache(), infer_test_counterparts()
+# See also: indexer_helpers.sh (detect_repo_languages, validate_indexer_config,
+#           extract_files_from_coder_summary)
 #
 # All functions gracefully degrade when Python/tree-sitter is unavailable.
 # When REPO_MAP_ENABLED=true but indexer is not available, a warning is logged
@@ -135,9 +137,10 @@ run_repo_map() {
     return 0
 }
 
-# --- Repo map slicing (stub — Milestone 5 wires into stages) -----------------
+# --- Repo map slicing ---------------------------------------------------------
 
 # Extract repo map entries for specific files from the cached map.
+# Uses basename + suffix matching to avoid false positives from substring match.
 # Args:
 #   $1 — space-separated list of file paths to extract
 # Output: filtered markdown repo map on stdout
@@ -154,13 +157,13 @@ get_repo_map_slice() {
         return 0
     fi
 
-    # Filter: keep only lines that start with "## " followed by a matching path,
+    # Filter: keep only "## path" headings that match a requested file,
     # plus all subsequent lines until the next "## " heading.
     local result=""
     local include=false
     local line
+    local match_count=0
 
-    # Convert space-separated file_list to array to avoid unquoted expansion
     local -a file_array=()
     read -ra file_array <<< "$file_list"
 
@@ -170,8 +173,18 @@ get_repo_map_slice() {
             local path="${line#\#\# }"
             local f
             for f in "${file_array[@]}"; do
-                if [[ "$path" == *"$f"* ]]; then
+                # Exact match or suffix match (path ends with /file)
+                if [[ "$path" == "$f" ]] || [[ "$path" == */"$f" ]]; then
                     include=true
+                    match_count=$((match_count + 1))
+                    break
+                fi
+                # Also match if the requested path is a suffix of the map path
+                local f_basename="${f##*/}"
+                local p_basename="${path##*/}"
+                if [[ -n "$f_basename" ]] && [[ "$p_basename" == "$f_basename" ]]; then
+                    include=true
+                    match_count=$((match_count + 1))
                     break
                 fi
             done
@@ -186,6 +199,66 @@ get_repo_map_slice() {
         return 0
     fi
     return 1
+}
+
+# --- Test counterpart inference -----------------------------------------------
+
+# infer_test_counterparts — Given a space-separated list of source files,
+# return the list augmented with likely test file counterparts.
+# Heuristic: foo.py → test_foo.py, foo.ts → foo.test.ts, foo.sh → test_foo.sh
+# Output: space-separated file paths (originals + inferred test paths)
+# Returns: 0 always
+infer_test_counterparts() {
+    local file_list="${1:-}"
+    local result="$file_list"
+
+    local f
+    local -a files=()
+    read -ra files <<< "$file_list"
+
+    for f in "${files[@]}"; do
+        local base="${f##*/}"
+        local name="${base%.*}"
+        local ext="${base##*.}"
+
+        # Skip files that are already test files
+        if [[ "$name" == test_* ]] || [[ "$name" == *_test ]] || \
+           [[ "$name" == *.test ]] || [[ "$name" == *.spec ]]; then
+            continue
+        fi
+
+        # Generate counterparts based on language conventions
+        case "$ext" in
+            py)
+                result="${result} test_${name}.${ext}"
+                result="${result} ${name}_test.${ext}"
+                ;;
+            ts|tsx|js|jsx)
+                result="${result} ${name}.test.${ext}"
+                result="${result} ${name}.spec.${ext}"
+                ;;
+            sh|bash)
+                result="${result} test_${name}.${ext}"
+                ;;
+            go)
+                result="${result} ${name}_test.${ext}"
+                ;;
+            rs)
+                # Rust tests are usually inline, but integration tests live in tests/
+                result="${result} tests/${name}.${ext}"
+                ;;
+            java)
+                result="${result} ${name}Test.${ext}"
+                ;;
+            rb)
+                result="${result} ${name}_spec.${ext}"
+                result="${result} test_${name}.${ext}"
+                ;;
+        esac
+    done
+
+    echo "$result"
+    return 0
 }
 
 # --- Cache invalidation -------------------------------------------------------
@@ -203,83 +276,4 @@ invalidate_repo_map_cache() {
         log "[indexer] Cache invalidated: ${cache_dir}"
     fi
     return 0
-}
-
-# --- Language auto-detection --------------------------------------------------
-
-# Detect programming languages in the project by scanning file extensions.
-# Scans only the top level of the project directory (fast, not recursive).
-# Output: space-separated list of detected language names
-# Returns: 0 always
-detect_repo_languages() {
-    local project_dir="${1:-$PROJECT_DIR}"
-    local languages=()
-
-    # Map file extensions to tree-sitter language names
-    # Only scan one level deep for speed
-    local ext
-    local -A seen=()
-
-    while IFS= read -r -d '' file; do
-        ext="${file##*.}"
-        case "$ext" in
-            py)   [[ -z "${seen[python]:-}" ]]     && languages+=("python")     && seen[python]=1 ;;
-            js)   [[ -z "${seen[javascript]:-}" ]]  && languages+=("javascript") && seen[javascript]=1 ;;
-            ts)   [[ -z "${seen[typescript]:-}" ]]  && languages+=("typescript") && seen[typescript]=1 ;;
-            tsx)  [[ -z "${seen[typescript]:-}" ]]   && languages+=("typescript") && seen[typescript]=1 ;;
-            go)   [[ -z "${seen[go]:-}" ]]          && languages+=("go")         && seen[go]=1 ;;
-            rs)   [[ -z "${seen[rust]:-}" ]]        && languages+=("rust")       && seen[rust]=1 ;;
-            java) [[ -z "${seen[java]:-}" ]]        && languages+=("java")       && seen[java]=1 ;;
-            c)    [[ -z "${seen[c]:-}" ]]           && languages+=("c")          && seen[c]=1 ;;
-            cpp|cc|cxx) [[ -z "${seen[cpp]:-}" ]]   && languages+=("cpp")        && seen[cpp]=1 ;;
-            rb)   [[ -z "${seen[ruby]:-}" ]]        && languages+=("ruby")       && seen[ruby]=1 ;;
-            sh|bash) [[ -z "${seen[bash]:-}" ]]     && languages+=("bash")       && seen[bash]=1 ;;
-        esac
-    done < <(find "$project_dir" -maxdepth 1 -type f -print0 2>/dev/null)
-
-    echo "${languages[*]}"
-    return 0
-}
-
-# --- Config validation --------------------------------------------------------
-
-# Validate indexer-related config values.
-# Called during startup when REPO_MAP_ENABLED=true.
-# Returns: 0 if valid, 1 if invalid (with error messages on stderr)
-validate_indexer_config() {
-    local valid=true
-
-    # Token budget must be a positive integer
-    if [[ -n "${REPO_MAP_TOKEN_BUDGET:-}" ]]; then
-        if ! [[ "$REPO_MAP_TOKEN_BUDGET" =~ ^[1-9][0-9]*$ ]]; then
-            echo "[✗] REPO_MAP_TOKEN_BUDGET must be a positive integer (got: ${REPO_MAP_TOKEN_BUDGET})" >&2
-            valid=false
-        fi
-    fi
-
-    # History max records must be a positive integer
-    if [[ -n "${REPO_MAP_HISTORY_MAX_RECORDS:-}" ]]; then
-        if ! [[ "$REPO_MAP_HISTORY_MAX_RECORDS" =~ ^[1-9][0-9]*$ ]]; then
-            echo "[✗] REPO_MAP_HISTORY_MAX_RECORDS must be a positive integer (got: ${REPO_MAP_HISTORY_MAX_RECORDS})" >&2
-            valid=false
-        fi
-    fi
-
-    # Languages must be "auto" or a comma-separated list of known language names
-    if [[ -n "${REPO_MAP_LANGUAGES:-}" ]] && [[ "$REPO_MAP_LANGUAGES" != "auto" ]]; then
-        local lang
-        local known_langs="python javascript typescript go rust java c cpp ruby bash"
-        IFS=',' read -ra lang_list <<< "$REPO_MAP_LANGUAGES"
-        for lang in "${lang_list[@]}"; do
-            lang="${lang// /}"  # strip whitespace
-            if [[ " $known_langs " != *" $lang "* ]]; then
-                warn "[indexer] Unknown language in REPO_MAP_LANGUAGES: ${lang}"
-            fi
-        done
-    fi
-
-    if [[ "$valid" == "true" ]]; then
-        return 0
-    fi
-    return 1
 }

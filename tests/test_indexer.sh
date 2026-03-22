@@ -18,6 +18,8 @@ PROJECT_DIR="/tmp"
 export PROJECT_DIR
 
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/indexer.sh"
 
 # =============================================================================
