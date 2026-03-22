@@ -201,9 +201,9 @@ fi
 
 GITIGNORE_FILE="${PROJECT_DIR}/.gitignore"
 if [ -f "$GITIGNORE_FILE" ]; then
-    if ! grep -qF ".claude/indexer-venv" "$GITIGNORE_FILE" 2>/dev/null; then
-        _warn ".claude/indexer-venv/ is not in .gitignore — consider adding it."
+    if ! grep -qF "$VENV_DIR_NAME" "$GITIGNORE_FILE" 2>/dev/null; then
+        _warn "${VENV_DIR_NAME}/ is not in .gitignore — consider adding it."
     fi
 elif [ -d "${PROJECT_DIR}/.git" ]; then
-    _warn "No .gitignore found. Consider creating one with .claude/indexer-venv/ in it."
+    _warn "No .gitignore found. Consider creating one with ${VENV_DIR_NAME}/ in it."
 fi

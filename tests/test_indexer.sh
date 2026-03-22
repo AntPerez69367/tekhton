@@ -395,6 +395,132 @@ fi
 rm -rf "$TMPDIR_CPP"
 
 # =============================================================================
+# get_repo_map_slice — empty REPO_MAP_CONTENT returns 1
+# =============================================================================
+
+echo "=== get_repo_map_slice: empty content ==="
+
+REPO_MAP_CONTENT=""
+if get_repo_map_slice "src/any.py" >/dev/null 2>&1; then
+    fail "get_repo_map_slice should return 1 when REPO_MAP_CONTENT is empty"
+else
+    pass "get_repo_map_slice returns 1 when REPO_MAP_CONTENT is empty"
+fi
+
+# =============================================================================
+# get_repo_map_slice — empty file_list returns all content
+# =============================================================================
+
+echo "=== get_repo_map_slice: empty file_list returns all ==="
+
+REPO_MAP_CONTENT="## src/main.py
+  def hello()"
+
+slice=$(get_repo_map_slice "")
+if echo "$slice" | grep -q "## src/main.py"; then
+    pass "get_repo_map_slice with empty file_list returns full content"
+else
+    fail "get_repo_map_slice with empty file_list should return full content, got: '${slice}'"
+fi
+
+# =============================================================================
+# get_repo_map_slice — full match returns the matching section
+# =============================================================================
+
+echo "=== get_repo_map_slice: full match ==="
+
+REPO_MAP_CONTENT="## src/main.py
+  def hello()
+  def world()
+
+## src/utils.py
+  def helper()"
+
+slice=$(get_repo_map_slice "src/main.py")
+if echo "$slice" | grep -q "## src/main.py"; then
+    pass "get_repo_map_slice includes matched section header"
+else
+    fail "get_repo_map_slice should include matched section, got: '${slice}'"
+fi
+
+if ! echo "$slice" | grep -q "## src/utils.py"; then
+    pass "get_repo_map_slice excludes non-matched section"
+else
+    fail "get_repo_map_slice should exclude non-matched section, got: '${slice}'"
+fi
+
+# =============================================================================
+# get_repo_map_slice — partial match (one of two requested files matches)
+# =============================================================================
+
+echo "=== get_repo_map_slice: partial match ==="
+
+REPO_MAP_CONTENT="## src/main.py
+  def hello()
+
+## src/utils.py
+  def helper()"
+
+slice=$(get_repo_map_slice "src/main.py src/missing.py")
+if echo "$slice" | grep -q "## src/main.py"; then
+    pass "get_repo_map_slice partial match includes the file that exists"
+else
+    fail "get_repo_map_slice partial match should include existing file, got: '${slice}'"
+fi
+
+if ! echo "$slice" | grep -q "## src/utils.py"; then
+    pass "get_repo_map_slice partial match excludes non-requested section"
+else
+    fail "get_repo_map_slice partial match should exclude non-requested section, got: '${slice}'"
+fi
+
+# =============================================================================
+# get_repo_map_slice — no match branch returns 1
+# =============================================================================
+
+echo "=== get_repo_map_slice: no match ==="
+
+REPO_MAP_CONTENT="## src/main.py
+  def hello()
+
+## src/utils.py
+  def helper()"
+
+if get_repo_map_slice "src/nonexistent.py" >/dev/null 2>&1; then
+    fail "get_repo_map_slice should return 1 when no files match (no match branch)"
+else
+    pass "get_repo_map_slice returns 1 when no files match (no match branch)"
+fi
+
+# =============================================================================
+# get_repo_map_slice — multiple files requested, both match
+# =============================================================================
+
+echo "=== get_repo_map_slice: multiple files both match ==="
+
+REPO_MAP_CONTENT="## src/a.py
+  def func_a()
+
+## src/b.py
+  def func_b()
+
+## src/c.py
+  def func_c()"
+
+slice=$(get_repo_map_slice "src/a.py src/c.py")
+if echo "$slice" | grep -q "## src/a.py" && echo "$slice" | grep -q "## src/c.py"; then
+    pass "get_repo_map_slice returns both matched sections"
+else
+    fail "get_repo_map_slice should return both matched sections, got: '${slice}'"
+fi
+
+if ! echo "$slice" | grep -q "## src/b.py"; then
+    pass "get_repo_map_slice excludes the unmatched middle section"
+else
+    fail "get_repo_map_slice should exclude unmatched section, got: '${slice}'"
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 

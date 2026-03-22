@@ -99,8 +99,7 @@ run_repo_map() {
 
     local repo_map_script="${TEKHTON_HOME}/tools/repo_map.py"
     if [ ! -f "$repo_map_script" ]; then
-        # Milestone 4 will create this file
-        log "[indexer] repo_map.py not yet implemented — skipping."
+        warn "[indexer] repo_map.py not found at ${repo_map_script}."
         return 1
     fi
 
@@ -113,19 +112,26 @@ run_repo_map() {
     local languages="${REPO_MAP_LANGUAGES:-auto}"
 
     # Invoke the Python tool
+    # Exit codes: 0 = success, 1 = partial (best-effort), 2 = fatal
+    local exit_code=0
     REPO_MAP_CONTENT=$("$venv_python" "$repo_map_script" \
         --root "$PROJECT_DIR" \
         --task "$task" \
         --budget "$budget" \
         --cache-dir "$cache_dir" \
         --languages "$languages" \
-        2>/dev/null) || {
+        2>/dev/null) || exit_code=$?
+
+    if [[ "$exit_code" -eq 2 ]] || [[ -z "$REPO_MAP_CONTENT" ]]; then
         warn "[indexer] repo_map.py failed — falling back to no repo map."
         REPO_MAP_CONTENT=""
         return 1
-    }
+    fi
 
-    export REPO_MAP_CONTENT
+    if [[ "$exit_code" -eq 1 ]]; then
+        log "[indexer] Partial repo map generated (some files could not be parsed)."
+    fi
+
     return 0
 }
 
