@@ -45,6 +45,9 @@ init_dashboard() {
     local dash_dir="${project_dir}/${DASHBOARD_DIR:-.claude/dashboard}"
     mkdir -p "${dash_dir}/data" 2>/dev/null || true
 
+    # Copy static UI files from templates/watchtower/
+    _copy_static_files "$dash_dir"
+
     # Generate initial empty data files
     _write_js_file "${dash_dir}/data/run_state.js" "TK_RUN_STATE" '{"pipeline_status":"initializing","stages":{}}'
     _write_js_file "${dash_dir}/data/timeline.js" "TK_TIMELINE" '[]'
@@ -52,6 +55,25 @@ init_dashboard() {
     _write_js_file "${dash_dir}/data/security.js" "TK_SECURITY" '{"findings":[]}'
     _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" '{}'
     _write_js_file "${dash_dir}/data/metrics.js" "TK_METRICS" '{"runs":[]}'
+}
+
+# _copy_static_files DASH_DIR
+# Copies templates/watchtower/* (index.html, style.css, app.js) into the
+# dashboard directory. Only overwrites if source is newer than destination.
+_copy_static_files() {
+    local dash_dir="$1"
+    local src_dir="${TEKHTON_HOME:-$(dirname "$(dirname "${BASH_SOURCE[0]}")")}/templates/watchtower"
+
+    if [[ ! -d "$src_dir" ]]; then
+        return 0
+    fi
+
+    local file
+    for file in index.html style.css app.js; do
+        if [[ -f "${src_dir}/${file}" ]]; then
+            cp "${src_dir}/${file}" "${dash_dir}/${file}"
+        fi
+    done
 }
 
 # cleanup_dashboard [PROJECT_DIR]
@@ -105,14 +127,19 @@ emit_dashboard_run_state() {
         ms_json="{\"id\":\"$(_json_escape "$ms_id")\",\"title\":\"$(_json_escape "$ms_title")\"}"
     fi
 
+    # Convert DASHBOARD_REFRESH_INTERVAL (seconds) to milliseconds for the UI
+    local refresh_ms
+    refresh_ms=$(( ${DASHBOARD_REFRESH_INTERVAL:-5} * 1000 ))
+
     local json
-    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s"}' \
+    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","refresh_interval_ms":%d}' \
         "$(_json_escape "$status")" \
         "$(_json_escape "$current_stage")" \
         "$ms_json" \
         "$stages_json" \
         "${waiting:+\"$(_json_escape "$waiting")\"}" \
-        "$(_json_escape "$started_at")")
+        "$(_json_escape "$started_at")" \
+        "$refresh_ms")
     # Fix null for waiting_for when empty
     if [[ -z "$waiting" ]]; then
         json="${json/\"waiting_for\":,/\"waiting_for\":null,}"

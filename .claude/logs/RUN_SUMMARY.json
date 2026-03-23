@@ -1,10 +1,10 @@
 {
-  "milestone": "13",
+  "milestone": "14",
   "outcome": "success",
   "attempts": 1,
-  "total_agent_calls": 7,
+  "total_agent_calls": 6,
   "wall_clock_seconds": 0,
-  "files_changed": [".claude/logs/metrics.jsonl",".claude/milestones/MANIFEST.cfg",".claude/milestones/m13-watchtower-data-layer.md",".claude/settings.local.json","DRIFT_LOG.md","INTAKE_REPORT.md","JR_CODER_SUMMARY.md","MILESTONE_ARCHIVE.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","SECURITY_NOTES.md","TESTER_REPORT.md","lib/agent.sh","lib/config.sh","lib/config_defaults.sh","lib/finalize.sh","lib/hooks.sh","lib/milestone_ops.sh","lib/milestone_split.sh","tekhton.sh","tests/test_finalize_run.sh"],
+  "files_changed": [".claude/logs/metrics.jsonl",".claude/milestones/MANIFEST.cfg",".claude/milestones/m14-watchtower-ui.md","DRIFT_LOG.md","INTAKE_REPORT.md","MILESTONE_ARCHIVE.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","SECURITY_NOTES.md","TESTER_REPORT.md","lib/dashboard.sh","templates/pipeline.conf.example"],
   "error_classes_encountered": [],
   "recovery_actions_taken": [],
   "rework_cycles": 1,
@@ -13,5 +13,5 @@
   "security_rework_cycles": 0,
   "intake_verdict": "PASS",
   "intake_confidence": 88,
-  "timestamp": "2026-03-23T21:06:20Z"
+  "timestamp": "2026-03-23T21:40:16Z"
 }
