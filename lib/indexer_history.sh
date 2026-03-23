@@ -218,41 +218,17 @@ _prune_task_history() {
 # =============================================================================
 
 get_indexer_stats() {
-    if [[ "$INDEXER_AVAILABLE" != "true" ]]; then
-        echo "{}"
-        return 1
-    fi
+    # Return stats from the most recent run_repo_map() invocation.
+    # These globals are populated as side effects in indexer.sh.
+    local hit_rate="${INDEXER_CACHE_HIT_RATE:-}"
+    local gen_time="${INDEXER_GENERATION_TIME_MS:-}"
 
-    local venv_python
-    if ! venv_python=$(_indexer_find_venv_python); then
-        echo "{}"
-        return 1
-    fi
-
-    local repo_map_script="${TEKHTON_HOME}/tools/repo_map.py"
-    if [[ ! -f "$repo_map_script" ]]; then
-        echo "{}"
-        return 1
-    fi
-
-    local cache_dir="${REPO_MAP_CACHE_DIR:-.claude/index}"
-    if [[ "$cache_dir" != /* ]]; then
-        cache_dir="${PROJECT_DIR}/${cache_dir}"
-    fi
-
-    # Run with a minimal task just to get stats — budget 1 to minimize work
-    local stats_output=""
-    stats_output=$("$venv_python" "$repo_map_script" \
-        --root "$PROJECT_DIR" \
-        --cache-dir "$cache_dir" \
-        --budget 1 \
-        --task "" \
-        --stats 2>&1 >/dev/null | grep -E '^\{' | head -1) || true
-
-    if [[ -n "$stats_output" ]]; then
-        echo "$stats_output"
+    if [[ -n "$hit_rate" ]] || [[ -n "$gen_time" ]]; then
+        printf '{"hit_rate":%s,"generation_time_ms":%s}' \
+            "${hit_rate:-0}" "${gen_time:-0}"
         return 0
     fi
+
     echo "{}"
     return 1
 }

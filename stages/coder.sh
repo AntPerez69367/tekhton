@@ -859,4 +859,13 @@ ${GIT_DIFF_STAT}
             fi
         fi
     fi
+
+    # --- Record task→file association for personalized ranking (M7) ----------
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+        local _modified_files
+        _modified_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
+        if [[ -n "$_modified_files" ]]; then
+            record_task_file_association "$TASK" "$_modified_files" || true
+        fi
+    fi
 }
