@@ -353,6 +353,16 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 - Brownfield deep analysis (workspaces, services, CI/CD, IaC, doc quality)
 - Watchtower dashboard (static HTML, 4-tab interface, auto-refresh)
 - UI / dashboard for pipeline transparency and milestone progress
+- Express mode (zero-config execution with auto-detection)
+- Configurable pipeline order with TDD test-first support
+- Project health scoring with belt system
+- Autonomous runtime improvements (quota-aware, milestone reset)
+- Pipeline diagnostics and recovery guidance
+- Test integrity audit (6-point rubric)
+- Version migration framework with watermarking
+- Distribution with install script and update checking
+- Documentation site (MkDocs + GitHub Pages)
+- DevX improvements: init UX, dry-run, rollback, human notes CLI
 
 ### Out of Scope (Future / V4)
 - Parallel milestone execution (multiple agent teams in worktrees)
@@ -428,6 +438,8 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 | Workspace detection | on | DETECT_WORKSPACES_ENABLED=false |
 | CI/CD inference | on | DETECT_CI_ENABLED=false |
 | Doc quality assessment | on | DOC_QUALITY_ASSESSMENT_ENABLED=false |
+| Express mode | **on** | TEKHTON_EXPRESS_ENABLED=false to require --init |
+| Pipeline order (TDD) | standard | PIPELINE_ORDER=test_first for TDD |
 | Dry-run cache | on | DRY_RUN_CACHE_TTL (default 3600s) |
 | Run checkpoint | **on** | CHECKPOINT_ENABLED=false to disable |
 | Health scoring | **on** | HEALTH_ENABLED=false to disable |
@@ -1037,6 +1049,8 @@ tekhton "task" or tekhton --milestone
 - `mcp.sh` — MCP server lifecycle management (M06)
 - `detect_ai_artifacts.sh` — AI tool config detection (M11)
 - `artifact_handler.sh` — artifact archive/merge/tidy workflow (M11)
+- `express.sh` — zero-config detection + in-memory config (M26)
+- `pipeline_order.sh` — configurable stage ordering + TDD support (M27)
 - `dashboard.sh` — Watchtower data emission + lifecycle (M13)
 - `dashboard_parsers.sh` — Report parsing for dashboard data (M13)
 - `health.sh` — Health scoring engine + assessment lifecycle (M15)
@@ -1055,10 +1069,12 @@ tekhton "task" or tekhton --milestone
 - `intake_scan.prompt.md` — clarity evaluation prompt (M10)
 - `intake_tweak.prompt.md` — milestone refinement prompt (M10)
 - `artifact_merge.prompt.md` — AI config merge prompt (M11)
+- `tester_write_failing.prompt.md` — TDD pre-flight test prompt (M27)
 
 **templates/ (copied to target projects):**
 - `security.md` — security agent role definition (M09)
 - `intake.md` — intake/PM agent role definition (M10)
+- `express_pipeline.conf` — auto-generated config template (M26)
 
 **lib/ (DevX improvements):**
 - `init_report.sh` — Post-init focused summary + INIT_REPORT.md (M22)
@@ -1158,6 +1174,125 @@ can recommend it.
 
 ---
 
+## System Design: Express Mode / Zero-Config Execution (M26)
+
+### Problem
+
+Tekhton requires `--init` before it can do anything. That's 4 steps (install →
+init → configure → run) before a developer sees value. Superpowers and similar
+tools let you start immediately. For evaluation, one-off tasks, and quick fixes,
+the configuration ceremony is a barrier to adoption.
+
+### Design
+
+**Three-tier onboarding:**
+
+| Tier | Entry point | Time to first run | Depth |
+|------|-------------|-------------------|-------|
+| Tier 0: Express | `tekhton "task"` (no init) | ~5 seconds | Auto-detected defaults |
+| Tier 1: Quick init | `tekhton --init --quick` | ~15 seconds | Detection + confirm |
+| Tier 2: Full init | `tekhton --init` | ~10 minutes | Interview + synthesis |
+
+**Express mode flow:**
+```
+tekhton "Add login page" (no pipeline.conf exists)
+  ├─ Detect: "No config found. Running Express Mode."
+  ├─ Fast detection (<3s): language, build cmd, test cmd, project name
+  ├─ Generate in-memory config with conservative defaults
+  ├─ Run normal pipeline (scout → coder → security → review → test)
+  └─ On success: persist .claude/pipeline.conf with detected values
+```
+
+**Key constraints:**
+- Express detection is a FAST SUBSET of M12's full detection engine. No workspace
+  detection, no CI/CD parsing, no doc quality assessment. Those are --init features.
+- Agent role files fall back to built-in templates from `$TEKHTON_HOME/templates/`
+  when project-local files don't exist.
+- Express mode is fully resumable (state saved same as configured mode).
+- Config persistence is opt-out (EXPRESS_PERSIST_CONFIG=false for ephemeral mode).
+
+### Config Keys
+
+```bash
+TEKHTON_EXPRESS_ENABLED=true     # Allow zero-config execution
+EXPRESS_PERSIST_CONFIG=true      # Write config on successful completion
+EXPRESS_PERSIST_ROLES=false      # Don't copy role files (use built-in templates)
+```
+
+### Why This Design
+
+- The "Docker run" analogy: `docker run nginx` works without a Dockerfile. Then you
+  write a Dockerfile when you want to customize. Express mode is Tekhton's equivalent.
+- Conservative defaults mean express mode is safe — Sonnet model, security ON, intake
+  ON, standard turn limits. It won't burn quota or skip safety.
+- Persisting config on completion means the second run is faster and customizable.
+- The fallback to built-in role templates requires exactly one code change (role file
+  resolution) and works for all agent types.
+
+---
+
+## System Design: Configurable Pipeline Order / TDD Support (M27)
+
+### Problem
+
+Tekhton's stage order is hardcoded: Scout → Coder → Security → Review → Test.
+This is optimal for feature development (unknown API surface), but suboptimal for
+bug fixes (known interface) where TDD's test-first approach produces better results
+with fewer rework cycles.
+
+### Design
+
+**Pipeline order as config:**
+
+```bash
+PIPELINE_ORDER=standard      # Scout → Coder → Security → Review → Test
+PIPELINE_ORDER=test_first    # Scout → Test(fail) → Coder → Security → Review → Test(verify)
+PIPELINE_ORDER=auto          # V4: PM agent decides per-milestone
+```
+
+**Test-first flow:**
+```
+Scout → Tester (write_failing) → Coder → Build Gate → Security → Review → Tester (verify_passing)
+```
+
+The tester runs twice with different modes:
+1. **write_failing**: Write tests against acceptance criteria that SHOULD FAIL.
+   Output: TESTER_PREFLIGHT.md with test files and expected failures.
+2. **verify_passing**: Normal test pass (existing behavior). Verify the coder's
+   implementation makes all tests pass.
+
+The coder sees TESTER_PREFLIGHT.md as context: "Make these tests pass."
+
+**When test-first wins vs loses:**
+
+| Scenario | Best order | Why |
+|----------|-----------|-----|
+| Bug fix (known interface) | test_first | Test encodes expected behavior, coder fixes |
+| New feature (unknown API) | standard | Tester can't predict the interface |
+| Refactoring | standard | Tests test existing behavior, not new |
+| Adding to existing module | test_first | Interface exists, test contracts are clear |
+
+### Config Keys
+
+```bash
+PIPELINE_ORDER=standard                  # standard | test_first | auto (V4)
+TDD_PREFLIGHT_FILE=TESTER_PREFLIGHT.md  # Pre-flight test output
+TESTER_WRITE_FAILING_MAX_TURNS=10       # Budget for test-write pass
+```
+
+### Why This Design
+
+- Config-driven ordering (not hardcoded) sets the foundation for V4's `auto` mode
+  where the PM agent chooses per-milestone.
+- Two tester invocations is the simplest implementation: same stage function, different
+  mode variable, different prompt. No new stage infrastructure needed.
+- The coder seeing TESTER_PREFLIGHT.md gives it a clear "done" signal — all tests pass
+  = done. This reduces scope creep and over-engineering.
+- test_first costs more (two tester passes) but produces more targeted code. The
+  trade-off is explicit in the config comments so users make an informed choice.
+
+---
+
 ## V4 Forward Seeds
 
 The following capabilities are explicitly designed for but not built in V3:
@@ -1185,3 +1320,12 @@ The following capabilities are explicitly designed for but not built in V3:
 - **Quota intelligence** — V4 ships default quota check scripts for common
   setups (Pro subscription, API key, team plan). Parallel workers share a
   quota pool to prevent N workers exhausting quota N times faster.
+- **Multi-platform support** — Abstraction layer for Cursor, Codex, Gemini CLI,
+  OpenCode support. Agent invocation, hook mechanisms, and prompt formats
+  adapted per platform. Express mode (M26) serves as the common entry point.
+  Competitive pressure from Superpowers (5+ platforms today). V4 because it
+  requires abstracting the entire agent invocation path.
+- **Auto pipeline ordering** — PM agent (M10) evaluates each milestone and
+  recommends standard or test_first order based on task type. Bug fixes →
+  test_first. New features → standard. Data-driven from rework cycle history.
+  Requires PM maturity and calibration data from V3 runs.
