@@ -531,3 +531,23 @@ SEED_CONTRACTS_ENABLED=false
 #                                to annotate (e.g. grep -rn "^class\|^  void" lib/)
 # INLINE_CONTRACT_PATTERN=""
 # INLINE_CONTRACT_SEARCH_CMD=""
+
+# --- Dashboard / Watchtower (static HTML pipeline dashboard) ------------------
+# The dashboard emits data/*.js files into .claude/dashboard/ on every run.
+# Open .claude/dashboard/index.html in a browser to view pipeline state.
+
+# Master toggle for dashboard data emission (default: true)
+# DASHBOARD_ENABLED=true
+
+# Auto-refresh interval in seconds when pipeline is running (default: 5)
+# DASHBOARD_REFRESH_INTERVAL=5
+
+# Maximum timeline events to include in the dashboard (default: 500)
+# DASHBOARD_MAX_TIMELINE_EVENTS=500
+
+# Number of recent runs to show in Trends tab (default: 50)
+# DASHBOARD_HISTORY_DEPTH=50
+
+# Timeline verbosity: minimal (stage ends only), normal (stages + verdicts +
+# findings + gates), verbose (all events) — default: normal
+# DASHBOARD_VERBOSITY="normal"

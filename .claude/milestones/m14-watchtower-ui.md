@@ -1,4 +1,9 @@
 #### Milestone 14: Watchtower UI
+<!-- milestone-meta
+id: "14"
+status: "done"
+-->
+
 Static HTML/CSS/JS dashboard that renders Tekhton pipeline state in a browser.
 Four-tab interface: Live Run, Milestone Map, Reports, Trends. Responsive design
 for full-screen through corner-of-second-monitor sizes. Auto-refreshes by
