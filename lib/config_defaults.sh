@@ -220,6 +220,20 @@ set -euo pipefail
 : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
 
+# --- Health scoring defaults (Milestone 15) ---
+: "${HEALTH_ENABLED:=true}"
+: "${HEALTH_REASSESS_ON_COMPLETE:=false}"
+: "${HEALTH_RUN_TESTS:=false}"
+: "${HEALTH_SAMPLE_SIZE:=20}"
+: "${HEALTH_WEIGHT_TESTS:=30}"
+: "${HEALTH_WEIGHT_QUALITY:=25}"
+: "${HEALTH_WEIGHT_DEPS:=15}"
+: "${HEALTH_WEIGHT_DOCS:=15}"
+: "${HEALTH_WEIGHT_HYGIENE:=15}"
+: "${HEALTH_SHOW_BELT:=true}"
+: "${HEALTH_BASELINE_FILE:=.claude/HEALTH_BASELINE.json}"
+: "${HEALTH_REPORT_FILE:=HEALTH_REPORT.md}"
+
 # --- Dashboard / Watchtower defaults (Milestone 13) ---
 : "${DASHBOARD_ENABLED:=true}"
 : "${DASHBOARD_VERBOSITY:=normal}"          # minimal|normal|verbose
@@ -304,3 +318,4 @@ _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
 _clamp_config_value DASHBOARD_HISTORY_DEPTH 100
 _clamp_config_value DASHBOARD_REFRESH_INTERVAL 300
 _clamp_config_value DASHBOARD_MAX_TIMELINE_EVENTS 2000
+_clamp_config_value HEALTH_SAMPLE_SIZE 100

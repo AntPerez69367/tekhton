@@ -1,4 +1,11 @@
+
 #### Milestone 15: Project Health Scoring & Evaluation
+<!-- milestone-meta
+id: "15"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-03-23 -->
+
 Establish a measurable project health baseline during --init and track improvement
 across Tekhton runs. Users see a concrete score (0-100 or belt system) that
 reflects testing health, code quality, dependency freshness, and documentation
@@ -102,11 +109,21 @@ Files to create:
   execute the test suite for an accurate pass rate. Default: false.
 
 Files to modify:
-- `lib/init.sh` (or equivalent --init orchestration) — After brownfield detection
-  and synthesis, run `assess_project_health()` to establish baseline. Display
-  the score in terminal with colored output. Write HEALTH_BASELINE.json to
-  `.claude/` for future delta comparisons. Include health score summary in the
-  --init completion banner.
+- `tekhton.sh` — [PM: missing from original file list but required by acceptance criteria]
+  Add `--health` flag handling. When invoked as `tekhton --health`, call
+  `reassess_project_health "$PROJECT_DIR"` (sourcing lib/health.sh), display
+  results, and exit. No pipeline stages are run. Place flag parsing alongside
+  other single-action flags (--init, --plan, --replan).
+
+- `lib/init.sh` (or equivalent --init orchestration) — [PM: lib/init.sh does not
+  appear in the documented repo layout. The Brownfield Intelligence initiative
+  (which owns --init) is listed as a future initiative, not yet implemented.
+  The coder should: (a) check if lib/init.sh exists; (b) if not, find the actual
+  --init handler in tekhton.sh and add the health assessment call there directly;
+  (c) if a stub exists, add to it. The integration goal is: after --init completes
+  its detection/synthesis phase, call `assess_project_health()`, write
+  HEALTH_BASELINE.json to `.claude/`, and include the score in the completion
+  banner.]
   During the --init interview/synthesis: include health findings in the synthesis
   context so the generated CLAUDE.md and milestones can address low-scoring
   dimensions. For example: if test health is 10/100, the PM agent should know
@@ -139,6 +156,7 @@ Files to modify:
   HEALTH_WEIGHT_DEPS=15,
   HEALTH_WEIGHT_DOCS=15,
   HEALTH_WEIGHT_HYGIENE=15,
+  HEALTH_SHOW_BELT=true,
   HEALTH_BASELINE_FILE=.claude/HEALTH_BASELINE.json,
   HEALTH_REPORT_FILE=HEALTH_REPORT.md.
 
@@ -197,6 +215,8 @@ Watch For:
   (HEALTH_SHOW_BELT=true by default) and keep the 0-100 number always visible.
 - Never read .env file contents for the hygiene check — only check if the
   FILENAME is tracked by git (`git ls-files .env`). The contents may have secrets.
+- [PM: lib/init.sh may not exist — see note in "Files to modify" above. Resolve
+  by locating the actual --init dispatch in tekhton.sh before writing any code.]
 
 Seeds Forward:
 - V4 tech debt agent uses health score to prioritize which debt to tackle first

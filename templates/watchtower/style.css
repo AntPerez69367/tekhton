@@ -556,3 +556,43 @@ footer code {
   .timeline { max-height: 250px; }
   .timeline-event .trace-link { display: none; }
 }
+
+/* --- Health Score (Milestone 15) --- */
+.health-composite {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  font-size: 1.1rem;
+}
+.health-composite.health-good .health-score { color: var(--color-success); }
+.health-composite.health-ok .health-score { color: var(--color-warning); }
+.health-composite.health-low .health-score { color: var(--color-danger); }
+.health-score { font-weight: 700; font-size: 1.4rem; }
+.health-belt {
+  background: var(--bg-card-hover);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.health-dimensions { margin-top: 0.5rem; }
+.health-dim-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+.health-dim-label { width: 140px; font-size: 0.85rem; color: var(--text-secondary); }
+.health-bar-container {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.health-bar { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.health-bar.bar-good { background: var(--color-success); }
+.health-bar.bar-ok { background: var(--color-warning); }
+.health-bar.bar-low { background: var(--color-danger); }
+.health-dim-score { width: 30px; text-align: right; font-size: 0.85rem; }
+.health-dim-delta { font-size: 0.8rem; color: var(--text-secondary); }

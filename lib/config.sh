@@ -212,6 +212,25 @@ load_config() {
         fi
     fi
 
+    # --- Validate health scoring config (Milestone 15) ---
+    if [[ "${HEALTH_ENABLED:-true}" == "true" ]]; then
+        local _hw_sum=$(( ${HEALTH_WEIGHT_TESTS:-30} + ${HEALTH_WEIGHT_QUALITY:-25} + ${HEALTH_WEIGHT_DEPS:-15} + ${HEALTH_WEIGHT_DOCS:-15} + ${HEALTH_WEIGHT_HYGIENE:-15} ))
+        if [[ "$_hw_sum" -ne 100 ]]; then
+            warn "[config] HEALTH_WEIGHT_* must sum to 100 (got: ${_hw_sum}). Using defaults."
+            HEALTH_WEIGHT_TESTS=30
+            HEALTH_WEIGHT_QUALITY=25
+            HEALTH_WEIGHT_DEPS=15
+            HEALTH_WEIGHT_DOCS=15
+            HEALTH_WEIGHT_HYGIENE=15
+        fi
+        if [[ -n "${HEALTH_SAMPLE_SIZE:-}" ]] && [[ "${HEALTH_SAMPLE_SIZE}" =~ ^[0-9]+$ ]]; then
+            if [[ "$HEALTH_SAMPLE_SIZE" -lt 5 ]] || [[ "$HEALTH_SAMPLE_SIZE" -gt 100 ]]; then
+                warn "[config] HEALTH_SAMPLE_SIZE must be 5-100 (got: ${HEALTH_SAMPLE_SIZE}). Using 20."
+                HEALTH_SAMPLE_SIZE=20
+            fi
+        fi
+    fi
+
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     if [[ "$PIPELINE_STATE_FILE" != /* ]]; then
         PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
