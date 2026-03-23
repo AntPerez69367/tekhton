@@ -1,7 +1,7 @@
-#### Milestone 5: Pipeline Stage Integration
+#### [DONE] Milestone 5: Pipeline Stage Integration
 <!-- milestone-meta
 id: "5"
-status: "in_progress"
+status: "done"
 -->
 
 Wire the repo map into all pipeline stages, replacing or supplementing full

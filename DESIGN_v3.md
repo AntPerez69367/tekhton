@@ -347,6 +347,12 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 - Stage-specific repo map slicing
 - Optional Serena LSP integration via MCP
 - Cross-run tag cache and task→file history
+- Security agent with severity-gated rework + escalation policy
+- Task intake / PM agent with clarity evaluation + auto-tweaking
+- AI artifact detection with archive/merge/tidy workflow
+- Brownfield deep analysis (workspaces, services, CI/CD, IaC, doc quality)
+- Watchtower dashboard (static HTML, 4-tab interface, auto-refresh)
+- UI / dashboard for pipeline transparency and milestone progress
 
 ### Out of Scope (Future / V4)
 - Parallel milestone execution (multiple agent teams in worktrees)
@@ -722,6 +728,102 @@ problem — seeds forward to V4.
 
 ---
 
+## System Design: Watchtower Dashboard (M13-M14)
+
+### Problem
+
+Tekhton is a black box. The terminal scrolls colored output but users can't
+answer basic questions: Is it stuck? What did it change? Should I be worried
+about that security finding? How much is left? Is it getting better over time?
+This opacity is acceptable for a senior dev who reads markdown files, but it's
+a dealbreaker for the broader audience V3 targets.
+
+### Design
+
+**Architecture: static HTML + JS data files (no server)**
+
+The pipeline writes `.js` data files that assign to `window.TK_*` globals.
+A static HTML file loads them via `<script>` tags (works on `file://` because
+`<script src>` same-directory is exempt from CORS). Auto-refresh via
+`setTimeout(location.reload)` provides pseudo-polling.
+
+```
+Pipeline (shell)                    Browser
+┌───────────────┐                 ┌──────────────────┐
+│ emit_dashboard │─── writes ───▶ │ data/run_state.js │
+│ _event()      │                 │ data/timeline.js  │
+│ _run_state()  │                 │ data/milestones.js│
+│ _milestones() │                 │ data/security.js  │
+│ _security()   │                 │ data/reports.js   │
+│ _reports()    │                 │ data/metrics.js   │
+│ _metrics()    │                 ├──────────────────┤
+└───────────────┘                 │ index.html        │◀── user opens
+                                  │ app.js (renders)  │
+                                  │ style.css         │
+                                  └──────────────────┘
+```
+
+Zero server. Zero dependencies. Zero build tools. Open `index.html` in a browser.
+
+**Four-tab interface:**
+
+| Tab | Purpose | Data source |
+|-----|---------|-------------|
+| Live Run | What's happening right now | run_state.js, timeline.js |
+| Milestone Map | DAG visualization, plan status | milestones.js |
+| Reports | Stage-by-stage results, findings | reports.js, security.js |
+| Trends | Historical efficiency, patterns | metrics.js |
+
+**Interactivity model (V3):**
+Read-only with helpful hints. When the pipeline is paused for human input
+(NEEDS_CLARITY, security waiver), the dashboard shows the questions and provides
+copy-to-clipboard file paths / commands. True bidirectional interaction (answer
+questions in the browser) requires a server — V4.
+
+**Responsive design:** Three breakpoints (1200px, 768px, <768px). The Live Run
+tab is optimized for glanceability at small sizes (status badge + stage bar +
+timeline). The Milestone Map degrades to a list at small sizes. The Trends tab
+drops charts and shows summary stats only.
+
+**Lifecycle:**
+- Created by `tekhton --init` (DASHBOARD_ENABLED=true by default)
+- Disabled via config: next run cleans up `.claude/dashboard/`
+- Re-enabled via config: next run recreates it
+- Static files (HTML/CSS/JS) are one-time copies from Tekhton templates
+- Data files are regenerated on each meaningful pipeline event
+
+**Verbosity levels** (DASHBOARD_VERBOSITY in config):
+- `minimal`: stage completions + final verdicts only
+- `normal` (default): stage transitions + verdicts + findings + build results
+- `verbose`: all of normal + turn counts, rework events, context budget stats
+
+### Config Keys
+
+```bash
+DASHBOARD_ENABLED=true              # Generate Watchtower dashboard
+DASHBOARD_VERBOSITY=normal          # minimal | normal | verbose
+DASHBOARD_HISTORY_DEPTH=50          # Runs to include in Trends tab
+DASHBOARD_REFRESH_INTERVAL=5        # Seconds between auto-refreshes
+DASHBOARD_DIR=".claude/dashboard"   # Dashboard output directory
+```
+
+### Why This Design
+
+- Static files + JS globals is the simplest architecture that works without a
+  server. The `<script src>` same-directory exemption from CORS makes it
+  possible. No fetch(), no AJAX, no build step.
+- Auto-refresh via page reload is crude but correct for V3. It reloads the data
+  scripts, which is exactly what we need. V4's WebSocket push replaces this.
+- Four tabs prevent clutter while covering the four questions users actually ask:
+  "what's happening?", "what's the plan?", "what did it do?", "is it improving?"
+- CSS-only swimlanes for the DAG avoid a JS graphing dependency. The DAG
+  visualization upgrades to SVG with proper graph layout in V4.
+- Dark theme default because this typically runs on a second monitor while the
+  dev works in their IDE. Light theme available for preference.
+- 50KB size constraint forces discipline. This is a utility, not a web app.
+
+---
+
 ## Updated Pipeline Flow (V3 Complete)
 
 ```
@@ -754,6 +856,8 @@ tekhton "task" or tekhton --milestone
 - `mcp.sh` — MCP server lifecycle management (M06)
 - `detect_ai_artifacts.sh` — AI tool config detection (M11)
 - `artifact_handler.sh` — artifact archive/merge/tidy workflow (M11)
+- `dashboard.sh` — Watchtower data emission + lifecycle (M13)
+- `dashboard_parsers.sh` — Report parsing for dashboard data (M13)
 
 **stages/ (pipeline stages):**
 - `security.sh` — security scan + rework routing (M09)
@@ -769,6 +873,11 @@ tekhton "task" or tekhton --milestone
 **templates/ (copied to target projects):**
 - `security.md` — security agent role definition (M09)
 - `intake.md` — intake/PM agent role definition (M10)
+
+**templates/watchtower/ (static dashboard files):**
+- `index.html` — Dashboard shell with 4-tab navigation (M14)
+- `app.js` — Vanilla JS rendering logic (M14)
+- `style.css` — Responsive dark/light theme styles (M14)
 
 **tools/ (Python, optional dependency):**
 - `repo_map.py` — tree-sitter parser + PageRank ranker (M04)
@@ -793,7 +902,10 @@ The following capabilities are explicitly designed for but not built in V3:
 - **Historical learning** — Intake confidence scores (M10) + run metrics (v2)
   enable threshold calibration. Security waiver patterns (M09) enable policy
   evolution.
-- **Dashboard UI** — All report files (INTAKE_REPORT.md, SECURITY_REPORT.md,
-  CODER_SUMMARY.md, REVIEWER_REPORT.md, RUN_SUMMARY.json, MILESTONE_STATE.md,
-  MANIFEST.cfg) are machine-parseable and designed as data sources for a static
-  HTML dashboard. This is the final V3 milestone before V4 planning.
+- **Dashboard evolution** — Watchtower V3 (M13-M14) is static HTML with file
+  polling. V4 replaces this with a localhost server (WebSocket push, bidirectional
+  interaction: answer clarifications, approve waivers, trigger runs). V5 adds
+  cloud-hosted option for team visibility + mobile access.
+- **Metric connectors** — The TK_* data format from Watchtower is designed as
+  the universal schema for metric export. V4/V5 adds connectors for DataDog,
+  NewRelic, Prometheus, and custom webhook targets.
