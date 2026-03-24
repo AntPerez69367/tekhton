@@ -390,6 +390,7 @@ fi
 if [ "${1:-}" = "--diagnose" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/causality.sh"
+    source "${TEKHTON_HOME}/lib/causality_query.sh"
     source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
     source "${TEKHTON_HOME}/lib/diagnose.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
@@ -470,6 +471,7 @@ source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
+source "${TEKHTON_HOME}/lib/causality_query.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
@@ -1002,10 +1004,11 @@ if is_dashboard_enabled; then
     local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
     if [[ ! -d "$local_dash_dir" ]]; then
         init_dashboard "$PROJECT_DIR"
+    else
+        # Sync static UI files only when dashboard already existed (init_dashboard
+        # already copies files on creation, so this avoids a redundant second copy).
+        sync_dashboard_static_files "$PROJECT_DIR"
     fi
-    # Always sync static UI files (index.html, style.css, app.js) so template
-    # updates propagate and files added after initial dashboard creation appear.
-    sync_dashboard_static_files "$PROJECT_DIR"
 else
     local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
     if [[ -d "$local_dash_dir" ]]; then
@@ -1254,6 +1257,7 @@ _run_pipeline_stages() {
     # START_AT is past coder (resuming from review/test).
     if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
         CURRENT_STAGE="intake"
+        _STAGE_BUDGET[intake]="${INTAKE_MAX_TURNS:-10}"
         local _intake_start_evt
         _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
         run_stage_intake

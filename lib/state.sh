@@ -7,6 +7,9 @@
 # Expects: log() from common.sh
 # =============================================================================
 
+# Valid pipeline states for exit_stage:
+# intake, coder, review, tester, cleanup, architect, QUOTA_PAUSED
+
 write_pipeline_state() {
     local exit_stage="$1"
     local exit_reason="$2"

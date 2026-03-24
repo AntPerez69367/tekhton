@@ -154,7 +154,7 @@ _tag_milestone_if_complete() {
     fi
 }
 
-# m. Auto-commit or interactive commit prompt
+# n. Auto-commit or interactive commit prompt
 _hook_commit() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
@@ -341,13 +341,22 @@ _hook_health_reassess() {
     # Export for RUN_SUMMARY.json and completion banner
     export HEALTH_SCORE="$new_score"
     export HEALTH_PREV_SCORE="$prev_score"
+
+    # Re-emit dashboard health data with post-reassessment scores
+    # (_hook_causal_log_finalize ran earlier and emitted stale pre-reassessment data)
+    if command -v emit_dashboard_health &>/dev/null; then
+        emit_dashboard_health 2>/dev/null || true
+    fi
 }
 
 # l. Emit RUN_SUMMARY.json (M16)
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
 
-# n. Write LAST_FAILURE_CONTEXT.json and emit diagnose hint (M17, failure only)
+# m. Write LAST_FAILURE_CONTEXT.json and emit diagnose hint (M17, failure only)
+# NOTE: This hook runs AFTER _hook_causal_log_finalize (hook d), which archives
+# the causal log. The live CAUSAL_LOG.jsonl is still present (archive_causal_log
+# copies, does not move), but _read_diagnostic_context reads from the live file.
 _hook_failure_context() {
     local exit_code="$1"
     [[ "$exit_code" -eq 0 ]] && return 0

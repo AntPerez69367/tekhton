@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-24 | "Implement fixes for all of the NON_BLOCKING_LOG items until they are all resolved."] `tests/test_causal_log.sh` line 3: Header comment says "Test: Causal event log (lib/causality.sh)" — now covers `causality_query.sh` too; comment could be updated to reflect the split module.
 - [ ] [2026-03-23 | "[BUG] Fix the Watchtower dashboard deployment so static UI files are always present in .claude/dashboard/."] `lib/dashboard.sh` is 365 lines, over the 300-line soft ceiling. Pre-existing condition — the coder added only 14 lines. Log for a future cleanup/split pass.
 - [ ] [2026-03-23 | "[BUG] Fix the Watchtower dashboard deployment so static UI files are always present in .claude/dashboard/."] `sync_dashboard_static_files` is not listed in the `# Provides:` header comment block at the top of `lib/dashboard.sh` (lines 11-20). Minor documentation gap.
 - [ ] [2026-03-23 | "[BUG] Fix the Watchtower dashboard deployment so static UI files are always present in .claude/dashboard/."] On first-time dashboard creation, `_copy_static_files()` is invoked twice: once inside `init_dashboard()` and again from `sync_dashboard_static_files()` immediately after. Harmless (idempotent `cp`), but a minor redundancy.

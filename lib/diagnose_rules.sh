@@ -74,10 +74,10 @@ _rule_review_loop() {
 
     # Check if review stage hit max cycles
     if [[ "$exit_stage" != "review" ]]; then
-        # Also check causal log for review verdict events
+        # Also check causal log for review CHANGES_REQUIRED verdict events
         if [[ -n "${_DIAG_CAUSAL_EVENTS:-}" ]]; then
             local review_rejections
-            review_rejections=$(echo "$_DIAG_CAUSAL_EVENTS" | grep -c '"type":"verdict".*"stage":"reviewer"' 2>/dev/null || echo "0")
+            review_rejections=$(echo "$_DIAG_CAUSAL_EVENTS" | grep '"type":"verdict".*"stage":"reviewer"' 2>/dev/null | grep -c 'CHANGES_REQUIRED\|REJECTED' 2>/dev/null || echo "0")
             review_rejections="${review_rejections//[!0-9]/}"
             : "${review_rejections:=0}"
             [[ "$review_rejections" -ge 3 ]] || return 1
@@ -94,7 +94,8 @@ _rule_review_loop() {
         fi
     fi
 
-    local cycle_count="${_DIAG_REVIEW_CYCLES:-3}"
+    local cycle_count="${_DIAG_REVIEW_CYCLES:-0}"
+    [[ "$cycle_count" -eq 0 ]] && cycle_count="${review_rejections:-3}"
 
     DIAG_CLASSIFICATION="REVIEW_REJECTION_LOOP"
     DIAG_CONFIDENCE="high"

@@ -25,3 +25,26 @@
 ## Q: Is `.claude/dashboard/` already in `.gitignore`, and is that part of the problem?
 **A:** What is the "Watchtower dashboard"? Is it a Tekhton component, an optional add-on, or part of a target project? Where is it defined in the codebase?
 
+
+# Intake Clarifications — 2026-03-23 23:36:49
+
+- What is `NON_BLOCKING_LOG`? Is it a file in the project directory (e.g., `.claude/logs/NON_BLOCKING.log` or similar), a section in an existing log file, or output from a pipeline run?
+- What items are currently in the log? Please paste the current contents so the scope can be assessed.
+- What does "resolved" mean for each item type — is it a code fix, a config change, a suppression with rationale, or something else?
+- If the log contains heterogeneous items (e.g., shellcheck warnings, missing config defaults, runtime edge cases), should they all be addressed in one milestone or split by concern?
+
+
+# Clarifications — 2026-03-23 23:36:49
+
+## Q: What is `NON_BLOCKING_LOG`? Is it a file in the project directory (e.g., `.claude/logs/NON_BLOCKING.log` or similar), a section in an existing log file, or output from a pipeline run?
+**A:** What is `NON_BLOCKING_LOG`? Is it a file in the project directory (e.g., `.claude/logs/NON_BLOCKING.log` or similar), a section in an existing log file, or output from a pipeline run?
+
+## Q: What items are currently in the log? Please paste the current contents so the scope can be assessed.
+**A:** What is `NON_BLOCKING_LOG`? Is it a file in the project directory (e.g., `.claude/logs/NON_BLOCKING.log` or similar), a section in an existing log file, or output from a pipeline run?
+
+## Q: What does "resolved" mean for each item type — is it a code fix, a config change, a suppression with rationale, or something else?
+**A:** What is `NON_BLOCKING_LOG`? Is it a file in the project directory (e.g., `.claude/logs/NON_BLOCKING.log` or similar), a section in an existing log file, or output from a pipeline run?
+
+## Q: If the log contains heterogeneous items (e.g., shellcheck warnings, missing config defaults, runtime edge cases), should they all be addressed in one milestone or split by concern?
+**A:** What is `NON_BLOCKING_LOG`? Is it a file in the project directory (e.g., `.claude/logs/NON_BLOCKING.log` or similar), a section in an existing log file, or output from a pipeline run?
+

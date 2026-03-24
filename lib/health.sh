@@ -17,7 +17,9 @@ set -euo pipefail
 
 # Source companion checks file
 # shellcheck source=lib/health_checks.sh
-source "$(dirname "${BASH_SOURCE[0]}")/health_checks.sh"
+source "${TEKHTON_HOME:?}/lib/health_checks.sh"
+# shellcheck source=lib/health_checks_infra.sh
+source "${TEKHTON_HOME:?}/lib/health_checks_infra.sh"
 
 # --- Belt system --------------------------------------------------------------
 
