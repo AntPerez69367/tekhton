@@ -39,6 +39,8 @@ _run_auto_advance_chain() {
         _ORCH_REVIEW_BUMPED=false
         _ORCH_ATTEMPT=0
         _ORCH_NO_PROGRESS_COUNT=0
+        _ORCH_LAST_ACCEPTANCE_HASH=""
+        _ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
 
         emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
 

@@ -226,6 +226,12 @@ set -euo pipefail
 : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
 
+# --- Test baseline defaults (pre-existing failure detection) ---
+: "${TEST_BASELINE_ENABLED:=true}"
+: "${TEST_BASELINE_PASS_ON_PREEXISTING:=true}"
+: "${TEST_BASELINE_STUCK_THRESHOLD:=2}"
+: "${TEST_BASELINE_PASS_ON_STUCK:=false}"
+
 # --- Health scoring defaults (Milestone 15) ---
 : "${HEALTH_ENABLED:=true}"
 : "${HEALTH_REASSESS_ON_COMPLETE:=false}"
@@ -321,6 +327,7 @@ _clamp_config_value SERENA_STARTUP_TIMEOUT 120
 _clamp_config_value SERENA_MAX_RETRIES 10
 _clamp_config_value CAUSAL_LOG_RETENTION_RUNS 200
 _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
+_clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
 _clamp_config_value DASHBOARD_HISTORY_DEPTH 100
 _clamp_config_value DASHBOARD_REFRESH_INTERVAL 300
 _clamp_config_value DASHBOARD_MAX_TIMELINE_EVENTS 2000

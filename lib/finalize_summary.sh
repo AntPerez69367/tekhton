@@ -107,6 +107,23 @@ _hook_emit_run_summary() {
         quota_json=$(get_quota_stats_json)
     fi
 
+    # Test baseline status
+    local baseline_status="disabled"
+    if [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]]; then
+        if command -v has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
+            local _bl_json="${PROJECT_DIR:-.}/.claude/TEST_BASELINE.json"
+            local _bl_exit
+            _bl_exit=$(grep -oP '"exit_code"\s*:\s*\K[0-9]+' "$_bl_json" 2>/dev/null || echo "0")
+            if [[ "$_bl_exit" -eq 0 ]]; then
+                baseline_status="clean"
+            else
+                baseline_status="pre_existing_failures"
+            fi
+        else
+            baseline_status="not_captured"
+        fi
+    fi
+
     local timestamp_iso
     timestamp_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -114,7 +131,7 @@ _hook_emit_run_summary() {
     safe_milestone=$(printf '%s' "${_CURRENT_MILESTONE:-none}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
@@ -130,6 +147,7 @@ _hook_emit_run_summary() {
         "$intake_verdict" \
         "$intake_confidence" \
         "$quota_json" \
+        "$baseline_status" \
         "$timestamp_iso" \
         > "$summary_file"
 
