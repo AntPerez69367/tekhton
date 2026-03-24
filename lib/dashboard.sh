@@ -55,6 +55,7 @@ init_dashboard() {
     _write_js_file "${dash_dir}/data/security.js" "TK_SECURITY" '{"findings":[]}'
     _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" '{}'
     _write_js_file "${dash_dir}/data/metrics.js" "TK_METRICS" '{"runs":[]}'
+    _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" '{"available":false}'
 }
 
 # _copy_static_files DASH_DIR
@@ -296,4 +297,38 @@ emit_dashboard_metrics() {
 
     local json="{\"runs\":${runs}}"
     _write_js_file "${dash_dir}/data/metrics.js" "TK_METRICS" "$json"
+}
+
+# --- Health emission ----------------------------------------------------------
+
+# emit_dashboard_health
+# Reads HEALTH_BASELINE.json and generates data/health.js.
+emit_dashboard_health() {
+    if ! is_dashboard_enabled; then return 0; fi
+
+    local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
+    [[ ! -d "${dash_dir}/data" ]] && return 0
+
+    local baseline_file="${PROJECT_DIR:-.}/${HEALTH_BASELINE_FILE:-.claude/HEALTH_BASELINE.json}"
+
+    if [[ ! -f "$baseline_file" ]]; then
+        _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" '{"available":false}'
+        return 0
+    fi
+
+    # Read the JSON baseline directly — it's already valid JSON
+    local baseline_content
+    baseline_content=$(cat "$baseline_file" 2>/dev/null || echo "{}")
+
+    # Wrap with metadata
+    local belt=""
+    if command -v get_health_belt &>/dev/null; then
+        local composite
+        composite=$(_read_json_int "$baseline_file" "composite")
+        belt=$(get_health_belt "$composite")
+    fi
+
+    local json
+    json="{\"available\":true,\"belt\":\"$(_json_escape "$belt")\",\"data\":${baseline_content}}"
+    _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" "$json"
 }

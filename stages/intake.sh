@@ -79,6 +79,12 @@ run_stage_intake() {
         fi
     fi
 
+    # Load health score summary (Milestone 15)
+    export HEALTH_SCORE_SUMMARY=""
+    if [[ "${HEALTH_ENABLED:-true}" == "true" ]] && command -v format_health_summary &>/dev/null; then
+        HEALTH_SCORE_SUMMARY=$(format_health_summary "${PROJECT_DIR}" 2>/dev/null || true)
+    fi
+
     # Load role file content
     local role_file="${PROJECT_DIR}/${INTAKE_ROLE_FILE}"
     export INTAKE_ROLE_CONTENT=""

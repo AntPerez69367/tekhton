@@ -41,6 +41,11 @@ with specific questions.
 {{INTAKE_PROJECT_INDEX}}
 {{ENDIF:INTAKE_PROJECT_INDEX}}
 
+{{IF:HEALTH_SCORE_SUMMARY}}
+## Project Health Context
+{{HEALTH_SCORE_SUMMARY}}
+{{ENDIF:HEALTH_SCORE_SUMMARY}}
+
 {{IF:INTAKE_HISTORY_BLOCK}}
 ## Historical Patterns
 The following shows historical verdict distribution and rework patterns from prior

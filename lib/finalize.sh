@@ -189,6 +189,10 @@ _hook_commit() {
             echo -e "  Milestone: ${YELLOW}${BOLD}${ms_num} — PARTIAL${NC}"
         fi
     fi
+    # Health score delta (Milestone 15)
+    if [[ -n "${HEALTH_SCORE:-}" ]] && command -v display_health_score &>/dev/null; then
+        display_health_score "$HEALTH_SCORE" "${HEALTH_PREV_SCORE:-}"
+    fi
     echo
     # Print action items summary
     _print_action_items
@@ -303,11 +307,39 @@ _hook_causal_log_finalize() {
     if command -v emit_dashboard_milestones &>/dev/null; then
         emit_dashboard_milestones 2>/dev/null || true
     fi
+    if command -v emit_dashboard_health &>/dev/null; then
+        emit_dashboard_health 2>/dev/null || true
+    fi
 
     # Archive causal log
     if command -v archive_causal_log &>/dev/null; then
         archive_causal_log 2>/dev/null || true
     fi
+}
+
+# m. Health re-assessment (Milestone 15) — optional, on success only
+_hook_health_reassess() {
+    local exit_code="$1"
+    [[ "$exit_code" -ne 0 ]] && return 0
+    [[ "${HEALTH_ENABLED:-true}" != "true" ]] && return 0
+    [[ "${HEALTH_REASSESS_ON_COMPLETE:-false}" != "true" ]] && return 0
+
+    if ! command -v reassess_project_health &>/dev/null; then
+        return 0
+    fi
+
+    local prev_score=0
+    local baseline_file="${PROJECT_DIR:-.}/${HEALTH_BASELINE_FILE:-.claude/HEALTH_BASELINE.json}"
+    if [[ -f "$baseline_file" ]]; then
+        prev_score=$(_read_json_int "$baseline_file" "composite")
+    fi
+
+    local new_score
+    new_score=$(reassess_project_health "${PROJECT_DIR:-.}" 2>/dev/null || echo "0")
+
+    # Export for RUN_SUMMARY.json and completion banner
+    export HEALTH_SCORE="$new_score"
+    export HEALTH_PREV_SCORE="$prev_score"
 }
 
 # Source RUN_SUMMARY.json emission hook (M16)
@@ -328,6 +360,7 @@ register_finalize_hook "_hook_archive_reports"
 register_finalize_hook "_hook_mark_done"
 register_finalize_hook "_hook_archive_milestone"
 register_finalize_hook "_hook_clear_state"
+register_finalize_hook "_hook_health_reassess"
 register_finalize_hook "_hook_emit_run_summary"
 register_finalize_hook "_hook_commit"
 # --- Orchestrator ---

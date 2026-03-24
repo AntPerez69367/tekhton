@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-23
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-23 | "Implement Milestone 15: Project Health Scoring & Evaluation"] `lib/health.sh:94,193` — `assess_project_health` and `reassess_project_health` each own a full copy of the dimension-check loop and composite calculation. This is the largest instance of deliberate duplication introduced in M15 and should be tracked for future consolidation.
+- [2026-03-23 | "Implement Milestone 15: Project Health Scoring & Evaluation"] `lib/health_checks.sh:279` — `sample_count=$(echo "$sample_files" | grep -c '.' || true)` counts non-empty lines via grep; using `wc -l <<< "$sample_files"` or `mapfile` would be more idiomatic and avoids spawning two processes.
 - [2026-03-23 | "Implement Milestone 14: Watchtower UI"] `lib/dashboard.sh:62-76` — `_copy_static_files()` documentation/implementation mismatch (always-overwrite vs. only-if-newer). Low severity but sets a misleading expectation for future maintainers.
 - [2026-03-23 | "Implement Milestone 14: Watchtower UI"] `app.js:656-669` — `trendArrow()` hardcodes `runs.length < 20` as the minimum for trend comparison and uses `slice(0,10)` / `slice(10,20)`. The data order assumption (newest-first) is load-bearing but not enforced or tested anywhere in the pipeline.
 - [2026-03-23 | "Implement Milestone 13: Watchtower Data Layer & Causal Event Log"] `dashboard.sh:source "$(dirname "${BASH_SOURCE[0]}")/dashboard_parsers.sh"` — the only file in the codebase that sources a sibling using `BASH_SOURCE`-relative path instead of `${TEKHTON_HOME}/lib/`. May cause confusion during future refactors.

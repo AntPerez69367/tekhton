@@ -35,6 +35,7 @@
 #   --force-audit         Force architect audit regardless of threshold
 #   --add-milestone "desc" Create a scoped milestone via intake agent (no run)
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
+#   --health              Run standalone project health assessment and exit
 #   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
 #   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
 #   --version, -v         Print version and exit
@@ -215,6 +216,16 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
 
     run_smart_init "$PROJECT_DIR" "$TEKHTON_HOME" "$local_reinit"
 
+    # Milestone 15: Run health assessment and write baseline
+    source "${TEKHTON_HOME}/lib/health.sh"
+    if [[ "${HEALTH_ENABLED:-true}" == "true" ]]; then
+        log "Running project health assessment..."
+        local_health_score=$(assess_project_health "$PROJECT_DIR")
+        echo
+        display_health_score "$local_health_score"
+        echo
+    fi
+
     # Warm indexer cache if available (M7)
     source "${TEKHTON_HOME}/lib/indexer.sh"
     source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
@@ -341,6 +352,30 @@ if [ "${1:-}" = "--plan-from-index" ]; then
     exit 0
 fi
 
+# --- Early --health check (runs before execution pipeline) ------------------
+
+if [ "${1:-}" = "--health" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/detect.sh"
+    source "${TEKHTON_HOME}/lib/detect_commands.sh"
+    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
+    source "${TEKHTON_HOME}/lib/detect_ci.sh"
+    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+    source "${TEKHTON_HOME}/lib/health.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+
+    header "Tekhton — Project Health Assessment"
+    local_score=$(reassess_project_health "$PROJECT_DIR")
+
+    echo
+    display_health_score "$local_score"
+    echo
+    log "Report: ${PROJECT_DIR}/${HEALTH_REPORT_FILE:-HEALTH_REPORT.md}"
+    log "Baseline: ${PROJECT_DIR}/${HEALTH_BASELINE_FILE:-.claude/HEALTH_BASELINE.json}"
+    exit 0
+fi
+
 # --- Acquire pipeline lock (execution pipeline only) -------------------------
 _check_pipeline_lock
 
@@ -394,6 +429,7 @@ source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"
+source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"

@@ -10,6 +10,7 @@
   var security = function () { return window.TK_SECURITY || {}; };
   var reports = function () { return window.TK_REPORTS || {}; };
   var metrics = function () { return window.TK_METRICS || {}; };
+  var health = function () { return window.TK_HEALTH || { available: false }; };
 
   // --- Causal index (built once on load) ---
   var causalChildren = {};  // eventId -> Set of child eventIds
@@ -625,6 +626,9 @@
     html += '<div class="stat-row"><span class="stat-label">Split frequency</span><span class="stat-value">' + splitRate + '%</span></div>';
     html += '</div>';
 
+    // Health score card (Milestone 15)
+    html += renderHealthCard();
+
     // Per-stage breakdown
     html += '<div class="card trend-section">';
     html += '<h3>Per-Stage Breakdown</h3>';
@@ -651,6 +655,59 @@
     html += '</ul></div>';
 
     container.innerHTML = html;
+  }
+
+  function renderHealthCard() {
+    var h = health();
+    if (!h.available) return '';
+
+    var data = h.data || {};
+    var composite = data.composite || 0;
+    var belt = h.belt || '';
+    var dims = data.dimensions || {};
+    var prevComposite = data.previous_composite;
+    var delta = data.delta;
+
+    var html = '<div class="card trend-section">';
+    html += '<h3>Project Health</h3>';
+
+    // Composite score with belt badge
+    var scoreClass = composite >= 75 ? 'health-good' : composite >= 40 ? 'health-ok' : 'health-low';
+    html += '<div class="health-composite ' + scoreClass + '">';
+    html += '<span class="health-score">' + composite + '/100</span>';
+    if (belt) html += '<span class="health-belt">' + esc(belt) + '</span>';
+    if (typeof delta === 'number' && typeof prevComposite === 'number') {
+      var arrow = delta > 0 ? '\u2191' : delta < 0 ? '\u2193' : '\u2192';
+      var deltaClass = delta > 0 ? 'trend-arrow down' : delta < 0 ? 'trend-arrow up' : 'trend-arrow neutral';
+      html += '<span class="' + deltaClass + '">' + arrow + ' ' + (delta > 0 ? '+' : '') + delta + '</span>';
+    }
+    html += '</div>';
+
+    // Per-dimension bar chart
+    var dimNames = ['test_health', 'code_quality', 'dependency_health', 'doc_quality', 'project_hygiene'];
+    var dimLabels = { test_health: 'Tests', code_quality: 'Quality', dependency_health: 'Dependencies', doc_quality: 'Documentation', project_hygiene: 'Hygiene' };
+
+    html += '<div class="health-dimensions">';
+    for (var i = 0; i < dimNames.length; i++) {
+      var dim = dims[dimNames[i]] || {};
+      var score = dim.score || 0;
+      var weight = dim.weight || 0;
+      var dimDelta = dim.delta;
+      var barClass = score >= 75 ? 'bar-good' : score >= 40 ? 'bar-ok' : 'bar-low';
+
+      html += '<div class="health-dim-row">';
+      html += '<span class="health-dim-label">' + (dimLabels[dimNames[i]] || dimNames[i]) + ' (' + weight + '%)</span>';
+      html += '<div class="health-bar-container"><div class="health-bar ' + barClass + '" style="width:' + score + '%"></div></div>';
+      html += '<span class="health-dim-score">' + score + '</span>';
+      if (typeof dimDelta === 'number' && dimDelta !== 0) {
+        var dArrow = dimDelta > 0 ? '\u2191' : '\u2193';
+        html += '<span class="health-dim-delta">' + dArrow + (dimDelta > 0 ? '+' : '') + dimDelta + '</span>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    return html;
   }
 
   function trendArrow(runs, field) {
