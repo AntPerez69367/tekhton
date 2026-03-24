@@ -31,6 +31,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_recovery.sh"
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_helpers.sh"
 
+# Source test baseline helpers (pre-existing failure detection)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/test_baseline.sh"
+
 # --- Orchestration state globals -----------------------------------------------
 _ORCH_ATTEMPT=0
 _ORCH_AGENT_CALLS=0
@@ -42,6 +46,8 @@ _ORCH_LAST_DIFF_HASH=""
 _ORCH_NO_PROGRESS_COUNT=0
 _ORCH_AGENT_100_WARNED=false
 _ORCH_CAUSAL_LOG_BASELINE=0
+_ORCH_LAST_ACCEPTANCE_HASH=""
+_ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
 
 export _ORCH_ATTEMPT _ORCH_AGENT_CALLS _ORCH_ELAPSED _ORCH_ATTEMPT_LOG
 
@@ -61,6 +67,8 @@ run_complete_loop() {
     _ORCH_NO_PROGRESS_COUNT=0
     _ORCH_REVIEW_BUMPED=false
     _ORCH_ATTEMPT_LOG=""
+    _ORCH_LAST_ACCEPTANCE_HASH=""
+    _ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
     local _build_retried=false
 
     # Restore orchestration state from prior run (resume support)
@@ -89,6 +97,11 @@ run_complete_loop() {
                 fi
                 ;;
         esac
+    fi
+
+    # Capture test baseline before any pipeline attempt (pre-existing failure detection)
+    if _should_capture_test_baseline 2>/dev/null; then
+        capture_test_baseline "${_CURRENT_MILESTONE:-}" || true
     fi
 
     # Emit milestone metadata on start (if milestone mode)
@@ -208,6 +221,24 @@ run_complete_loop() {
 
             record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
                 "success" "$_iter_turns" "$_files_changed"
+
+            # --- Tier 2: acceptance-failure stuck detection ---
+            if [[ "$acceptance_pass" = false ]] && [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]]; then
+                local _stuck_result=0
+                _check_acceptance_stuck || _stuck_result=$?
+                case "$_stuck_result" in
+                    0)  # Stuck + auto-pass: override acceptance to pass
+                        acceptance_pass=true
+                        warn "Acceptance overridden by stuck detection (auto-pass)."
+                        ;;
+                    2)  # Stuck + no auto-pass: exit with diagnosis
+                        _save_orchestration_state "pre_existing_failure" \
+                            "Acceptance stuck on identical pre-existing test failures (${_ORCH_IDENTICAL_ACCEPTANCE_COUNT} attempts)"
+                        return 1
+                        ;;
+                    *)  ;; # Not stuck, continue to normal acceptance_pass check
+                esac
+            fi
 
             if [[ "$acceptance_pass" = true ]]; then
                 # --- SUCCESS ---

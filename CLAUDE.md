@@ -69,6 +69,7 @@ tekhton/
 │   ├── indexer_helpers.sh  # [3.0] Language detection, config validation, file extraction
 │   ├── indexer_history.sh  # [3.0] Task→file association tracking (JSONL)
 │   ├── causality.sh        # [3.0] Causal event log infrastructure + query layer
+│   ├── test_baseline.sh    # [3.0] Test baseline capture + pre-existing failure detection
 │   └── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Stage 0: Architect audit (conditional)
@@ -297,6 +298,10 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `CAUSAL_LOG_RETENTION_RUNS` | Archived logs to retain (default: 50) |
 | `CAUSAL_LOG_MAX_EVENTS` | Max events per run before eviction (default: 2000) |
 | `INTAKE_HISTORY_BLOCK` | Historical verdict/rework data from causal log (injected by lib/prompts.sh) |
+| `TEST_BASELINE_ENABLED` | Enable pre-existing test failure detection (default: true) |
+| `TEST_BASELINE_PASS_ON_PREEXISTING` | Auto-pass acceptance when all failures are pre-existing (default: true) |
+| `TEST_BASELINE_STUCK_THRESHOLD` | Consecutive identical acceptance failures before stuck detection (default: 2) |
+| `TEST_BASELINE_PASS_ON_STUCK` | Auto-pass on stuck detection vs exit with diagnosis (default: false) |
 
 ## Testing
 
