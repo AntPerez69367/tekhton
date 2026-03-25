@@ -37,6 +37,26 @@ run_stage_intake() {
         return 0
     fi
 
+    # Use cached intake results from dry-run if available (Milestone 23)
+    if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
+        header "Stage 0 / Pre-flight — Task Intake (cached)"
+        log "Intake: using cached results from dry-run."
+        local _cached_verdict
+        _cached_verdict=$(_intake_parse_verdict "${INTAKE_REPORT_FILE}")
+        local _cached_confidence
+        _cached_confidence=$(_intake_parse_confidence "${INTAKE_REPORT_FILE}")
+        export INTAKE_VERDICT="$_cached_verdict"
+        export INTAKE_CONFIDENCE="$_cached_confidence"
+        log "Intake verdict: ${_cached_verdict} (confidence: ${_cached_confidence})"
+        # NEEDS_CLARITY still pauses even from cache — user may have answered since dry-run
+        if [[ "$_cached_verdict" == "NEEDS_CLARITY" ]]; then
+            _intake_handle_needs_clarity "${INTAKE_REPORT_FILE}"
+        elif [[ "$_cached_verdict" == "TWEAKED" ]]; then
+            _intake_handle_tweaked "${INTAKE_REPORT_FILE}"
+        fi
+        return 0
+    fi
+
     header "Stage 0 / Pre-flight — Task Intake"
 
     # Get content to evaluate

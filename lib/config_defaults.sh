@@ -220,6 +220,10 @@ set -euo pipefail
 : "${ARTIFACT_MERGE_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
 : "${ARTIFACT_MERGE_MAX_TURNS:=10}"
 
+# --- Dry-run / preview defaults (Milestone 23) ---
+: "${DRY_RUN_CACHE_TTL:=3600}"                    # Cache validity in seconds (default: 1 hour)
+: "${DRY_RUN_CACHE_DIR:=${PROJECT_DIR:-.}/.claude/dry_run_cache}"
+
 # --- Causal event log defaults (Milestone 13) ---
 : "${CAUSAL_LOG_ENABLED:=true}"
 : "${CAUSAL_LOG_FILE:=.claude/logs/CAUSAL_LOG.jsonl}"

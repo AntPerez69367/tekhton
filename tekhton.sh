@@ -193,6 +193,8 @@ SKIP_SECURITY=false
 FORCE_AUDIT=false
 FIX_NONBLOCKERS_MODE=false
 FIX_DRIFT_MODE=false
+DRY_RUN_MODE=false
+CONTINUE_PREVIEW=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
@@ -576,6 +578,7 @@ source "${TEKHTON_HOME}/lib/notes_single.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
+source "${TEKHTON_HOME}/lib/dry_run.sh"
 source "${TEKHTON_HOME}/lib/quota.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
@@ -672,6 +675,8 @@ usage() {
         echo "  --with-notes              Force human notes injection regardless of task text"
         echo "  --notes-filter TAG        Inject only [TAG] notes (BUG, FEAT, POLISH)"
         echo "  --add-milestone \"desc\"    Create a scoped milestone via intake agent (no run)"
+        echo "  --dry-run                 Preview mode: run scout + intake only, show what would happen"
+        echo "  --continue-preview        Resume from a previous --dry-run (uses cached results)"
         echo "  --skip-security           Bypass security stage for a single run"
         echo "  --skip-audit              Skip architect audit even if threshold is reached"
         echo "  --force-audit             Force architect audit regardless of threshold"
@@ -723,6 +728,7 @@ usage() {
         echo "  --milestone         Run in milestone mode (higher turn budgets)"
         echo "  --auto-advance      Auto-advance through milestones"
         echo "  --complete          Loop until done or bounds hit"
+        echo "  --dry-run           Preview what the pipeline would do"
         echo "  --human [TAG]       Pick next note as task (BUG, FEAT, POLISH)"
         echo ""
         echo "Inspection:"
@@ -955,6 +961,8 @@ EOF
         --force-audit) FORCE_AUDIT=true; shift ;;
         --fix-nonblockers|--fix-nb) FIX_NONBLOCKERS_MODE=true; shift ;;
         --fix-drift) FIX_DRIFT_MODE=true; shift ;;
+        --dry-run) DRY_RUN_MODE=true; shift ;;
+        --continue-preview) CONTINUE_PREVIEW=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
         --add-milestone)
             shift
@@ -1892,6 +1900,37 @@ _run_fix_drift_loop() {
         log "Fix-drift pass ${drift_attempt} complete."
     done
 }
+
+# --- Dry-run mode (Milestone 23) --------------------------------------------
+
+if [[ "$DRY_RUN_MODE" = true ]]; then
+    run_dry_run "$TASK"
+    if [[ "${DRY_RUN_CONTINUE:-false}" != "true" ]]; then
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    # DRY_RUN_CONTINUE=true — fall through to standard pipeline execution
+    # Cache was already consumed by run_dry_run, setting SCOUT_CACHED + INTAKE_CACHED
+fi
+
+# --- Continue-preview mode (Milestone 23) -----------------------------------
+
+if [[ "$CONTINUE_PREVIEW" = true ]]; then
+    if load_dry_run_for_continue "$TASK"; then
+        log "Resuming from dry-run preview."
+    else
+        log "No valid dry-run cache. Running full pipeline."
+    fi
+    # Fall through to standard pipeline — SCOUT_CACHED and INTAKE_CACHED set if loaded
+fi
+
+# --- Offer cached dry-run (before pipeline execution) -----------------------
+
+if [[ "$DRY_RUN_MODE" != true ]] && [[ "$CONTINUE_PREVIEW" != true ]]; then
+    if offer_cached_dry_run "$TASK" 2>/dev/null; then
+        log "Proceeding with cached dry-run results."
+    fi
+fi
 
 # --- Pipeline execution (mode dispatch) --------------------------------------
 

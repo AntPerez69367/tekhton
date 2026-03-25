@@ -5,6 +5,9 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-24 | "Implement Milestone 23: Dry-Run & Preview Mode"] `lib/dry_run.sh:252,257`: `_parse_scout_preview` computes `_scout_file_count` and `_total_files` via identical `grep -cE '^s*[-*]s+'` calls — `_scout_file_count` is assigned but immediately shadowed by `_total_files`. Use `_total_files` for both purposes and drop the redundant first grep.
+- [ ] [2026-03-24 | "Implement Milestone 23: Dry-Run & Preview Mode"] `lib/config_defaults.sh:225`: Cache default is `${PROJECT_DIR}/.claude/dry_run_cache` instead of `${TEKHTON_SESSION_DIR}/dry_run_cache` as specified. The implementation choice is better for the `--continue-preview` use case (session dirs are ephemeral; a fixed `.claude/` path survives session boundaries). Intentional spec deviation.
+- [ ] [2026-03-24 | "Implement Milestone 23: Dry-Run & Preview Mode"] `lib/state.sh` was listed in the milestone spec as "Files to modify" but was not modified. `--continue-preview` achieves its goal through direct cache file validation (`load_dry_run_for_continue`), so the omission does not affect correctness.
 - [ ] [2026-03-24 | "Implement Milestone 22: Init UX Overhaul"] `lib/init_config.sh:202` — `_merge_preserved_values()` creates a predictable tmpfile (`${conf_file}.merge.$$`) with no cleanup trap; if the process is killed mid-rewrite (SIGINT/SIGTERM/`set -e` exit) the stale `.merge.<PID>` file is left on disk. Add `trap 'rm -f "$tmpfile"' EXIT INT TERM` immediately after the `local tmpfile=...` line. (Security agent finding, LOW severity, fixable.)
 - [ ] [2026-03-24 | "Implement Milestone 22: Init UX Overhaul"] `lib/init_config.sh` is 424 lines — 41% over the soft 300-line ceiling. File works correctly; flag for a future split pass (e.g., separate the `_emit_*` emitters into a dedicated helper file).
 - [ ] [2026-03-24 | "Implement Milestone 21: Version Migration Framework & Project Upgrade"] `lib/migrate.sh` is 584 lines — nearly double the 300-line soft ceiling. Works correctly; consider splitting `_cleanup_old_backups`, `rollback_migration`, and the CLI handlers into a `lib/migrate_cli.sh` in a follow-up cleanup pass.
@@ -28,3 +31,9 @@ The coder is prompted to address these when the count exceeds the threshold.
 #### COVERAGE: No test for mid-chain failure behavior in `run_migrations`
 #### COVERAGE: Missing edge case — `_write_config_version` when `pipeline.conf` absent
 #### INTEGRITY: Weak string match in test 11.3
+
+### Test Audit Concerns (2026-03-24)
+#### INTEGRITY: Test 13 always passes regardless of implementation behavior
+#### COVERAGE: `offer_cached_dry_run()` has no test coverage
+#### COVERAGE: `_parse_intake_preview` confidence value not asserted for valid reports
+#### NAMING: Test 13 label embeds a runtime variable

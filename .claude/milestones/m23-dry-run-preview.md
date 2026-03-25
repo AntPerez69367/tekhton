@@ -1,7 +1,7 @@
 #### Milestone 23: Dry-Run & Preview Mode
 <!-- milestone-meta
 id: "23"
-status: "pending"
+status: "done"
 -->
 
 Add a `--dry-run` execution mode that runs the scout and intake agents,
