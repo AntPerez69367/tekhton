@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-25
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
+- [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `prompts/ui_rework.prompt.md:1-28` — file remains unreachable; no code path calls `render_prompt("ui_rework")`. The BUILD_ERRORS.md approach chosen for the blocker fix supersedes this prompt entirely. Consider removing the file to avoid confusing future maintainers.
+- [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `lib/ui_validate.sh:243-248` — `_should_self_test_watchtower()` references `DASHBOARD_ENABLED` and `DASHBOARD_DIR`, creating an implicit coupling between the UI validation module and the Watchtower/Dashboard feature. If that feature is refactored, this coupling breaks silently.
 - [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] The expedited remediation addressed all three architect-identified drift observations correctly:
 - [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] **SF-1 (PIPELINE_ORDER split validation):** Cross-reference comments added at both `config.sh:169-171` and `pipeline_order.sh:27-29`. Comment content matches the architect's specification verbatim. Both locations now explain the split responsibility and the dual-update requirement.
 - [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] **SF-2 (loop-local variable leakage in express.sh):** `local cmd_type cmd _source _conf` at line 87 and `local _ctype _ccmd _csrc _cconf` at line 218 correctly declare all `read -r` targets before their respective loops. Namespace pollution eliminated.

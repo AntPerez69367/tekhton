@@ -113,3 +113,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-25
 - **Rationale**: - ACP: `apply_role_file_fallbacks()` runs for configured projects too — **ACCEPT** — Strictly additive; the log message makes the fallback visible when it fires. The change in failure mode (hard e
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-23: UI validation gate integration in run_build_gate() (Task: "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing")
+- **Date**: 2026-03-25
+- **Rationale**: Guard-checking with `command -v run_ui_validation` is consistent with the existing project pattern. Placement after UI_TEST_CMD is architecturally correct. The two new library files sourced between ga
+- **Source**: Accepted ACP from pipeline run

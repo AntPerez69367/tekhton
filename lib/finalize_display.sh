@@ -72,6 +72,23 @@ _print_action_items() {
         fi
     fi
 
+    # UI validation results (M29)
+    if command -v get_ui_validation_summary &>/dev/null; then
+        local ui_summary
+        ui_summary=$(get_ui_validation_summary 2>/dev/null || echo "")
+        if [[ -n "$ui_summary" ]] && [[ "$ui_summary" != "not run" ]]; then
+            if [[ "${UI_VALIDATION_FAIL_COUNT:-0}" -gt 0 ]]; then
+                action_items+=("$(echo -e "${YELLOW}  \u26a0 UI Validation: ${ui_summary}${NC}")")
+            else
+                action_items+=("$(echo -e "${CYAN}  \u2139 UI Validation: ${ui_summary}${NC}")")
+            fi
+            local screenshot_dir="${PROJECT_DIR:-.}/.claude/ui-validation/screenshots"
+            if [[ "${UI_VALIDATION_SCREENSHOTS:-true}" = "true" ]] && [[ -d "$screenshot_dir" ]]; then
+                action_items+=("$(echo -e "${CYAN}    Screenshots: ${screenshot_dir}/${NC}")")
+            fi
+        fi
+    fi
+
     # Quota pause summary (M16)
     if command -v format_quota_pause_summary &>/dev/null; then
         local quota_summary
