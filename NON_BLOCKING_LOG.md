@@ -5,7 +5,6 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-25 | "Address all 4 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `NON_BLOCKING_LOG.md` lines 42–52: two identical "Test Audit Concerns (2026-03-24)" blocks exist in the Resolved section (duplicate). One should be removed to keep the log clean.
 (none)
 
 ## Resolved
@@ -39,6 +38,9 @@ The coder is prompted to address these when the count exceeds the threshold.
 #### COVERAGE: No test for mid-chain failure behavior in `run_migrations`
 #### COVERAGE: Missing edge case — `_write_config_version` when `pipeline.conf` absent
 #### INTEGRITY: Weak string match in test 11.3
+
+### Non-Blocking Cleanup Pass (2026-03-25b)
+- [x] `NON_BLOCKING_LOG.md` duplicate "Test Audit Concerns (2026-03-24)" blocks — already resolved by prior cleanup pass (reduced from 3 to 1). Remaining blocks have distinct dates (2026-03-24 vs 2026-03-25) with different content. No duplicates remain. Marked stale note as resolved.
 
 ### Test Audit Concerns (2026-03-25)
 #### INTEGRITY: Test 13 always passes regardless of implementation behavior
