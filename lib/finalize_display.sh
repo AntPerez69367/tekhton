@@ -59,6 +59,7 @@ _print_action_items() {
     fi
 
     # Check for unchecked human notes (M25)
+    # Defensive: notes_cli.sh is unconditionally sourced, but we guard against sourcing-order edge cases or future refactors
     if command -v get_notes_summary &>/dev/null && [[ -f "HUMAN_NOTES.md" ]]; then
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")

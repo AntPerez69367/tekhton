@@ -1,18 +1,14 @@
-# JR Coder Summary — Milestone 25
+# JR Coder Summary — Milestone 26: Express Mode
 
 ## What Was Fixed
 
-- **`lib/notes_cli.sh:165,180-182` — Double-increment of `total` in `list_human_notes_cli()`**
-  - Removed the redundant increment logic inside the `*` (untagged) case
-  - Removed lines 180–182: `total=$((total + 1))`, the comment, and the no-op calculation `total=$((total - 1 + 1))`
-  - `total` is now correctly incremented once per unchecked note at line 165, regardless of tag
-  - Untagged notes no longer inflate the displayed count
+- **lib/express.sh:218** — Removed unused `_line` variable from the `local _line _ctype _ccmd` declaration. The variable was assigned by `local` but never referenced in the function. The actual `read -r` target variables are `_ctype`, `_ccmd`, `_csrc`, and `_cconf`. This resolves the shellcheck SC2034 (unused local variable) violation.
 
 ## Files Modified
 
-- `lib/notes_cli.sh` (lines 175–184: simplified the `*` case in the `case "$tag"` statement)
+- `lib/express.sh` — Removed `_line` from local declaration on line 218
 
 ## Verification
 
-- ✓ `bash -n lib/notes_cli.sh` passed
-- ✓ `shellcheck lib/notes_cli.sh` passed
+- `bash -n lib/express.sh` — ✓ passed (syntax valid)
+- `shellcheck lib/express.sh` — ✓ passed (no violations)

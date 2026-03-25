@@ -103,3 +103,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-24
 - **Rationale**: - ACP: Startup version check injection — **ACCEPT** — Placement after config load and before pre-flight is exactly right. Backward compatible: matching-version projects see zero behavior change; p
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-21: Role file fallbacks live in `express.sh`, not `agent.sh` (Task: "Implement Milestone 26: Express Mode (Zero-Config Execution)")
+- **Date**: 2026-03-25
+- **Rationale**: - ACP: Role file fallbacks live in `express.sh`, not `agent.sh` — **ACCEPT** — Keeps `agent.sh` clean; role-fallback logic is conceptually part of the zero-config story and the placement is well-j
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-22: `apply_role_file_fallbacks()` runs for configured projects too (Task: "Implement Milestone 26: Express Mode (Zero-Config Execution)")
+- **Date**: 2026-03-25
+- **Rationale**: - ACP: `apply_role_file_fallbacks()` runs for configured projects too — **ACCEPT** — Strictly additive; the log message makes the fallback visible when it fires. The change in failure mode (hard e
+- **Source**: Accepted ACP from pipeline run

@@ -1,4 +1,9 @@
 #### Milestone 26: Express Mode (Zero-Config Execution)
+<!-- milestone-meta
+id: "26"
+status: "done"
+-->
+
 
 Enable Tekhton to run without `--init` by auto-detecting project configuration
 and using sensible defaults. When a user runs `tekhton "task"` in a project

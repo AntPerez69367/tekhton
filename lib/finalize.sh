@@ -162,6 +162,22 @@ _tag_milestone_if_complete() {
     fi
 }
 
+# o. Express mode: persist auto-detected config on success
+_hook_express_persist() {
+    local exit_code="$1"
+    [[ "$exit_code" -ne 0 ]] && return 0
+    [[ "${EXPRESS_MODE_ACTIVE:-false}" != "true" ]] && return 0
+
+    if [[ "${EXPRESS_PERSIST_CONFIG:-true}" == "true" ]]; then
+        persist_express_config "${PROJECT_DIR}"
+        log "Express config saved to .claude/pipeline.conf. Edit to customize."
+    fi
+    if [[ "${EXPRESS_PERSIST_ROLES:-false}" == "true" ]]; then
+        persist_express_roles "${PROJECT_DIR}"
+        log "Built-in role templates copied to .claude/agents/."
+    fi
+}
+
 # n. Auto-commit or interactive commit prompt
 _hook_commit() {
     local exit_code="$1"
@@ -418,6 +434,7 @@ register_finalize_hook "_hook_clear_state"
 register_finalize_hook "_hook_health_reassess"
 register_finalize_hook "_hook_emit_run_summary"
 register_finalize_hook "_hook_failure_context"
+register_finalize_hook "_hook_express_persist"
 register_finalize_hook "_hook_commit"
 register_finalize_hook "_hook_update_check"
 # --- Orchestrator ---
