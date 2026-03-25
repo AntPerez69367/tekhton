@@ -10,3 +10,10 @@ A code review found blockers. Read `REVIEWER_REPORT.md` and fix **only the items
 - Do NOT refactor anything not mentioned in the blockers
 - Update `CODER_SUMMARY.md` to reflect what changed
 - If you reworked an ACP, update the `## Architecture Change Proposals` section in CODER_SUMMARY.md accordingly
+
+{{IF:UI_VALIDATION_FAILURES_BLOCK}}
+## UI Validation Failures
+The rendered UI has issues detected by headless browser testing.
+These MUST be fixed — they indicate the user-facing output is broken.
+{{UI_VALIDATION_FAILURES_BLOCK}}
+{{ENDIF:UI_VALIDATION_FAILURES_BLOCK}}

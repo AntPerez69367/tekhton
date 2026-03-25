@@ -156,6 +156,27 @@ UIEOF
         fi
     fi
 
+    # --- UI validation gate (Milestone 29: headless browser smoke tests) ---
+    # Runs AFTER UI_TEST_CMD (M28). Soft-fails when no headless browser available.
+    if command -v run_ui_validation &>/dev/null; then
+        if ! run_ui_validation "$stage_label"; then
+            warn "Build gate FAILED (${stage_label}) — UI validation detected rendering issues."
+            # Append UI validation report to BUILD_ERRORS.md so the build-fix
+            # agent has full context about rendering failures.
+            if [[ -f "UI_VALIDATION_REPORT.md" ]]; then
+                {
+                    echo ""
+                    echo "## UI Validation Failures"
+                    echo "The UI validation gate detected rendering issues."
+                    echo "Fix these before the build gate can pass."
+                    echo ""
+                    cat "UI_VALIDATION_REPORT.md"
+                } >> BUILD_ERRORS.md
+            fi
+            return 1
+        fi
+    fi
+
     log "Build gate PASSED (${stage_label})"
     [ -f BUILD_ERRORS.md ] && rm BUILD_ERRORS.md
     [ -f UI_TEST_ERRORS.md ] && rm UI_TEST_ERRORS.md

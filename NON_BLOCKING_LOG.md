@@ -5,6 +5,9 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `lib/ui_validate.sh:560` — `head -n -5` is GNU-specific and fails silently on macOS BSD head. Use `head -n $(( count - 5 ))` pattern or a sort+tail workaround for portability.
+- [ ] [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `lib/ui_validate.sh:371-421` — retry block duplicates the full validation loop verbatim (~50 lines). Extract the per-target iteration into a `_run_validation_pass()` helper to avoid future divergence.
+- [ ] [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `lib/ui_validate_report.sh:166` — `_json_field()` uses `grep -oP` (PCRE). On Alpine Linux or minimal Docker images, grep may lack PCRE support; the `|| true` fallback silently returns empty strings, producing a report table full of `?` values. Add a comment noting the dependency.
 (none)
 
 ## Resolved

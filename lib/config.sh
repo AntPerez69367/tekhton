@@ -201,6 +201,42 @@ load_config() {
         fi
     fi
 
+    # --- Validate UI validation config (Milestone 29) ---
+    if [[ -n "${UI_SERVE_PORT:-}" ]] && ! [[ "${UI_SERVE_PORT}" =~ ^[0-9]+$ ]]; then
+        warn "[config] UI_SERVE_PORT must be numeric (got: ${UI_SERVE_PORT}). Using 3000."
+        UI_SERVE_PORT=3000
+    fi
+    if [[ -n "${UI_VALIDATION_VIEWPORTS:-}" ]]; then
+        local _vp_valid=true
+        IFS=',' read -ra _vp_parts <<< "$UI_VALIDATION_VIEWPORTS"
+        for _vp in "${_vp_parts[@]}"; do
+            _vp=$(echo "$_vp" | tr -d '[:space:]')
+            if ! [[ "$_vp" =~ ^[0-9]+x[0-9]+$ ]]; then
+                _vp_valid=false
+                break
+            fi
+        done
+        if [[ "$_vp_valid" = false ]]; then
+            warn "[config] UI_VALIDATION_VIEWPORTS must match NNNNxNNNN format (got: ${UI_VALIDATION_VIEWPORTS}). Using default."
+            UI_VALIDATION_VIEWPORTS="1280x800,375x812"
+        fi
+    fi
+    if [[ -n "${UI_VALIDATION_TIMEOUT:-}" ]] && ! [[ "${UI_VALIDATION_TIMEOUT}" =~ ^[0-9]+$ ]]; then
+        warn "[config] UI_VALIDATION_TIMEOUT must be a positive integer (got: ${UI_VALIDATION_TIMEOUT}). Using 30."
+        UI_VALIDATION_TIMEOUT=30
+    fi
+    if [[ -n "${UI_SERVER_STARTUP_TIMEOUT:-}" ]] && ! [[ "${UI_SERVER_STARTUP_TIMEOUT}" =~ ^[0-9]+$ ]]; then
+        warn "[config] UI_SERVER_STARTUP_TIMEOUT must be a positive integer (got: ${UI_SERVER_STARTUP_TIMEOUT}). Using 30."
+        UI_SERVER_STARTUP_TIMEOUT=30
+    fi
+    if [[ -n "${UI_VALIDATION_CONSOLE_SEVERITY:-}" ]]; then
+        case "$UI_VALIDATION_CONSOLE_SEVERITY" in
+            error|warn) ;;
+            *) warn "[config] UI_VALIDATION_CONSOLE_SEVERITY must be error|warn (got: ${UI_VALIDATION_CONSOLE_SEVERITY}). Using error."
+               UI_VALIDATION_CONSOLE_SEVERITY="error" ;;
+        esac
+    fi
+
     # --- Validate security agent config ---
     if [[ -n "${SECURITY_UNFIXABLE_POLICY:-}" ]]; then
         case "$SECURITY_UNFIXABLE_POLICY" in

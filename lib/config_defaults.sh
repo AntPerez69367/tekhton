@@ -232,6 +232,18 @@ set -euo pipefail
 : "${UI_VALIDATION_ENABLED:=true}"                      # Enable UI validation gate when UI detected
 : "${UI_TEST_TIMEOUT:=120}"                             # Seconds before UI test gate times out
 
+# --- UI validation defaults (Milestone 29: headless browser smoke tests) ---
+: "${UI_SERVE_CMD:=}"                                    # Dev server command (e.g., "npm run dev")
+: "${UI_SERVE_PORT:=3000}"                               # Dev server port
+: "${UI_SERVER_STARTUP_TIMEOUT:=30}"                     # Seconds to wait for server ready
+: "${UI_VALIDATION_VIEWPORTS:=1280x800,375x812}"        # Viewport sizes to test
+: "${UI_VALIDATION_TIMEOUT:=30}"                         # Seconds per page load timeout
+: "${UI_VALIDATION_CONSOLE_SEVERITY:=error}"             # error|warn — what level fails
+: "${UI_VALIDATION_FLICKER_THRESHOLD:=0.05}"             # Pixel diff ratio for flicker warning
+: "${UI_VALIDATION_RETRY:=true}"                         # Retry once on failure before rework
+: "${UI_VALIDATION_SCREENSHOTS:=true}"                   # Save screenshots for review
+: "${WATCHTOWER_SELF_TEST:=${DASHBOARD_ENABLED:-true}}"  # Auto-test dashboard when enabled
+
 # --- Pipeline order defaults (Milestone 27: TDD support) ---
 : "${PIPELINE_ORDER:=standard}"                    # standard|test_first|auto (auto reserved for V4)
 : "${TDD_PREFLIGHT_FILE:=TESTER_PREFLIGHT.md}"    # Output file for TDD write-failing tester
@@ -374,6 +386,9 @@ _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
 _clamp_config_value UI_TEST_TIMEOUT 600
+_clamp_config_value UI_SERVE_PORT 65535
+_clamp_config_value UI_SERVER_STARTUP_TIMEOUT 120
+_clamp_config_value UI_VALIDATION_TIMEOUT 120
 _clamp_config_value TESTER_WRITE_FAILING_MAX_TURNS 100
 _clamp_config_float CODER_TDD_TURN_MULTIPLIER 0.5 3.0
 _clamp_config_value DASHBOARD_HISTORY_DEPTH 100

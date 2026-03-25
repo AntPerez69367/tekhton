@@ -164,6 +164,18 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 # UI_VALIDATION_ENABLED=true      # Enable UI validation gate when UI detected
 # UI_TEST_TIMEOUT=120             # Seconds before UI test gate times out
 
+# --- UI Validation (Milestone 29: headless browser smoke tests) ---
+# UI_SERVE_CMD=""                    # Dev server command (e.g., "npm run dev")
+# UI_SERVE_PORT=3000                 # Dev server port
+# UI_SERVER_STARTUP_TIMEOUT=30       # Seconds to wait for server ready
+# UI_VALIDATION_VIEWPORTS="1280x800,375x812"  # Viewport sizes
+# UI_VALIDATION_TIMEOUT=30           # Seconds per page load timeout
+# UI_VALIDATION_CONSOLE_SEVERITY=error  # error | warn
+# UI_VALIDATION_FLICKER_THRESHOLD=0.05  # Pixel diff ratio for flicker warning
+# UI_VALIDATION_RETRY=true           # Retry once on failure before rework
+# UI_VALIDATION_SCREENSHOTS=true     # Save screenshots for review
+# WATCHTOWER_SELF_TEST=true          # Auto-test dashboard when Watchtower enabled
+
 SEED_CONTRACTS_ENABLED=false
 # INLINE_CONTRACT_PATTERN=""
 # INLINE_CONTRACT_SEARCH_CMD=""

@@ -1,4 +1,9 @@
 #### Milestone 29: UI Validation Gate & Headless Smoke Testing
+<!-- milestone-meta
+id: "29"
+status: "done"
+-->
+
 Add a UI validation gate that runs headless browser smoke tests against
 UI artifacts produced by the pipeline. This catches the class of bugs
 where code compiles, unit tests pass, and E2E tests pass (or don't exist),
