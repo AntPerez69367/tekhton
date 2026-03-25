@@ -107,6 +107,23 @@ _clamp_config_value() {
     fi
 }
 
+# _clamp_config_float — Clamp a floating-point config value to [min, max].
+# Args: $1 = variable name, $2 = min value, $3 = max value
+_clamp_config_float() {
+    local key="$1" min="$2" max="$3"
+    local val="${!key:-0}"
+    # Validate: must be a number (integer or float)
+    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+        return
+    fi
+    local clamped
+    clamped=$(awk "BEGIN { v=$val; if (v < $min) v=$min; if (v > $max) v=$max; printf \"%.1f\", v }")
+    if [[ "$clamped" != "$val" ]]; then
+        warn "[config] ${key}=${val} outside range [${min}, ${max}]. Clamped to ${clamped}."
+        declare -gx "$key=$clamped"
+    fi
+}
+
 # --- Loader ------------------------------------------------------------------
 
 load_config() {
@@ -149,6 +166,9 @@ load_config() {
     fi
 
     # --- Validate pipeline order (Milestone 27) ---
+    # Normalization runs here (during load_config) before pipeline_order.sh is sourced.
+    # validate_pipeline_order() in pipeline_order.sh provides the test-facing validation API.
+    # When adding a new order value, update BOTH this block and pipeline_order.sh:validate_pipeline_order().
     if [[ -n "${PIPELINE_ORDER:-}" ]]; then
         case "$PIPELINE_ORDER" in
             standard|test_first) ;;
@@ -161,6 +181,24 @@ load_config() {
                 PIPELINE_ORDER="standard"
                 ;;
         esac
+    fi
+
+    # --- Validate UI testing config (Milestone 28) ---
+    if [[ -n "${UI_FRAMEWORK:-}" ]]; then
+        case "$UI_FRAMEWORK" in
+            auto|playwright|cypress|selenium|puppeteer|testing-library|detox) ;;
+            *) warn "[config] UI_FRAMEWORK must be auto|playwright|cypress|selenium|puppeteer|testing-library|detox (got: ${UI_FRAMEWORK}). Clearing."
+               UI_FRAMEWORK="" ;;
+        esac
+    fi
+    if [[ -n "${UI_TEST_CMD:-}" ]]; then
+        local _ui_cmd_bin
+        _ui_cmd_bin=$(echo "$UI_TEST_CMD" | awk '{print $1}')
+        if [[ "$_ui_cmd_bin" == "npx" ]] || [[ "$_ui_cmd_bin" == "npm" ]]; then
+            : # npx/npm resolve at runtime — skip check
+        elif ! command -v "$_ui_cmd_bin" &>/dev/null; then
+            warn "[config] UI_TEST_CMD command '${_ui_cmd_bin}' not found. UI test gate will warn at runtime."
+        fi
     fi
 
     # --- Validate security agent config ---

@@ -5,20 +5,15 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-25 | "Implement Milestone 27: Configurable Pipeline Order (TDD Support)"] Stage header display regression (standard mode): scout occupies position 1 in the dynamic order array, so the coder stage now shows "Stage 2 / 5 — Coder" instead of the prior "Stage 1 / 4 — Coder". Scout is never displayed as a standalone stage (the loop `continue`s), so users see stage numbers that skip 1 and count 5 total where only 4 are visible. The defaults `_stage_pos=1` and `_stage_count=4` in `run_stage_coder()` are always bypassed because tekhton.sh sets both globals before calling the function.
-- [ ] [2026-03-25 | "Implement Milestone 27: Configurable Pipeline Order (TDD Support)"] `TESTER_WRITE_FAILING_MAX_TURNS` default of 10 is likely too low. The test-write agent must read its role file, read SCOUT_REPORT.md, identify test patterns, write test files, run the test suite to confirm they load, and produce TESTER_PREFLIGHT.md. 10 turns is tight for a non-trivial project. Consider raising the default to 15 or 20.
-- [ ] [2026-03-25 | "Implement Milestone 27: Configurable Pipeline Order (TDD Support)"] `_run_tester_write_failing()` has no UPSTREAM error check. The full `run_stage_tester()` explicitly handles `AGENT_ERROR_CATEGORY=UPSTREAM` with `write_pipeline_state`. The write-failing path silently swallows API errors via the null-run fallback — API failures during TDD pre-flight leave no trace in the state file.
-- [ ] [2026-03-25 | "Implement Milestone 27: Configurable Pipeline Order (TDD Support)"] `CODER_TDD_TURN_MULTIPLIER` has no upper-bound clamp. The `_clamp_config_value` machinery only matches integers (`^[0-9]+$`), so floats are never clamped. A large value (e.g., `100.0`) would multiply the already-capped base turn budget by 100×, bypassing `CODER_MAX_TURNS_CAP`. Low risk (admin-only config), but worth noting for completeness.
-- [ ] [2026-03-25 | "Implement Milestone 26: Express Mode (Zero-Config Execution)"] `lib/express.sh` is 331 lines — 31 over the 300-line soft ceiling. If this module grows (e.g. more manifest formats, persist strategies), consider splitting persist/role sub-concerns into a `lib/express_persist.sh`.
-- [ ] [2026-03-25 | "Implement Milestone 26: Express Mode (Zero-Config Execution)"] `persist_express_config()` has no cleanup trap on its tmpfile. If the process is killed between `mktemp` and `mv`, a stale `.claude/express_conf_XXXXXX` is left in `.claude/`. Same LOW-severity pattern as the security-agent finding in `init_config.sh` — add `trap 'rm -f "$tmpfile"' EXIT INT TERM` immediately after the `mktemp` call.
-- [ ] [2026-03-25 | "Implement Milestone 26: Express Mode (Zero-Config Execution)"] `_hook_express_persist` always logs "Express config saved to .claude/pipeline.conf. Edit to customize." even when `persist_express_config()` no-ops (conf already exists on run 2+). The inner function also logs its own success message on actual write, so run 1 produces two "saved" lines. Add a guard or move the outer log inside the function.
-- [ ] [2026-03-25 | "Implement Milestone 26: Express Mode (Zero-Config Execution)"] `_detect_express_project_name()` uses `grep -oP` (PCRE), which is not available on macOS/BSD grep. Acceptable for the current Linux/WSL2 target, but worth noting if portability goals expand.
-- [ ] [2026-03-25 | "Implement Milestone 26: Express Mode (Zero-Config Execution)"] Test 6.2 comment reads "resolve_role_file emits a log() line to stdout before the path" — this is incorrect. The `log` call inside `resolve_role_file()` is explicitly redirected to stderr (`>&2`). The `| tail -1` in the test is therefore unnecessary (though harmless). Update the comment to match reality.
-- [ ] [2026-03-25 | "Implement Milestone 25: Human Notes UX Enhancement"] `lib/notes_cli.sh` remains ~395 lines, exceeding the 300-line soft ceiling. Consider extracting file-write helpers into `notes_cli_write.sh` in a future cleanup pass.
-- [ ] [2026-03-25 | "Implement Milestone 25: Human Notes UX Enhancement"] `list_human_notes_cli()` still uses `output+="... "` / `echo -e "$output"`. A direct `printf` per line would be more portable and avoid the large single-variable allocation.
 (none)
 
 ## Resolved
+
+### Non-Blocking Cleanup Pass (2026-03-25e)
+- [x] `lib/pipeline_order.sh:27-30` — NOTE block already has a blank line separating it from the `validate_pipeline_order` function docstring (added in commit cf4cd20). Marked as resolved.
+
+### Non-Blocking Cleanup Pass (2026-03-25d)
+- [x] `lib/config.sh:116` — Removed redundant `|| [[ "$val" == "."* ]]` guard from `_clamp_config_float`. The `^[0-9]+` anchor already rejects leading-dot values.
 
 ### Non-Blocking Cleanup Pass (2026-03-25)
 - [x] `lib/checkpoint.sh` extracted `show_checkpoint_info` into `checkpoint_display.sh` (266 → under 300 lines).
@@ -52,6 +47,11 @@ The coder is prompted to address these when the count exceeds the threshold.
 
 ### Non-Blocking Cleanup Pass (2026-03-25b)
 - [x] `NON_BLOCKING_LOG.md` duplicate "Test Audit Concerns (2026-03-24)" blocks — already resolved by prior cleanup pass (reduced from 3 to 1). Remaining blocks have distinct dates (2026-03-24 vs 2026-03-25) with different content. No duplicates remain. Marked stale note as resolved.
+
+### Non-Blocking Cleanup Pass (2026-03-25c)
+- [x] `stages/tester.sh:350` — Changed `exit 1` to `export SKIP_FINAL_CHECKS=true; return` in `_run_tester_write_failing()` UPSTREAM handler, matching the established pattern at line 119.
+- [x] `lib/config.sh:116` — Added `|| [[ "$val" == "."* ]]` check to `_clamp_config_float` regex to reject leading-dot floats (e.g. `.5`). Negative values already rejected by the `^[0-9]+` anchor.
+- [x] `lib/notes_cli_write.sh:143` — Replaced `echo -e` with `printf '%b'` in `clear_completed_notes()` for portability consistency.
 
 ### Test Audit Concerns (2026-03-25)
 #### INTEGRITY: Test 13 always passes regardless of implementation behavior

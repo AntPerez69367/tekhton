@@ -64,6 +64,26 @@ run_stage_tester() {
         # --- Context compiler (task-scoped filtering) ------------------------
         build_context_packet "tester" "$TASK" "$CLAUDE_TESTER_MODEL"
 
+        # --- UI test guidance (Milestone 28) ----------------------------------
+        export TESTER_UI_GUIDANCE=""
+        if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]]; then
+            # Set framework-specific conditional flags for the sub-template
+            export UI_FRAMEWORK_IS_PLAYWRIGHT="" UI_FRAMEWORK_IS_CYPRESS=""
+            export UI_FRAMEWORK_IS_SELENIUM="" UI_FRAMEWORK_IS_PUPPETEER=""
+            export UI_FRAMEWORK_IS_TESTING_LIBRARY="" UI_FRAMEWORK_IS_DETOX=""
+            export UI_FRAMEWORK_IS_GENERIC=""
+            case "${UI_FRAMEWORK:-}" in
+                playwright)       UI_FRAMEWORK_IS_PLAYWRIGHT="true" ;;
+                cypress)          UI_FRAMEWORK_IS_CYPRESS="true" ;;
+                selenium)         UI_FRAMEWORK_IS_SELENIUM="true" ;;
+                puppeteer)        UI_FRAMEWORK_IS_PUPPETEER="true" ;;
+                testing-library)  UI_FRAMEWORK_IS_TESTING_LIBRARY="true" ;;
+                detox)            UI_FRAMEWORK_IS_DETOX="true" ;;
+                *)                UI_FRAMEWORK_IS_GENERIC="true" ;;
+            esac
+            TESTER_UI_GUIDANCE=$(render_prompt "tester_ui_guidance" 2>/dev/null || true)
+        fi
+
         # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
         _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
@@ -315,6 +335,21 @@ _run_tester_write_failing() {
         "$LOG_FILE" \
         "$AGENT_TOOLS_TESTER"
     print_run_summary
+
+    # --- UPSTREAM error check (API failures) ---
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        warn "TDD tester hit an API error (${AGENT_ERROR_SUBCATEGORY:-unknown}): ${AGENT_ERROR_MESSAGE:-unknown}"
+        local _tdd_resume_flag="--start-at test"
+        [ "${MILESTONE_MODE:-false}" = true ] && _tdd_resume_flag="--milestone --start-at test"
+        write_pipeline_state \
+            "tester" \
+            "TDD pre-flight API error: ${AGENT_ERROR_SUBCATEGORY:-unknown}" \
+            "$_tdd_resume_flag" \
+            "$TASK" \
+            "UPSTREAM error during TDD write-failing phase"
+        export SKIP_FINAL_CHECKS=true
+        return
+    fi
 
     # --- Null run detection ---
     if was_null_run; then

@@ -225,10 +225,17 @@ set -euo pipefail
 : "${ARTIFACT_MERGE_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
 : "${ARTIFACT_MERGE_MAX_TURNS:=10}"
 
+# --- UI testing defaults (Milestone 28: UI Test Awareness) ---
+: "${UI_TEST_CMD:=}"                                    # E2E test command (e.g., "npx playwright test")
+: "${UI_FRAMEWORK:=}"                                   # auto|playwright|cypress|selenium|puppeteer|testing-library|detox|""
+: "${UI_PROJECT_DETECTED:=false}"                       # Set by detection engine at startup
+: "${UI_VALIDATION_ENABLED:=true}"                      # Enable UI validation gate when UI detected
+: "${UI_TEST_TIMEOUT:=120}"                             # Seconds before UI test gate times out
+
 # --- Pipeline order defaults (Milestone 27: TDD support) ---
 : "${PIPELINE_ORDER:=standard}"                    # standard|test_first|auto (auto reserved for V4)
 : "${TDD_PREFLIGHT_FILE:=TESTER_PREFLIGHT.md}"    # Output file for TDD write-failing tester
-: "${TESTER_WRITE_FAILING_MAX_TURNS:=10}"          # Turn limit for write-failing tester (less than full tester)
+: "${TESTER_WRITE_FAILING_MAX_TURNS:=15}"          # Turn limit for write-failing tester (less than full tester)
 : "${CODER_TDD_TURN_MULTIPLIER:=1.2}"             # Multiplier for coder turns in test_first mode
 
 # --- Dry-run / preview defaults (Milestone 23) ---
@@ -366,7 +373,9 @@ _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
 _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
+_clamp_config_value UI_TEST_TIMEOUT 600
 _clamp_config_value TESTER_WRITE_FAILING_MAX_TURNS 100
+_clamp_config_float CODER_TDD_TURN_MULTIPLIER 0.5 3.0
 _clamp_config_value DASHBOARD_HISTORY_DEPTH 100
 _clamp_config_value DASHBOARD_REFRESH_INTERVAL 300
 _clamp_config_value DASHBOARD_MAX_TIMELINE_EVENTS 2000
