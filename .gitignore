@@ -37,11 +37,19 @@ service-account*.json
 
 # Pipeline runtime artifacts
 .claude/PIPELINE.lock
+.claude/PIPELINE_STATE.md
+.claude/MILESTONE_STATE.md
+.claude/LAST_FAILURE_CONTEXT.json
+.claude/TEST_BASELINE.json
+.claude/TEST_BASELINE_OUTPUT.txt
+.claude/test_acceptance_output.tmp
+.claude/dashboard/data/
+.claude/logs/
 
 # Test artifacts
 /tmp/
 
-# Logs (pipeline logs are tracked in .claude/logs/)
+# Logs
 *.log
 
 # Backup files
