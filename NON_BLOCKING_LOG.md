@@ -5,9 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-25 | "Address all 12 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `stages/tester.sh:350` — `_run_tester_write_failing()` UPSTREAM error handler calls `exit 1` instead of `return` + `export SKIP_FINAL_CHECKS=true`. The normal tester UPSTREAM path (line 119) uses `return` so finalization hooks still run (e.g. `_hook_resolve_notes` resets `[~]→[ ]`). Low risk since TDD pre-flight runs before notes are claimed, but inconsistent with the established pattern.
-- [ ] [2026-03-25 | "Address all 12 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/config.sh:116` — `_clamp_config_float` regex (`^[0-9]+.?[0-9]*$`) silently passes through negative values and leading-dot floats (e.g. `CODER_TDD_TURN_MULTIPLIER=-1` or `.5`) without clamping. No practical impact at typical config values but worth noting.
-- [ ] [2026-03-25 | "Address all 12 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/notes_cli_write.sh:143` — `clear_completed_notes()` still uses `echo -e` for the confirmation prompt; the portability fix (NON_BLOCKING item 12) was scoped to `list_human_notes_cli()` only.
+- [ ] [2026-03-25 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/config.sh:116` — The added `|| [[ "$val" == "."* ]]` guard is redundant. The existing regex `^[0-9]+.?[0-9]*$` already rejects leading-dot floats like `.5` because the `^[0-9]+` anchor requires at least one digit before anything else — `.5` does not match, so the early return already fired. The guard is harmless but the stated rationale ("it accepted leading-dot floats") is incorrect. Consider removing the redundant clause in a future cleanup pass to avoid misleading future readers.
 (none)
 
 ## Resolved
@@ -44,6 +42,11 @@ The coder is prompted to address these when the count exceeds the threshold.
 
 ### Non-Blocking Cleanup Pass (2026-03-25b)
 - [x] `NON_BLOCKING_LOG.md` duplicate "Test Audit Concerns (2026-03-24)" blocks — already resolved by prior cleanup pass (reduced from 3 to 1). Remaining blocks have distinct dates (2026-03-24 vs 2026-03-25) with different content. No duplicates remain. Marked stale note as resolved.
+
+### Non-Blocking Cleanup Pass (2026-03-25c)
+- [x] `stages/tester.sh:350` — Changed `exit 1` to `export SKIP_FINAL_CHECKS=true; return` in `_run_tester_write_failing()` UPSTREAM handler, matching the established pattern at line 119.
+- [x] `lib/config.sh:116` — Added `|| [[ "$val" == "."* ]]` check to `_clamp_config_float` regex to reject leading-dot floats (e.g. `.5`). Negative values already rejected by the `^[0-9]+` anchor.
+- [x] `lib/notes_cli_write.sh:143` — Replaced `echo -e` with `printf '%b'` in `clear_completed_notes()` for portability consistency.
 
 ### Test Audit Concerns (2026-03-25)
 #### INTEGRITY: Test 13 always passes regardless of implementation behavior

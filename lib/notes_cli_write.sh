@@ -140,7 +140,7 @@ clear_completed_notes() {
     local unchecked_before
     unchecked_before=$(grep -c '^- \[ \] ' "$_NOTES_FILE" || true)
 
-    echo -e "${YELLOW}Remove ${checked_count} completed note(s)?${NC} [y/N] "
+    printf '%b' "${YELLOW}Remove ${checked_count} completed note(s)?${NC} [y/N] "
     read -r confirm
     if [[ "$confirm" != "y" ]] && [[ "$confirm" != "Y" ]]; then
         log "Cancelled."

@@ -347,7 +347,8 @@ _run_tester_write_failing() {
             "$_tdd_resume_flag" \
             "$TASK" \
             "UPSTREAM error during TDD write-failing phase"
-        exit 1
+        export SKIP_FINAL_CHECKS=true
+        return
     fi
 
     # --- Null run detection ---

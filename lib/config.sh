@@ -113,7 +113,7 @@ _clamp_config_float() {
     local key="$1" min="$2" max="$3"
     local val="${!key:-0}"
     # Validate: must be a number (integer or float)
-    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]] || [[ "$val" == "."* ]]; then
         return
     fi
     local clamped
