@@ -1,92 +1,92 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 58 test cases (inline, not function-wrapped)
-Verdict: CONCERNS
+Tests audited: 2 files, 20 test assertions (13 scenarios in test_init_merge_preserved.sh,
+9 named scenarios in test_init_report_dashboard_compat.sh)
+Verdict: PASS
 
 ---
 
 ### Findings
 
-#### COVERAGE: `rollback_migration()` is entirely untested
-- File: tests/test_migration.sh:344–370 (Suite 10)
-- Issue: Suite 10 is labeled "Rollback" but never calls `rollback_migration()`. It
-  manually calls `backup_project_config`, appends a line to simulate migration, then
-  manually does `cp backup → conf`. The actual `rollback_migration()` function in
-  `lib/migrate.sh:189–259` contains: interactive `read -r choice`, array-based backup
-  selection, multi-file restore (pipeline.conf + CLAUDE.md + MANIFEST.cfg + agents/),
-  and error handling for missing backup dirs. None of that logic is exercised. The
-  test only validates that a file copied from a backup matches the original — which is
-  tautologically true and does not test the implementation at all.
-- Severity: HIGH
-- Action: Test `rollback_migration()` by pre-creating a backup dir (same structure as
-  `backup_project_config` produces), then invoking `rollback_migration "$dir" <<< "1"`
-  to simulate user selecting backup #1. Assert that all restored files match the
-  backup contents. Test the "no backup dir" error path separately.
-
-#### COVERAGE: `check_project_version()` is entirely untested
-- File: tests/test_migration.sh (absent — no suite covers this function)
-- Issue: `check_project_version()` in `lib/migrate.sh:371–425` is the startup
-  integration point: it detects version mismatch, counts applicable migrations, and
-  branches on `COMPLETE_MODE`, `AUTO_ADVANCE`, and `MIGRATION_AUTO`. All three
-  control paths are untested. This is the primary consumer of `detect_config_version`
-  and `run_migrations` — a bug here would silently skip migrations on every pipeline
-  startup without any test catching it.
-- Severity: HIGH
-- Action: Add a suite that exercises: (a) no-mismatch path returns 0 without
-  prompting; (b) COMPLETE_MODE=true auto-applies migrations without prompt; (c)
-  MIGRATION_AUTO=false emits warning and returns 0 without applying. Use temp project
-  dirs as in other suites. The interactive Y/n path can be covered with `<<< "Y"` and
-  `<<< "n"` redirections.
-
-#### INTEGRITY: `$?` assertions after `set -euo pipefail` calls always pass
-- File: tests/test_migration.sh:207, 242, 405
-- Issue: Three assertions — "4.2 V1→V2 apply success", "5.2 V2→V3 apply success",
-  "12.1 no backup dir returns 0" — follow the pattern:
-  ```
-  some_function "$dir"
-  assert_eq "..." "0" "$?"
-  ```
-  The test file has `set -euo pipefail` (line 9). If `some_function` returned non-zero,
-  the script would have exited before reaching `assert_eq`. These assertions can never
-  fire as failures — they are structurally inert. They add to the pass count without
-  providing any detection capability.
-- Severity: MEDIUM
-- Action: Capture exit codes explicitly:
-  ```bash
-  migration_apply "$dir"; rc=$?
-  assert_eq "4.2 V1→V2 apply success" "0" "$rc"
-  ```
-  Or wrap in a subshell: `(migration_apply "$dir")` and check `$?` in the parent.
-  The `set -e` concern is removed if the function is called in a subshell.
-
-#### COVERAGE: No test for mid-chain failure behavior in `run_migrations`
-- File: tests/test_migration.sh (absent — Suite 8 only tests success path)
-- Issue: `run_migrations()` in `lib/migrate.sh:263–322` has explicit logic to stop
-  the chain and return 1 when a migration fails mid-chain (line 307–309). This path
-  is never tested. A regression here could cause partial migrations to be silently
-  reported as successful.
-- Severity: MEDIUM
-- Action: Create a temporary `migrations/` directory override with a fake migration
-  script whose `migration_apply` returns 1. Verify that `run_migrations` exits
-  non-zero and that the watermark is NOT written (since line 318 only runs on
-  success).
-
-#### COVERAGE: Missing edge case — `_write_config_version` when `pipeline.conf` absent
-- File: tests/test_migration.sh (absent)
-- Issue: `_write_config_version()` in `lib/migrate.sh:325–365` silently returns 0
-  when `pipeline.conf` doesn't exist (`[[ -f "$conf_file" ]] || return 0`). Suite 7
-  only tests insert and update on an existing file. The silent-no-op path is not
-  verified, meaning a caller operating on a missing conf would get no error and no
-  watermark — a potential silent failure.
+#### NAMING: Failure messages reference "sed delimiter conflict" that does not exist in implementation
+- File: tests/test_init_merge_preserved.sh:111, :118, :141
+- Issue: The `|`-in-value and `&&`-in-value test cases carry failure messages like
+  "sed delimiter conflict silently corrupted" and "& interpreted as sed backreference".
+  The actual implementation (lib/init_config.sh:201–216) uses pure bash parameter expansion
+  and a line-by-line read loop — no `sed` is involved. The implementation comment explicitly
+  reads "Pure bash avoids sed delimiter/backreference issues". If either test fails in a
+  future regression, the diagnostic message will lead developers to a non-existent code path.
 - Severity: LOW
-- Action: Add a test that calls `_write_config_version "$dir" "3.20"` on a project
-  dir with no pipeline.conf, and asserts no file is created (not a crash).
+- Action: Update the three failure-message strings to reference the actual implementation
+  mechanism. For example: "got wrong value '${result}' — bash line-by-line merge produced
+  unexpected output." No logic change required.
 
-#### INTEGRITY: Weak string match in test 11.3
-- File: tests/test_migration.sh:390
-- Issue: `assert_contains "11.3 status shows migrations available" "migration" "$status_output"` — the substring "migration" appears in the string "Config version:", "Running version:", "Status: 2 migration(s) available", and even the word "migrations". Any output from `show_migration_status` that mentions "migration" anywhere passes. The intent is to verify that the status line correctly reports a count, but the assertion would pass even if the count was wrong.
+#### COVERAGE: Two unconditional `pass` calls verify only "no crash", not post-call state
+- File: tests/test_init_merge_preserved.sh:61
+- File: tests/test_init_report_dashboard_compat.sh:201
+- Issue: `pass "baseline: nonexistent key silently ignored (no crash)"` (line 61) and
+  `pass "missing dashboard/data/: function returns silently without error"` (line 201)
+  are reached unconditionally after the function call. With `set -euo pipefail` active, a
+  crash terminates the script before `pass` — so "no crash" is implicitly checked. However:
+  (a) test_init_merge_preserved.sh:61 does not assert the config file is unchanged after
+  the nonexistent-key call; (b) test_init_report_dashboard_compat.sh:201 does not assert
+  that no partial `init.js` was written to `${PROJ3}/.claude/dashboard/data/`.
 - Severity: LOW
-- Action: Assert the full expected substring: `"migration(s) available"` — or better,
-  check for `"2 migration"` to verify the count matches the two migrations applicable
-  from V1.0 to V3.20.
+- Action: (a) Capture file content before the call and assert equality after. (b) Add:
+  `[[ ! -f "${PROJ3}/.claude/dashboard/data/init.js" ]] || fail "init.js should not exist"`.
+
+---
+
+### Passing Criteria
+
+#### Assertion Honesty: PASS
+All assertions reference values derived from explicit test inputs and the implementation's
+documented contract. The `|`-in-value and `&&`-in-value tests are structured to PASS when
+the implementation works correctly (they call the pure-bash function, then check the actual
+file content) and to FAIL with a descriptive message if it doesn't — not the reverse. No
+hard-coded always-passing assertions detected. TESTER_REPORT.md reports "Passed: 167
+Failed: 0", consistent with the pure-bash implementation handling all special characters
+correctly.
+
+#### Edge Case Coverage: PASS
+test_init_merge_preserved.sh covers: simple replacement, forward-slash path values, nested
+path values, pipe-in-value (`cmd1|cmd2`), double-ampersand-in-value (`npm test && echo done`),
+empty preserved string, nonexistent config file path, multi-key preservation. All
+boundary conditions identified by the reviewer are exercised.
+test_init_report_dashboard_compat.sh covers: basic field round-trip, per-field extraction
+for project name, file count, project type, and timestamp, `available:true` flag, missing
+INIT_REPORT.md (no-op guard), missing dashboard/data dir (no-op guard), and metadata
+field-name alignment between writer and parser.
+
+#### Implementation Exercise: PASS
+Both test files source and directly invoke the real implementation functions
+(`_merge_preserved_values`, `emit_init_report_file`, `emit_dashboard_init`). Stubs are
+scoped to cross-module dependencies (`log`, `warn`, `is_dashboard_enabled`, `_json_escape`,
+`_to_js_timestamp`, `_write_js_file`) that are outside the code-under-test boundary.
+Neither file mocks the function it is testing.
+
+#### Test Weakening Detection: PASS
+No existing test files were modified. Both files are newly created (untracked in git).
+No weakening applicable.
+
+#### Test Naming and Intent: PASS
+All test scenarios encode both the triggering condition and the expected outcome, for
+example: `"path value with /: preserved correctly (| delimiter handles / in value)"`,
+`"no INIT_REPORT.md: init.js not created (correct no-op)"`, `"field 'timestamp:' present
+in metadata block with correct format"`.
+
+#### Scope Alignment: PASS
+test_init_merge_preserved.sh correctly sources lib/init_config.sh, which auto-sources
+lib/init_config_sections.sh (present as a new untracked file). test_init_report_dashboard_compat.sh
+sources lib/init_report.sh and lib/dashboard_emitters.sh — the two files whose
+writer/parser contract the test directly targets. The deletion of INTAKE_REPORT.md does
+not affect either test: the only function that references INTAKE_REPORT_FILE is
+`emit_dashboard_reports()`, which is never called by either test file. No stale imports,
+orphaned references, or dead test scenarios detected.
+
+**Note:** CODER_SUMMARY.md is absent from the working tree and the audit context states
+"Implementation Files Changed: none" — however the git working tree shows several modified
+and new lib files (lib/init_config.sh, lib/init_report.sh, lib/init_config_sections.sh,
+lib/init.sh, lib/detect_report.sh, lib/dashboard_emitters.sh). The tests correctly identify
+and exercise the relevant new implementation files regardless of this metadata discrepancy.

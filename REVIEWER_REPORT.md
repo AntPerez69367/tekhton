@@ -1,4 +1,4 @@
-# Reviewer Report — M21: Version Migration Framework & Project Upgrade
+# Reviewer Report — Milestone 22: Init UX Overhaul (Cycle 1)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,19 +10,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/migrate.sh` is 584 lines — nearly double the 300-line soft ceiling. Works correctly; consider splitting `_cleanup_old_backups`, `rollback_migration`, and the CLI handlers into a `lib/migrate_cli.sh` in a follow-up cleanup pass.
-- `lib/migrate.sh:140` — The outer `if` in `_applicable_migrations` is redundant. The condition `_version_lt "$from_ver" "$ver" || _version_eq "$from_ver" "$ver"` (from ≤ ver) is entirely subsumed by the inner `_version_lt "$from_ver" "$ver"` (from < ver) check one line below. No behavior impact, just dead code.
-- `lib/diagnose_rules.sh:298-299` — The doc comment `# _rule_unknown / # Fallback catch-all — always matches.` was left stranded before `_rule_test_audit_failure()` rather than moved to precede the actual `_rule_unknown()` at line 354. Confusing for readers; easy one-line fix.
-- `tests/test_migration.sh` — Suite 10 (Rollback) tests the file-restore logic directly rather than calling `rollback_migration()` (which requires interactive input). The interactive path is untested. Acceptable for now, but a future pass could add a non-interactive wrapper or pipe input via `echo "1" | rollback_migration`.
-- `check_project_version()` references `COMPLETE_MODE` and `AUTO_ADVANCE` (lines 395-396). These are internal runtime flags; verify they match what `tekhton.sh` actually exports (config keys are named `COMPLETE_MODE_ENABLED` / `AUTO_ADVANCE_ENABLED`). If there's a name mismatch, auto-apply silently falls through to the interactive prompt, which is safe but degrades UX in autonomous mode.
+- `lib/init_config.sh:202` — `_merge_preserved_values()` creates a predictable tmpfile (`${conf_file}.merge.$$`) with no cleanup trap; if the process is killed mid-rewrite (SIGINT/SIGTERM/`set -e` exit) the stale `.merge.<PID>` file is left on disk. Add `trap 'rm -f "$tmpfile"' EXIT INT TERM` immediately after the `local tmpfile=...` line. (Security agent finding, LOW severity, fixable.)
+- `lib/init_config.sh` is 424 lines — 41% over the soft 300-line ceiling. File works correctly; flag for a future split pass (e.g., separate the `_emit_*` emitters into a dedicated helper file).
 
 ## Coverage Gaps
-- `_cleanup_old_backups` has no test coverage. Straightforward to add a Suite 12 alongside the existing suites.
-- No test covering the `--force` flag path in `run_migrate_command` (skips the Y/n prompt).
-
-## ACP Verdicts
-- ACP: New `migrations/` directory — **ACCEPT** — Dedicated directory with a stable four-function interface (`migration_version`, `migration_description`, `migration_check`, `migration_apply`) and numeric naming convention is the correct architectural home for migration scripts. Additive; no existing code affected.
-- ACP: Startup version check injection — **ACCEPT** — Placement after config load and before pre-flight is exactly right. Backward compatible: matching-version projects see zero behavior change; pre-watermark projects only see a prompt on actual version mismatch.
+- None
 
 ## Drift Observations
-- `lib/diagnose_rules.sh` now has 12 rules but the file-level comment header still lists only 10 named rules (lines 14-21). The `_rule_test_audit_failure` and `_rule_version_mismatch` entries are missing from the header block. Low priority, but the header is the first thing readers scan.
+- `lib/init_config.sh:177` — `_preserve_user_config()` uses grep pattern `'^[A-Z_]+='`, which silently drops any config key containing a digit (e.g. a hypothetical `V2_FEATURE=...`). `_merge_preserved_values()` uses the same `^([A-Z_]+)=` regex. Both are consistent with the current key set (all uppercase alpha + underscore), but the pairing is fragile if a digit-bearing key is ever added. Not a current bug.

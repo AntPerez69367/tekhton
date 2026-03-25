@@ -1,11 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_migration.sh` — Suite 12: _cleanup_old_backups coverage; Suite 13: --force flag in run_migrate_command
+- [x] `tests/test_init_merge_preserved.sh` — edge cases for _merge_preserved_values() (|, &, /, multi-key)
+- [x] `tests/test_init_report_dashboard_compat.sh` — INIT_REPORT.md ↔ dashboard round-trip
 
 ## Test Run Results
-Passed: 58  Failed: 0
+Passed: 167  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_migration.sh`
+- [x] `tests/test_init_merge_preserved.sh`
+- [x] `tests/test_init_report_dashboard_compat.sh`
