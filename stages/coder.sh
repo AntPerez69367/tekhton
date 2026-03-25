@@ -106,6 +106,20 @@ run_stage_coder() {
         SHOULD_SCOUT=true
     fi
 
+    # Use cached scout results from dry-run if available (Milestone 23)
+    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "SCOUT_REPORT.md" ]]; then
+        SHOULD_SCOUT=false
+        log "Scout: using cached results from dry-run."
+        apply_scout_turn_limits "SCOUT_REPORT.md"
+        BUG_SCOUT_CONTEXT="
+## Scout Report (pre-located relevant files — read THESE files, not the whole project)
+$(cat SCOUT_REPORT.md)
+"
+        # Archive the cached report same as a live one
+        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+        rm "SCOUT_REPORT.md"
+    fi
+
     if [ "$SHOULD_SCOUT" = true ]; then
         log "Running scout agent to locate relevant files and estimate complexity..."
 

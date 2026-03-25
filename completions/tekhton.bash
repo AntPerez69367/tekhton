@@ -10,7 +10,7 @@ _tekhton() {
     # All flags
     opts="--init --reinit --plan --replan --plan-from-index --rescan
           --status --diagnose --report --metrics --version --docs --help
-          --milestone --auto-advance --add-milestone --complete --dry-run
+          --milestone --auto-advance --add-milestone --complete --dry-run --continue-preview
           --start-at --skip-security --no-commit --skip-audit --force-audit
           --notes-filter --init-notes --seed-contracts --human --with-notes
           --usage-threshold --fix-nonblockers --fix-nb --fix-drift
