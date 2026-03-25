@@ -1678,7 +1678,7 @@ _run_pipeline_stages() {
     _PIPELINE_START_EVT=$(emit_event "pipeline_start" "pipeline" "$TASK" "" "" "")
     _LAST_STAGE_EVT="$_PIPELINE_START_EVT"
 
-    # Stage 0a: Intake gate (pre-stage clarity evaluation)
+    # Pre-stage 1: Intake gate (pre-stage clarity evaluation)
     # Runs once per milestone/task before any other stage. Skipped when
     # START_AT is past coder (resuming from review/test).
     if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
@@ -1699,7 +1699,7 @@ _run_pipeline_stages() {
         fi
     fi
 
-    # Stage 0b: Architect Audit (conditional)
+    # Pre-stage 2: Architect Audit (conditional)
     # Architect audit runs on its own turn/time budget. Save and restore
     # the pipeline accumulators so architect turns do not inflate coder
     # metrics or affect adaptive calibration.
