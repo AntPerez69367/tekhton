@@ -145,6 +145,17 @@ check_for_updates() {
     return 1
 }
 DIAG_CLASSIFICATION=""
+EXPRESS_MODE_ACTIVE=false
+EXPRESS_PERSIST_CONFIG=true
+EXPRESS_PERSIST_ROLES=false
+persist_express_config() {
+    _mock_called[persist_express_config]=1
+    return 0
+}
+persist_express_roles() {
+    _mock_called[persist_express_roles]=1
+    return 0
+}
 has_human_actions() {
     return 1
 }
@@ -200,7 +211,7 @@ restore_hooks() {
 # =============================================================================
 echo "=== Test Suite 1: Hook registration order ==="
 
-assert_eq "1.1 exactly 15 hooks registered" "15" "${#FINALIZE_HOOKS[@]}"
+assert_eq "1.1 exactly 16 hooks registered" "16" "${#FINALIZE_HOOKS[@]}"
 assert_eq "1.2 first hook is _hook_final_checks"    "_hook_final_checks"    "${FINALIZE_HOOKS[0]}"
 assert_eq "1.3 second hook is _hook_drift_artifacts" "_hook_drift_artifacts" "${FINALIZE_HOOKS[1]}"
 assert_eq "1.4 third hook is _hook_record_metrics"   "_hook_record_metrics"  "${FINALIZE_HOOKS[2]}"
@@ -214,8 +225,9 @@ assert_eq "1.10 tenth hook is _hook_clear_state"     "_hook_clear_state"     "${
 assert_eq "1.10b eleventh hook is _hook_health_reassess" "_hook_health_reassess" "${FINALIZE_HOOKS[10]}"
 assert_eq "1.11 twelfth hook is _hook_emit_run_summary" "_hook_emit_run_summary" "${FINALIZE_HOOKS[11]}"
 assert_eq "1.12 thirteenth hook is _hook_failure_context" "_hook_failure_context" "${FINALIZE_HOOKS[12]}"
-assert_eq "1.13 fourteenth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[13]}"
-assert_eq "1.14 fifteenth hook is _hook_update_check" "_hook_update_check"  "${FINALIZE_HOOKS[14]}"
+assert_eq "1.12b fourteenth hook is _hook_express_persist" "_hook_express_persist" "${FINALIZE_HOOKS[13]}"
+assert_eq "1.13 fifteenth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[14]}"
+assert_eq "1.14 sixteenth hook is _hook_update_check" "_hook_update_check"  "${FINALIZE_HOOKS[15]}"
 
 # =============================================================================
 # Test Suite 2: register_finalize_hook appends in order
@@ -224,14 +236,14 @@ echo "=== Test Suite 2: register_finalize_hook ==="
 
 _test_new_hook() { return 0; }
 register_finalize_hook "_test_new_hook"
-assert_eq "2.1 hook count increases by 1" "16" "${#FINALIZE_HOOKS[@]}"
-assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[15]}"
+assert_eq "2.1 hook count increases by 1" "17" "${#FINALIZE_HOOKS[@]}"
+assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[16]}"
 
 # Register a second additional hook — ensure ordering is preserved
 _test_new_hook_2() { return 0; }
 register_finalize_hook "_test_new_hook_2"
-assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[16]}"
-assert_eq "2.4 first new hook still at 15" "_test_new_hook" "${FINALIZE_HOOKS[15]}"
+assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[17]}"
+assert_eq "2.4 first new hook still at 16" "_test_new_hook" "${FINALIZE_HOOKS[16]}"
 
 restore_hooks
 
@@ -773,6 +785,76 @@ assert "15.10 clear_milestone_state NOT called on failure" \
 # hook n (update check) always runs — guards against future hook ordering changes
 assert "15.11 check_for_updates called on failure (finalize_run 1)" \
     "$([ -n "${_mock_called[check_for_updates]:-}" ] && echo 0 || echo 1)"
+
+restore_hooks
+
+# =============================================================================
+# Test Suite 16: _hook_express_persist — behavior
+# =============================================================================
+echo "=== Test Suite 16: _hook_express_persist behavior ==="
+
+# 16.1 No-op on failure: persist_express_config must NOT be called
+_reset_mocks
+EXPRESS_MODE_ACTIVE=true
+EXPRESS_PERSIST_CONFIG=true
+EXPRESS_PERSIST_ROLES=false
+export EXPRESS_MODE_ACTIVE EXPRESS_PERSIST_CONFIG EXPRESS_PERSIST_ROLES
+_hook_express_persist 1
+assert "16.1 persist_express_config NOT called when exit_code=1" \
+    "$([ -z "${_mock_called[persist_express_config]:-}" ] && echo 0 || echo 1)"
+assert "16.2 persist_express_roles NOT called when exit_code=1" \
+    "$([ -z "${_mock_called[persist_express_roles]:-}" ] && echo 0 || echo 1)"
+
+# 16.3 No-op when EXPRESS_MODE_ACTIVE != "true"
+_reset_mocks
+EXPRESS_MODE_ACTIVE=false
+EXPRESS_PERSIST_CONFIG=true
+export EXPRESS_MODE_ACTIVE EXPRESS_PERSIST_CONFIG
+_hook_express_persist 0
+assert "16.3 persist_express_config NOT called when EXPRESS_MODE_ACTIVE=false" \
+    "$([ -z "${_mock_called[persist_express_config]:-}" ] && echo 0 || echo 1)"
+
+# 16.4 Calls persist_express_config on success with EXPRESS_MODE_ACTIVE=true
+_reset_mocks
+EXPRESS_MODE_ACTIVE=true
+EXPRESS_PERSIST_CONFIG=true
+EXPRESS_PERSIST_ROLES=false
+export EXPRESS_MODE_ACTIVE EXPRESS_PERSIST_CONFIG EXPRESS_PERSIST_ROLES
+_hook_express_persist 0
+assert "16.4 persist_express_config called when mode active and exit_code=0" \
+    "$([ -n "${_mock_called[persist_express_config]:-}" ] && echo 0 || echo 1)"
+
+# 16.5 Does NOT call persist_express_roles when EXPRESS_PERSIST_ROLES=false
+assert "16.5 persist_express_roles NOT called when EXPRESS_PERSIST_ROLES=false" \
+    "$([ -z "${_mock_called[persist_express_roles]:-}" ] && echo 0 || echo 1)"
+
+# 16.6 Calls persist_express_roles when EXPRESS_PERSIST_ROLES=true
+_reset_mocks
+EXPRESS_MODE_ACTIVE=true
+EXPRESS_PERSIST_CONFIG=true
+EXPRESS_PERSIST_ROLES=true
+export EXPRESS_MODE_ACTIVE EXPRESS_PERSIST_CONFIG EXPRESS_PERSIST_ROLES
+_hook_express_persist 0
+assert "16.6 persist_express_config called when EXPRESS_PERSIST_ROLES=true" \
+    "$([ -n "${_mock_called[persist_express_config]:-}" ] && echo 0 || echo 1)"
+assert "16.7 persist_express_roles called when EXPRESS_PERSIST_ROLES=true" \
+    "$([ -n "${_mock_called[persist_express_roles]:-}" ] && echo 0 || echo 1)"
+
+# 16.8 Does NOT call persist_express_config when EXPRESS_PERSIST_CONFIG=false
+_reset_mocks
+EXPRESS_MODE_ACTIVE=true
+EXPRESS_PERSIST_CONFIG=false
+EXPRESS_PERSIST_ROLES=false
+export EXPRESS_MODE_ACTIVE EXPRESS_PERSIST_CONFIG EXPRESS_PERSIST_ROLES
+_hook_express_persist 0
+assert "16.8 persist_express_config NOT called when EXPRESS_PERSIST_CONFIG=false" \
+    "$([ -z "${_mock_called[persist_express_config]:-}" ] && echo 0 || echo 1)"
+
+# Reset express state
+EXPRESS_MODE_ACTIVE=false
+EXPRESS_PERSIST_CONFIG=true
+EXPRESS_PERSIST_ROLES=false
+export EXPRESS_MODE_ACTIVE EXPRESS_PERSIST_CONFIG EXPRESS_PERSIST_ROLES
 
 restore_hooks
 

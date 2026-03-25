@@ -715,6 +715,7 @@ source "${TEKHTON_HOME}/lib/migrate.sh"
 source "${TEKHTON_HOME}/lib/migrate_cli.sh"
 source "${TEKHTON_HOME}/lib/checkpoint.sh"
 source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
+source "${TEKHTON_HOME}/lib/express.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
@@ -732,8 +733,25 @@ source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 source "${TEKHTON_HOME}/stages/cleanup.sh"
 
-# Load project config — populates all settings from .claude/pipeline.conf
-load_config
+# --- Express mode: auto-detect config when pipeline.conf is missing -----------
+if [ ! -f "${PROJECT_DIR}/.claude/pipeline.conf" ]; then
+    if [[ "${TEKHTON_EXPRESS_ENABLED:-true}" != "false" ]]; then
+        log "No pipeline.conf found. Running in Express Mode (auto-detected config)."
+        log "For full configuration, run: tekhton --init"
+        enter_express_mode "$PROJECT_DIR"
+    else
+        echo "[✗] pipeline.conf not found at: ${PROJECT_DIR}/.claude/pipeline.conf" >&2
+        echo "    Run 'tekhton --init' from your project root to create one." >&2
+        echo "    Or set TEKHTON_EXPRESS_ENABLED=true to enable auto-detection." >&2
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+else
+    # Load project config — populates all settings from .claude/pipeline.conf
+    load_config
+    # Apply role file fallbacks for configured projects too
+    apply_role_file_fallbacks
+fi
 
 usage() {
     local exit_code="${1:-0}"
