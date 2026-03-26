@@ -182,35 +182,22 @@ _build_phase_context() {
 _select_interview_mode() {
     local input_fd="$1"
 
-    echo
-    echo "  How would you like to answer the planning questions?"
-    echo "    1) CLI Mode     — answer questions one by one in the terminal"
-    echo "    2) File Mode    — export questions to YAML, fill out in your editor"
-
-    # Browser mode gated on M32
-    if [[ -f "${TEKHTON_HOME}/lib/plan_browser.sh" ]]; then
-        echo "    3) Browser Mode — fill out a form in your browser"
-    else
-        echo "    3) Browser Mode — (not yet available, requires M32)"
-    fi
-    echo
+    echo >&2
+    echo "  How would you like to answer the planning questions?" >&2
+    echo "    1) CLI Mode     — answer questions one by one in the terminal" >&2
+    echo "    2) File Mode    — export questions to YAML, fill out in your editor" >&2
+    echo "    3) Browser Mode — fill out a form in your browser" >&2
+    echo >&2
 
     local choice
     while true; do
-        printf "  Select [1-3]: "
+        printf "  Select [1-3]: " >&2
         read -r -u "$input_fd" choice || { echo "cli"; return 0; }
         choice="${choice//$'\r'/}"
         case "$choice" in
             1) echo "cli"; return 0 ;;
             2) echo "file"; return 0 ;;
-            3)
-                if [[ -f "${TEKHTON_HOME}/lib/plan_browser.sh" ]]; then
-                    echo "browser"
-                    return 0
-                else
-                    warn "Browser mode requires M32 (not yet implemented). Choose another option."
-                fi
-                ;;
+            3) echo "browser"; return 0 ;;
             *) warn "Invalid choice. Enter 1, 2, or 3." ;;
         esac
     done
@@ -286,7 +273,11 @@ run_plan_interview() {
         log "Using answers from: ${PLAN_ANSWERS_IMPORT}"
     else
         local mode
-        mode=$(_select_interview_mode "$input_fd")
+        if [[ -n "${PLAN_BROWSER_MODE:-}" ]]; then
+            mode="browser"
+        else
+            mode=$(_select_interview_mode "$input_fd")
+        fi
         case "$mode" in
             file)
                 _run_file_mode
@@ -294,20 +285,19 @@ run_plan_interview() {
                 return 1
                 ;;
             browser)
-                # M32 will handle this path
-                warn "Browser mode not yet implemented."
                 exec 3<&-
-                return 1
+                run_browser_interview || return 1
+                # Browser mode writes answers directly — skip CLI interview
                 ;;
-            cli) ;; # Continue below
+            cli)
+                log "Answer each question. Blank line to submit each answer."
+                log "Type 'skip' for optional sections."
+                echo
+
+                # Parse template sections and collect answers in CLI mode
+                _run_cli_interview "$input_fd"
+                ;;
         esac
-
-        log "Answer each question. Blank line to submit each answer."
-        log "Type 'skip' for optional sections."
-        echo
-
-        # Parse template sections and collect answers in CLI mode
-        _run_cli_interview "$input_fd"
     fi
 
     echo
