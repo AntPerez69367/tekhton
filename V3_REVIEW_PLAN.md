@@ -84,6 +84,33 @@
 | 7 | `tekhton.sh` | **Low** | Version not bumped to 3.30.0 after M30 completion |
 | 8 | `MANIFEST.cfg` | **Low** | M30 still marked pending after completion |
 
+## Remaining Review Phases (Deferred — Require Local `claude` CLI)
+
+These three phases could not be completed in the sandbox and should be run
+locally before tagging v3.30.0 for release.
+
+### Phase 3: `--plan` End-to-End Test
+1. Strip CLAUDE.md and run `tekhton --plan` against Tekhton's own repo
+2. Complete the full interview (project type: cli-tool)
+3. Verify DESIGN.md generation quality (compare against DESIGN_v3.md)
+4. Verify CLAUDE.md generation (milestones, architecture, conventions)
+5. If milestones generated, verify DAG integrity (MANIFEST.cfg created, files exist)
+
+### Phase 4: Full Pipeline Smoke Test
+1. Run a trivial task: `tekhton "Add a comment to lib/common.sh explaining its purpose"`
+2. Verify full cycle: scout → coder → build gate → reviewer → tester
+3. Check runtime artifacts: CODER_SUMMARY.md, REVIEWER_REPORT.md, state files, logs
+4. Verify `--status` reports correctly after a run
+5. Verify `--report` produces readable summary
+6. Test resume: Ctrl-C mid-pipeline, re-run, confirm it resumes correctly
+
+### Phase 6: Brownfield Legacy Project Test
+1. Pick a real legacy codebase (messy structure, no Tekhton footprint, multiple languages)
+2. Run `tekhton --init` — verify tech stack detection accuracy
+3. Run `tekhton --plan` or `--plan-from-index` — evaluate CLAUDE.md quality
+4. Run a real task (actual bug or feature) — evaluate agent quality
+5. Optional stress test: `tekhton --complete "Implement feature X"` — observe autonomous loop
+
 ## Codebase Stats
 
 - **Source**: 35,145 lines across lib/*.sh, stages/*.sh, tekhton.sh
