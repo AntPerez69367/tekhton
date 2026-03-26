@@ -5,13 +5,13 @@ PASS
 88
 
 ## Reasoning
-- Scope is well-defined: explicit file lists (create/modify), clear feature boundary with M32 deferred
-- YAML schema is fully specified inline — no ambiguity about structure or parsing constraints
-- Acceptance criteria are specific and testable: function signatures, exact behaviors, roundtrip tests
-- Tests section provides concrete test cases with exact call signatures and expected returns
-- Watch For section covers key risks (YAML fragility, atomic writes, $EDITOR fallback, cleanup lifecycle)
-- Mode selection flow is described step-by-step with gating condition for option 3
-- Draft review UI is specified with exact display format — implementation is unambiguous
-- Seeds Forward clearly delineates M32 boundaries so developers won't over-build
-- One minor implicit assumption: `prompts_interactive.sh` is referenced in Watch For but its existence is assumed rather than declared. Low risk — it's a fallback path, not a core dependency
-- No formal "Migration impact" section, but the file lifecycle (`.claude/plan_answers.yaml` → `.yaml.done` after synthesis) is described inline in Watch For — sufficient for implementation
+- Scope is well-defined: 4 files to create and 3 files to modify are explicitly listed with function-level detail
+- Acceptance criteria are specific and testable: port availability, YAML schema conformance, sentinel file detection, form validation behavior, responsive breakpoints
+- Tests section provides concrete test cases: form generation, pre-populated resume, server lifecycle (start/stop/port-free), POST /submit with sentinel, POST /save-draft without sentinel, port collision, orphan cleanup
+- Watch For section covers the non-obvious risks: JSON→YAML conversion without a library, Content-Length truncation, xdg-open in headless environments, 127.0.0.1 binding, textarea name/YAML key alignment
+- UI testability is covered: responsive widths (1024px/768px), cross-browser compatibility (Chrome/Firefox/Safari), submit-disabled validation state
+- Dependency on M31 is explicitly declared; referenced functions (load_answer(), _extract_template_sections()) are identified by name
+- The Python server is self-contained (heredoc pattern), keeping the optional-Python guarantee intact
+- No new config keys are introduced — --plan-browser is additive CLI sugar, no migration impact
+- Auto-save interval configurability is flagged in Watch For (JS constant, not hardcoded)
+- The form layout ASCII diagram removes ambiguity about the single-page vs wizard question

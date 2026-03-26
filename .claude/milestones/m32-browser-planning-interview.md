@@ -2,7 +2,7 @@
 
 <!-- milestone-meta
 id: "32"
-status: "pending"
+status: "done"
 -->
 
 The planning interview asks detailed, multi-paragraph questions about project
