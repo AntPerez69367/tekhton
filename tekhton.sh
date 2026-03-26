@@ -14,6 +14,8 @@
 # Flags:
 #   --init                Scaffold pipeline config + agent roles for a new project
 #   --plan                Interactive planning: build DESIGN.md + CLAUDE.md from scratch
+#   --plan --answers <f>  Import pre-filled YAML answers (skip interview)
+#   --export-questions    Export planning questions as YAML template to stdout
 #   --replan              Delta-based update to existing DESIGN.md + CLAUDE.md
 #   --status              Print saved pipeline state and exit
 #   --milestone           Milestone mode: higher turn limits, more review cycles
@@ -365,13 +367,36 @@ fi
 
 # --- Early --plan check (runs before config exists) -------------------------
 
-if [ "${1:-}" = "--plan" ]; then
+if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--export-questions" ]; then
+    # Parse --plan sub-flags: --export-questions, --answers <file>
+    PLAN_EXPORT_QUESTIONS=""
+    PLAN_ANSWERS_IMPORT=""
+    if [ "${1:-}" = "--export-questions" ]; then
+        PLAN_EXPORT_QUESTIONS="true"
+    fi
+    shift
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --export-questions) PLAN_EXPORT_QUESTIONS="true"; shift ;;
+            --answers)
+                if [ -z "${2:-}" ]; then
+                    echo "[✗] --answers requires a file path argument." >&2
+                    exit 1
+                fi
+                PLAN_ANSWERS_IMPORT="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+    export PLAN_EXPORT_QUESTIONS PLAN_ANSWERS_IMPORT
+
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
     source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"
+    source "${TEKHTON_HOME}/lib/plan_answers.sh"
+    source "${TEKHTON_HOME}/lib/plan_review.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
@@ -775,6 +800,8 @@ usage() {
         echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
         echo "  --init --full             Run init + synthesis in one command"
         echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
+        echo "  --plan --answers <file>   Import pre-filled YAML answers (skip interview)"
+        echo "  --export-questions        Export planning questions as YAML template to stdout"
         echo "  --plan-from-index         Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md"
         echo ""
         echo "Running:"
@@ -844,6 +871,7 @@ usage() {
         echo "Getting Started:"
         echo "  --init              Initialize Tekhton in current project"
         echo "  --plan \"desc\"       Start interactive planning session"
+        echo "  --export-questions  Export planning questions as YAML"
         echo "  --plan-from-index   Generate plan from PROJECT_INDEX.md"
         echo ""
         echo "Running:"

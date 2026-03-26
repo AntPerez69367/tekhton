@@ -1,18 +1,18 @@
 # Drift Log
 
 ## Metadata
-- Last audit: 2026-03-25
-- Runs since audit: 5
+- Last audit: 2026-03-26
+- Runs since audit: 1
 
 ## Unresolved Observations
-- [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `prompts/ui_rework.prompt.md:1-28` — file remains unreachable; no code path calls `render_prompt("ui_rework")`. The BUILD_ERRORS.md approach chosen for the blocker fix supersedes this prompt entirely. Consider removing the file to avoid confusing future maintainers.
-- [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `lib/ui_validate.sh:243-248` — `_should_self_test_watchtower()` references `DASHBOARD_ENABLED` and `DASHBOARD_DIR`, creating an implicit coupling between the UI validation module and the Watchtower/Dashboard feature. If that feature is refactored, this coupling breaks silently.
-- [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] The expedited remediation addressed all three architect-identified drift observations correctly:
-- [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] **SF-1 (PIPELINE_ORDER split validation):** Cross-reference comments added at both `config.sh:169-171` and `pipeline_order.sh:27-29`. Comment content matches the architect's specification verbatim. Both locations now explain the split responsibility and the dual-update requirement.
-- [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] **SF-2 (loop-local variable leakage in express.sh):** `local cmd_type cmd _source _conf` at line 87 and `local _ctype _ccmd _csrc _cconf` at line 218 correctly declare all `read -r` targets before their respective loops. Namespace pollution eliminated.
-- [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] **Out-of-scope items** (`_hook_express_persist` ordering, DDO-1 design decision) were correctly left untouched by both coders. Senior coder correctly identified that Simplification section contained "None" and made no source changes. No scope creep in either coder's work.
 
 ## Resolved
+- [RESOLVED 2026-03-26] `prompts/ui_rework.prompt.md:1-28` — file remains unreachable; no code path calls `render_prompt("ui_rework")`. The BUILD_ERRORS.md approach chosen for the blocker fix supersedes this prompt entirely. Consider removing the file to avoid confusing future maintainers.
+- [RESOLVED 2026-03-26] `lib/ui_validate.sh:243-248` — `_should_self_test_watchtower()` references `DASHBOARD_ENABLED` and `DASHBOARD_DIR`, creating an implicit coupling between the UI validation module and the Watchtower/Dashboard feature. If that feature is refactored, this coupling breaks silently.
+- [RESOLVED 2026-03-26] The expedited remediation addressed all three architect-identified drift observations correctly:
+- [RESOLVED 2026-03-26] **SF-1 (PIPELINE_ORDER split validation):** Cross-reference comments added at both `config.sh:169-171` and `pipeline_order.sh:27-29`. Comment content matches the architect's specification verbatim. Both locations now explain the split responsibility and the dual-update requirement.
+- [RESOLVED 2026-03-26] **SF-2 (loop-local variable leakage in express.sh):** `local cmd_type cmd _source _conf` at line 87 and `local _ctype _ccmd _csrc _cconf` at line 218 correctly declare all `read -r` targets before their respective loops. Namespace pollution eliminated.
+- [RESOLVED 2026-03-26] **Out-of-scope items** (`_hook_express_persist` ordering, DDO-1 design decision) were correctly left untouched by both coders. Senior coder correctly identified that Simplification section contained "None" and made no source changes. No scope creep in either coder's work.
 - [RESOLVED 2026-03-25] `validate_pipeline_order()` in `pipeline_order.sh` and the inline `case` block in `config.sh` both validate `PIPELINE_ORDER` against the same allowlist (`standard|test_first|auto`). Duplicated validation — if a new order value is added, both must be updated. The `config.sh` validation runs first and normalizes the value before `pipeline_order.sh` is sourced, so the library's `validate_pipeline_order()` function is only reachable if called directly. One of the two could be removed or one deferred to the other.
 - [RESOLVED 2026-03-25] `PIPELINE_ORDER_STANDARD` includes "scout" to produce a 5-element array, but scout emits no standalone stage header and is handled internally by `run_stage_coder()`. The array conflates two roles: position-based resume mapping (needs scout for accurate positions) and visible stage count display (should exclude scout). This tension will complicate future stage additions.
 - [RESOLVED 2026-03-25] `lib/express.sh:219-226` and `lib/express.sh:87-95` — `_csrc`, `_cconf` (enter_express_mode loop) and `_source`, `_conf` (generate_express_config loop) are assigned by `read -r` inside functions but not declared `local`, making them implicit globals after the loop. This matches the broader codebase pattern for IFS-split discard variables but creates quiet namespace pollution. Low risk given the `_` prefix convention.

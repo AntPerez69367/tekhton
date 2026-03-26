@@ -2,7 +2,7 @@
 
 <!-- milestone-meta
 id: "31"
-status: "pending"
+status: "done"
 -->
 
 The `--plan` interview currently collects answers in a transient Bash array that
