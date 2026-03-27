@@ -128,6 +128,17 @@ _hook_resolve_notes() {
         export _PIPELINE_EXIT_CODE
         resolve_human_notes
     fi
+
+    # Safety net: resolve orphaned [~] notes on success (M33 Bug 6).
+    # These can occur when a prior run claimed a note but crashed before
+    # resolution, and the resumed run lost HUMAN_MODE context.
+    local orphan_count
+    orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
+    orphan_count=$(echo "$orphan_count" | tr -d '[:space:]')
+    if [[ "$orphan_count" -gt 0 ]]; then
+        warn "Found ${orphan_count} orphaned in-progress note(s) — resolving as complete."
+        sed -i 's/^- \[~\]/- [x]/' HUMAN_NOTES.md
+    fi
 }
 
 # g. Archive reports

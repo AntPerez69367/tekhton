@@ -1,44 +1,64 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 21 test assertions across 7 suites (16 unconditional + 5 Python-conditional)
+Tests audited: 1 file, 13 test assertions (6 phases)
 Verdict: PASS
-
----
-
-### Prior-Audit Resolutions
-
-All five findings from the prior audit are resolved:
-- **INTEGRITY (5.2)** — assertion replaced with `echo "$result" | grep -q '^\[.*\]$'` (line 424). ✓
-- **EXERCISE (1)** — `dashboard_emitters.sh` is now sourced (line 57); Suite 1b calls `emit_dashboard_reports()` against a controlled audit file (line 128). ✓
-- **EXERCISE (2)** — Suite 3b (lines 300–345) stubs `python3` to exit 1 and calls `_parse_run_summaries` directly, forcing the bash fallback path. ✓
-- **COVERAGE (4)** — Suite 4 assertions use `grep -qE '"outcome"\s*:\s*"success"'` (lines 380, 386). ✓
-- **SCOPE / NAMING** — Suite 1 split into 1a (pattern documentation) and 1b (functional regression). TESTER_REPORT.md counts updated. ✓
-
----
 
 ### Findings
 
-#### COVERAGE: Suite 4 does not assert the field-name fallback values through the real implementation
-- File: tests/test_dashboard_parsers_bugfix.sh:376–397
-- Issue: Suite 4 calls `_parse_run_summaries "$TMPDIR/.claude/logs" 2` (the real function) and checks that `"outcome":"success"` and `"outcome":"partial"` appear in the output (tests 4.1–4.2). Neither `total_turns` nor `total_time_s` values are asserted. `RUN_SUMMARY.1.json` uses `total_agent_calls:8` / `wall_clock_seconds:50` — the fields Bug #2 introduced fallback support for. If the fix were reverted to `d.get('total_turns', 0)` (dropping the fallback), `total_turns` would become 0, `total_time_s` would become 0, tests 4.1–4.2 would still pass, and the regression would go undetected. The only evidence that Bug #2's Python path fix is correct comes from the inline Suite 2 snippet, which re-implements the logic in isolation and proves the pattern works — but does not prove the pattern is present in the actual implementation.
+#### COVERAGE: Orphan safety-net at finalize.sh:132-141 is not exercised by any test phase
+- File: tests/test_human_mode_resolve_notes_edge.sh:125-148 (Phase 1), 224-252 (Phase 5)
+- Issue: The file header (lines 8-12) and Phase 1/5 comments state that the "orphan
+  safety-net (lines 132-141) must resolve orphaned [~] notes to [x]." In practice,
+  the bulk resolution path at `finalize.sh:122-130` runs first: when `exit_code=0` and
+  any `[~]` notes exist, `_PIPELINE_EXIT_CODE` is set to 0 and `resolve_human_notes` is
+  called. With no `CODER_SUMMARY.md` present (the test environment), `resolve_human_notes`
+  takes the `_PIPELINE_EXIT_CODE -eq 0` branch and converts all `^- \[~\] ` lines to
+  `[x]` via sed. By the time the orphan sweep at line 136 runs, `orphan_count` is 0 and
+  the safety-net sed at line 140 never executes.
+
+  The `remaining_claimed` grep (line 122) and `orphan_count` grep (line 136) use identical
+  patterns (`^- \[~\]`). This makes the orphan safety-net unreachable in normal operation:
+  if `remaining_claimed > 0`, `resolve_human_notes` is called and resolves all `[~]` notes;
+  if `remaining_claimed = 0`, `orphan_count` is also 0. The code at `finalize.sh:132-141`
+  is dead under all currently tested paths.
+
+  The assertions themselves are correct about the final file state — they just do not
+  validate the code they claim to validate.
 - Severity: MEDIUM
-- Action: Add two assertions to Suite 4 after test 4.2, before test 4.3, using the Python-available path: `grep -qE '"total_turns"\s*:\s*8'` (extracted from `total_agent_calls:8` in the new-format fixture) and `grep -qE '"total_time_s"\s*:\s*50'` (from `wall_clock_seconds:50`). Wrap in `if command -v python3 &>/dev/null; then` to mirror the existing Suite 2 guard.
+- Action: Update the file header and Phase 1/5 comments to accurately attribute resolution
+  to `resolve_human_notes` (lines 122-130), not the orphan safety-net (lines 132-141). To
+  exercise the orphan safety-net in isolation, add a phase that stubs or replaces
+  `resolve_human_notes` with a no-op (e.g., `resolve_human_notes() { return 0; }`) so the
+  `[~]` notes survive into the safety-net check. Do not change the implementation to
+  satisfy this gap — the safety-net may be intentionally redundant and its reachability
+  should be investigated separately.
 
-#### EXERCISE: Suites 2 and 3 test inline logic copies, not the implementation
-- File: tests/test_dashboard_parsers_bugfix.sh:164–211, 249–295
-- Issue: Suite 2 (tests 2.1–2.5) runs an inline Python one-liner and Suite 3 (tests 3.1–3.5) runs inline grep commands — both mirroring `_parse_run_summaries` logic but never calling it. A regression in the implementation that didn't change the underlying pattern (e.g., a wrong variable name or early-exit bug) would leave these suites passing. Real function coverage exists via Suite 3b (bash fallback, forced) and Suite 4 (Python path, opportunistic), so the risk is contained. Suites 2 and 3 are valuable as pattern documentation but should not be presented as implementation verification.
-- Severity: LOW
-- Action: Add inline comments to Suites 2 and 3 clarifying they are pattern/logic documentation, not regression tests for `_parse_run_summaries`. No test changes required; the functional coverage gap identified under COVERAGE above is the actionable item.
+### Notes (non-findings)
 
-#### COVERAGE: `stages` field not verified in Suite 3b (bash fallback)
-- File: tests/test_dashboard_parsers_bugfix.sh:322–345
-- Issue: Suite 3b calls `_parse_run_summaries` with python3 stubbed out and verifies `total_turns`, `total_time_s`, and `milestone`. It does not assert the `stages` field. The bash fallback at `dashboard_parsers.sh:184` hardcodes `"stages":{}` — if this were accidentally dropped or malformed, no test would catch it.
-- Severity: LOW
-- Action: Add `grep -q '"stages"'` assertion to Suite 3b after test 3b.3 (line 345). This is low-cost and makes the bash fallback path fully verified for all emitted fields.
+**Assertion honesty (all phases):** All 13 assertions verify file state after calling the
+real `_hook_resolve_notes`. Expected strings (`- [x] [BUG] ...`, `- [ ] [BUG] ...`) are
+derived directly from the sed substitutions in `finalize.sh` and `notes.sh` — no
+constants divorced from implementation logic. No always-pass assertions were found.
 
-#### NAMING: Suite 2 description implies implementation testing
-- File: tests/test_dashboard_parsers_bugfix.sh:151
-- Issue: The suite header reads "Test Suite 2: Python parser with field name fallback (Bug #2) — Tests that Python handles both old (total_turns) and new (total_agent_calls) field names". The Python being tested is an inline snippet, not `_parse_run_summaries`. A reader triaging a test failure will look for the wrong culprit.
-- Severity: LOW
-- Action: Rename to "Test Suite 2: Python field-name fallback pattern (Bug #2) — pattern/logic documentation" and add a note pointing to Suite 4 for integration coverage.
+**Edge case coverage:** Six distinct code paths are tested: fall-through on success
+(Phase 1), fall-through on failure (Phase 2), single-note success (Phase 3), single-note
+failure (Phase 4), multiple orphans on success (Phase 5), and standard non-human mode
+(Phase 6). The early-return guard at `finalize.sh:120` is correctly exercised by Phase 2.
+
+**Implementation exercise:** Tests source and directly call real implementations
+(`lib/finalize.sh`, `lib/notes.sh`, `lib/notes_single.sh`). Stubs are limited to
+functions unrelated to note resolution (archive, metrics, events, milestone ops). No
+mocking of the functions under test was found.
+
+**Test naming:** All 13 assertion labels (e.g., `"1.1 orphaned [~] note resolved to [x]
+on success"`, `"2.1 [~] note untouched on failure in fall-through path"`) clearly encode
+both the scenario and the expected outcome.
+
+**Scope alignment:** Deleted files `INTAKE_REPORT.md` and `JR_CODER_SUMMARY.md` are not
+referenced or imported by this test file. The absence of `CODER_SUMMARY.md` in the test
+temp directory is intentional and correctly triggers the `_PIPELINE_EXIT_CODE` fallback
+path in `resolve_human_notes`. No orphaned tests detected.
+
+**Test count matches tester report:** 13 assertions across 6 phases, consistent with the
+tester's reported "Passed: 13, Failed: 0."

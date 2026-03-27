@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # state.sh — Pipeline state persistence for resume support
 #
@@ -9,6 +10,22 @@
 
 # Valid pipeline states for exit_stage:
 # intake, coder, review, tester, cleanup, architect, QUOTA_PAUSED
+
+# _build_resume_flag — Construct the correct resume flag string based on
+# the current execution mode (human, milestone, or standard).
+# Usage: _build_resume_flag [start_at]
+#   start_at: stage to resume at (default: "coder")
+# Returns: flag string on stdout (e.g. "--human BUG --start-at coder")
+_build_resume_flag() {
+    local start_at="${1:-coder}"
+    local flag=""
+    if [[ "${HUMAN_MODE:-false}" = "true" ]]; then
+        flag="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG}"
+    elif [[ "${MILESTONE_MODE:-false}" = "true" ]]; then
+        flag="--milestone"
+    fi
+    echo "${flag:+$flag }--start-at $start_at"
+}
 
 write_pipeline_state() {
     local exit_stage="$1"
@@ -86,6 +103,18 @@ $(if [ -n "${_ORCH_ATTEMPT:-}" ]; then
 else
     echo "(not in --complete mode)"
 fi)
+
+## Human Mode
+${HUMAN_MODE:-false}
+
+## Human Notes Tag
+${HUMAN_NOTES_TAG:-}
+
+## Current Note Line
+${CURRENT_NOTE_LINE:-}
+
+## Human Single Note
+${HUMAN_SINGLE_NOTE:-false}
 
 ## Error Classification
 $(if [ -n "${AGENT_ERROR_CATEGORY:-}" ]; then

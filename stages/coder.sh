@@ -433,6 +433,10 @@ ${nb_notes}"
         claim_human_notes
     elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
+        # Defensive hint: detect tasks that appear to originate from HUMAN_NOTES.md
+        if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then
+            warn "Tip: This task appears to come from HUMAN_NOTES.md. Did you mean to use --human?"
+        fi
         HUMAN_NOTES_BLOCK=""
     fi
 
@@ -487,7 +491,7 @@ ${nb_notes}"
         write_pipeline_state \
             "coder" \
             "upstream_error" \
-            "${MILESTONE_MODE:+--milestone }--start-at coder" \
+            "$(_build_resume_flag coder)" \
             "$TASK" \
             "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. This is transient — re-run the same command."
 
@@ -530,7 +534,7 @@ ${nb_notes}"
         write_pipeline_state \
             "coder" \
             "null_run" \
-            "--start-at coder" \
+            "$(_build_resume_flag coder)" \
             "$TASK" \
             "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a SCOUT_REPORT.md manually, or checking agent logs."
 
@@ -578,7 +582,7 @@ ${nb_notes}"
             write_pipeline_state \
                 "coder" \
                 "turn_exhaustion_no_output" \
-                "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                "$(_build_resume_flag coder)" \
                 "$TASK" \
                 "Coder used ${LAST_AGENT_TURNS} turns but produced no output. Likely spent turns exploring without implementing. Consider: narrower task, manual scout report, or milestone split."
             exit 1
@@ -609,7 +613,7 @@ ${nb_notes}"
             write_pipeline_state \
                 "coder" \
                 "clarification_abort" \
-                "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                "$(_build_resume_flag coder)" \
                 "$TASK" \
                 "Clarification collection aborted by user. Partial answers in CLARIFICATIONS.md."
             error "Pipeline paused for clarification. Re-run to resume."
@@ -647,7 +651,7 @@ ${nb_notes}"
                 write_pipeline_state \
                     "coder" \
                     "null_run_post_clarification" \
-                    "--start-at coder" \
+                    "$(_build_resume_flag coder)" \
                     "$TASK" \
                     "Post-clarification coder used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Consider: clarification answers may be incomplete, or agent couldn't translate them into code changes."
 
@@ -703,7 +707,7 @@ ${nb_notes}"
                     write_pipeline_state \
                         "coder" \
                         "upstream_error" \
-                        "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                        "$(_build_resume_flag coder)" \
                         "$TASK" \
                         "API error during continuation attempt ${_cont_attempt}: ${AGENT_ERROR_MESSAGE}."
                     error "State saved. Re-run the same command."
@@ -787,7 +791,7 @@ ${nb_notes}"
                 # Skip the state-save-and-exit — fall through to completion gate
                 :
             elif [[ "$IMPLEMENTED_LINES" -gt 3 ]]; then
-                RESUME_FLAG="--milestone --start-at coder"
+                RESUME_FLAG="$(_build_resume_flag coder)"
                 RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
 
                 local _state_notes="${RESUME_NOTE}"
@@ -823,7 +827,7 @@ ${GIT_DIFF_STAT}
                     fi
                 fi
 
-                RESUME_FLAG="--milestone"
+                RESUME_FLAG="$(_build_resume_flag coder)"
                 RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended."
 
                 local _state_notes="${RESUME_NOTE}"
@@ -869,11 +873,7 @@ ${GIT_DIFF_STAT}
 
             GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20 || echo "no changes")
 
-            if [ "$MILESTONE_MODE" = true ]; then
-                RESUME_FLAG="--milestone --start-at coder"
-            else
-                RESUME_FLAG="--start-at coder"
-            fi
+            RESUME_FLAG="$(_build_resume_flag coder)"
 
             write_pipeline_state \
                 "coder" \
@@ -913,7 +913,7 @@ ${GIT_DIFF_STAT}
                 write_pipeline_state \
                     "coder" \
                     "build_failure" \
-                    "--start-at coder" \
+                    "$(_build_resume_flag coder)" \
                     "$TASK" \
                     "Build errors remain after auto-fix attempt. See BUILD_ERRORS.md."
                 error "State saved. Review BUILD_ERRORS.md manually then re-run."

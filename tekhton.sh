@@ -192,7 +192,10 @@ COMPLETE_MODE=false
 MIGRATE_DAG=false
 SETUP_INDEXER=false
 WITH_LSP=false
-CURRENT_NOTE_LINE=""
+# Preserve CURRENT_NOTE_LINE and HUMAN_SINGLE_NOTE across resume (M33 Bug 2).
+# These are set via env export before exec; --human flag restores HUMAN_MODE/TAG.
+CURRENT_NOTE_LINE="${CURRENT_NOTE_LINE:-}"
+HUMAN_SINGLE_NOTE="${HUMAN_SINGLE_NOTE:-false}"
 SKIP_AUDIT=false
 SKIP_SECURITY=false
 FORCE_AUDIT=false
@@ -936,6 +939,12 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
     SAVED_STAGE=$(awk '/^## Exit Stage$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_MILESTONE=$(awk '/^## Milestone$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
 
+    # Restore human-mode metadata (Bug 2, M33)
+    SAVED_HUMAN_MODE=$(awk '/^## Human Mode$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_HUMAN_TAG=$(awk '/^## Human Notes Tag$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_NOTE_LINE=$(awk '/^## Current Note Line$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_HUMAN_SINGLE=$(awk '/^## Human Single Note$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+
     # Enhanced resume prompt (M17): show structured context
     echo
     echo -e "\033[1mFound saved pipeline state:\033[0m"
@@ -944,6 +953,9 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
     echo -e "  Reason:     ${SAVED_REASON:-unknown}"
     if [[ -n "$SAVED_MILESTONE" ]] && [[ "$SAVED_MILESTONE" != "none" ]]; then
         echo -e "  Milestone:  ${SAVED_MILESTONE}"
+    fi
+    if [[ "${SAVED_HUMAN_MODE:-false}" = "true" ]]; then
+        echo -e "  Human mode: yes${SAVED_HUMAN_TAG:+ (tag: ${SAVED_HUMAN_TAG})}"
     fi
     # Enrich from LAST_FAILURE_CONTEXT.json when available
     local_failure_ctx="${PROJECT_DIR}/.claude/LAST_FAILURE_CONTEXT.json"
@@ -972,7 +984,20 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
             # Remove lock before exec — exec replaces the process (same PID),
             # so the EXIT trap never fires. The resumed invocation recreates it.
             rm -f "$_TEKHTON_LOCK_FILE" 2>/dev/null || true
-            exec bash "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
+            # Restore human-mode metadata via env vars (survive exec)
+            if [[ "${SAVED_HUMAN_MODE:-false}" = "true" ]]; then
+                export HUMAN_MODE="true"
+                export HUMAN_NOTES_TAG="${SAVED_HUMAN_TAG:-}"
+                export CURRENT_NOTE_LINE="${SAVED_NOTE_LINE:-}"
+                export HUMAN_SINGLE_NOTE="${SAVED_HUMAN_SINGLE:-false}"
+            fi
+            # Human-mode tasks are derived via pick_next_note, not positional args.
+            # Passing $SAVED_TASK would trip the "--human with explicit task" guard.
+            if [[ "${SAVED_HUMAN_MODE:-false}" = "true" ]]; then
+                exec bash "$0" "${SAVED_RESUME_FLAGS[@]}"
+            else
+                exec bash "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
+            fi
             ;;
         fresh)
             clear_pipeline_state
@@ -1365,9 +1390,18 @@ if [[ "$HUMAN_MODE" = true ]]; then
             exit 0
         fi
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
+        # Capture count BEFORE claiming so pre-flight display is accurate (M33 Bug 5)
+        _PRE_CLAIM_NOTE_COUNT=$(count_human_notes)
         claim_single_note "$CURRENT_NOTE_LINE"
         export CURRENT_NOTE_LINE
         log "Human mode: picked note — ${TASK}"
+        # Imply COMPLETE_MODE so single-note gets the orchestration loop
+        # (continuation attempts, retry logic) instead of single-shot exit.
+        # HUMAN_SINGLE_NOTE distinguishes "one note to completion" from
+        # "process all notes" (--human --complete).
+        COMPLETE_MODE=true
+        HUMAN_SINGLE_NOTE=true
+        export HUMAN_SINGLE_NOTE
     fi
 elif [[ "$FIX_NONBLOCKERS_MODE" = true ]] || [[ "$FIX_DRIFT_MODE" = true ]]; then
     # TASK already set during flag validation above
@@ -1499,8 +1533,9 @@ if [ "$AUTO_ADVANCE" = true ]; then
     warn "AUTO-ADVANCE — Will advance through milestones (limit: ${AUTO_ADVANCE_LIMIT}, confirm: ${AUTO_ADVANCE_CONFIRM})"
 fi
 
-# Pre-flight: show only the notes that will actually be injected
-HUMAN_NOTE_COUNT=$(count_human_notes)
+# Pre-flight: show only the notes that will actually be injected.
+# Use pre-claim count if available (M33 Bug 5: count before claim_single_note).
+HUMAN_NOTE_COUNT="${_PRE_CLAIM_NOTE_COUNT:-$(count_human_notes)}"
 if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
     echo
     if [ -n "$NOTES_FILTER" ]; then
@@ -2194,9 +2229,19 @@ fi
 
 # --- Pipeline execution (mode dispatch) --------------------------------------
 
-if [[ "$HUMAN_MODE" = true ]] && [[ "$COMPLETE_MODE" = true ]]; then
-    # Human-complete mode: process notes one at a time in a loop
+if [[ "$HUMAN_MODE" = true ]] && [[ "$COMPLETE_MODE" = true ]] && [[ "${HUMAN_SINGLE_NOTE:-false}" != true ]]; then
+    # Human-complete mode (--human --complete): process notes one at a time in a loop
     _run_human_complete_loop
+elif [[ "$HUMAN_MODE" = true ]] && [[ "${HUMAN_SINGLE_NOTE:-false}" = true ]]; then
+    # Human single-note mode: one note with full orchestration loop (retry, continuation)
+    if [[ "${COMPLETE_MODE_ENABLED:-true}" != "true" ]]; then
+        warn "--complete is disabled (COMPLETE_MODE_ENABLED=false). Running single pipeline."
+        _run_pipeline_stages
+        finalize_run 0
+    else
+        run_complete_loop || true
+    fi
+    echo
 elif [[ "$FIX_NONBLOCKERS_MODE" = true ]]; then
     # Fix-nonblockers mode: address all open non-blocking notes in a loop
     _run_fix_nonblockers_loop

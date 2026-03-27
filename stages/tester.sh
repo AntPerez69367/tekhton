@@ -126,8 +126,8 @@ run_stage_tester() {
 
     # --- UPSTREAM error detection (12.2) ----------------------------------------
 
-    local resume_flag="--start-at test"
-    [ "$MILESTONE_MODE" = true ] && resume_flag="--milestone --start-at test"
+    local resume_flag
+    resume_flag="$(_build_resume_flag test)"
 
     if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
         warn "Tester hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
@@ -307,8 +307,8 @@ TESTER_EOF
             fi
 
             if [[ "$_tester_continued" = false ]]; then
-                local resume_tester_flag="--start-at tester"
-                [ "$MILESTONE_MODE" = true ] && resume_tester_flag="--milestone --start-at tester"
+                local resume_tester_flag
+                resume_tester_flag="$(_build_resume_flag tester)"
 
                 write_pipeline_state \
                     "tester" \
@@ -396,8 +396,8 @@ _run_tester_write_failing() {
     # --- UPSTREAM error check (API failures) ---
     if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
         warn "TDD tester hit an API error (${AGENT_ERROR_SUBCATEGORY:-unknown}): ${AGENT_ERROR_MESSAGE:-unknown}"
-        local _tdd_resume_flag="--start-at test"
-        [ "${MILESTONE_MODE:-false}" = true ] && _tdd_resume_flag="--milestone --start-at test"
+        local _tdd_resume_flag
+        _tdd_resume_flag="$(_build_resume_flag test)"
         write_pipeline_state \
             "tester" \
             "TDD pre-flight API error: ${AGENT_ERROR_SUBCATEGORY:-unknown}" \

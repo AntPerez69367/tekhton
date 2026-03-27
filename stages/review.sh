@@ -71,7 +71,7 @@ run_stage_review() {
             if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
                 error "Reviewer API error at max review cycles — cannot proceed."
                 write_pipeline_state "review" "upstream_error" \
-                    "${MILESTONE_MODE:+--milestone }--start-at review" \
+                    "$(_build_resume_flag review)" \
                     "$TASK" \
                     "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. Re-run the same command."
                 exit 1
@@ -86,7 +86,7 @@ run_stage_review() {
             if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
                 error "Reviewer null run at max review cycles — cannot proceed."
                 write_pipeline_state "review" "null_run" \
-                    "${MILESTONE_MODE:+--milestone }--start-at review" \
+                    "$(_build_resume_flag review)" \
                     "$TASK" \
                     "Reviewer agent died without producing output (${LAST_AGENT_TURNS} turns). Check logs."
                 exit 1
@@ -236,7 +236,7 @@ REVIEW_EOF
                     if ! run_build_gate "post-fix-pass-retry"; then
                         error "Build gate failed again. See BUILD_ERRORS.md."
                         write_pipeline_state "review" "build_failure" \
-                            "${MILESTONE_MODE:+--milestone }--start-at review" \
+                            "$(_build_resume_flag review)" \
                             "$TASK" "Build broken after fix pass. See BUILD_ERRORS.md."
                         exit 1
                     fi
@@ -246,11 +246,7 @@ REVIEW_EOF
                 error "Max review cycles (${MAX_REVIEW_CYCLES}) reached with unresolved blockers."
 
                 BLOCKER_SUMMARY="Complex: ${HAS_COMPLEX}, Simple: ${HAS_SIMPLE} — see REVIEWER_REPORT.md"
-                if [ "$MILESTONE_MODE" = true ]; then
-                    RESUME_FLAG="--milestone --start-at review"
-                else
-                    RESUME_FLAG="--start-at review"
-                fi
+                RESUME_FLAG="$(_build_resume_flag review)"
 
                 write_pipeline_state \
                     "review" \
@@ -292,7 +288,7 @@ _route_specialist_rework() {
     if [[ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]]; then
         error "Specialist blockers found but no review cycles remain."
         write_pipeline_state "review" "specialist_blockers" \
-            "${MILESTONE_MODE:+--milestone }--start-at review" \
+            "$(_build_resume_flag review)" \
             "$TASK" "Specialist reviewers found blockers. See SPECIALIST_REPORT.md."
         exit 1
     fi
@@ -321,7 +317,7 @@ _route_specialist_rework() {
         if ! run_build_gate "post-specialist-retry"; then
             error "Build gate failed again after specialist rework."
             write_pipeline_state "review" "specialist_build_failure" \
-                "${MILESTONE_MODE:+--milestone }--start-at review" \
+                "$(_build_resume_flag review)" \
                 "$TASK" "Build broken after specialist rework. See BUILD_ERRORS.md."
             exit 1
         fi
