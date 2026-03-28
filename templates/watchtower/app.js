@@ -80,7 +80,6 @@
     return str.length <= max ? str : str.substring(0, max - 1) + '\u2026';
   }
 
-  var renderedTabs = {};
   function initTabs() {
     var btns = document.querySelectorAll('.tab-btn'), saved = null;
     try { saved = localStorage.getItem('tk_active_tab'); } catch (e) { /* noop */ }
@@ -93,16 +92,13 @@
     for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('active', btns[i].dataset.tab === tabId);
     for (var j = 0; j < tabs.length; j++) tabs[j].classList.toggle('active', tabs[j].id === 'tab-' + tabId);
     try { localStorage.setItem('tk_active_tab', tabId); } catch (e) { /* noop */ }
-    renderTab(tabId); renderedTabs[tabId] = true;
+    renderTab(tabId);
   }
   function getActiveTab() {
     try { return localStorage.getItem('tk_active_tab') || 'live'; } catch (e) { return 'live'; }
   }
   function renderActiveTab() {
-    var tabId = getActiveTab(), allTabs = ['live', 'milestones', 'reports', 'trends'];
-    renderTab(tabId); renderedTabs[tabId] = true;
-    for (var i = 0; i < allTabs.length; i++)
-      if (allTabs[i] !== tabId) renderedTabs[allTabs[i]] = false;
+    renderTab(getActiveTab());
   }
   function renderTab(tabId) {
     switch (tabId) {
@@ -499,7 +495,7 @@
     })(dataFiles[i]);
     Promise.all(promises).then(function () {
       buildCausalIndex(); renderActiveTab(); updateStatusIndicator(); checkRefreshLifecycle();
-    }).catch(function () { location.reload(); });
+    }).catch(function (err) { if (typeof console !== 'undefined') console.error('Watchtower refresh failed:', err); location.reload(); });
   }
   function checkRefreshLifecycle() {
     var s = state(), status = (s.pipeline_status || '').toLowerCase();
@@ -526,7 +522,6 @@
     var btn = document.getElementById('manual-refresh');
     if (btn) btn.addEventListener('click', manualRefresh);
     checkRefreshLifecycle();
-    if (!refreshStopped) { var st = (state().pipeline_status || '').toLowerCase(); if (st === 'running' || st === 'initializing') scheduleRefresh(); }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render); else render();
 })();
