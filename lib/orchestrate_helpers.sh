@@ -71,13 +71,30 @@ _save_orchestration_state() {
     fi
     resume_flags="${resume_flags} --start-at ${START_AT}"
 
+    # Safety-bound exits (max_attempts, timeout, agent_cap) should write zeroed
+    # counters so the next invocation starts with a fresh budget. The counter in
+    # the state file is what gets restored on resume — if we write the exhausted
+    # value, the next run would immediately re-hit the same bound.
+    local _saved_attempt="$_ORCH_ATTEMPT"
+    local _saved_calls="$_ORCH_AGENT_CALLS"
+    case "$outcome" in
+        max_attempts|timeout|agent_cap)
+            _ORCH_ATTEMPT=0
+            _ORCH_AGENT_CALLS=0
+            ;;
+    esac
+
     write_pipeline_state \
         "${START_AT}" \
         "complete_loop_${outcome}" \
         "$resume_flags" \
         "$TASK" \
-        "Orchestration: ${detail} (attempt ${_ORCH_ATTEMPT}/${MAX_PIPELINE_ATTEMPTS:-5}, ${_ORCH_ELAPSED}s elapsed, ${_ORCH_AGENT_CALLS} agent calls)" \
+        "Orchestration: ${detail} (attempt ${_saved_attempt}/${MAX_PIPELINE_ATTEMPTS:-5}, ${_ORCH_ELAPSED}s elapsed, ${_saved_calls} agent calls)" \
         "${_CURRENT_MILESTONE:-}"
+
+    # Restore for metrics/logging if anything reads them after this
+    _ORCH_ATTEMPT="$_saved_attempt"
+    _ORCH_AGENT_CALLS="$_saved_calls"
 
     warn "State saved. Resume with: tekhton ${resume_flags} \"${TASK}\""
 }
