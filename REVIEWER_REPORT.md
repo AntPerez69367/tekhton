@@ -4,16 +4,17 @@
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- `DRIFT_LOG.md:11–18` — The Resolved section now contains near-duplicate entries for each of the 3 resolved observations: lines 11–13 document WHY each observation was stale, while lines 14, 16, and 18 contain the original observation text (also stamped RESOLVED 2026-03-29). Each resolved observation is described twice with different wording. Not harmful, but a cleanup pass could collapse each pair into a single entry.
+- `lib/drift_prune.sh` header `# Expects:` comment omits `TEKHTON_SESSION_DIR` (used in `mktemp` fallback) and the implicit dependency on `log()` from `common.sh`. Minor doc gap.
+- `lib/drift_prune.sh:30` — `awk ... 2>/dev/null || true` suppresses awk stderr silently; consistent with the `drift_cleanup.sh` pattern but the redirect is unnecessary since awk doesn't write to stderr during normal pattern matching.
 
 ## Coverage Gaps
-None
+- No test exercises the pruning path under realistic conditions: a `DRIFT_LOG.md` with more entries than `DRIFT_RESOLVED_KEEP_COUNT` triggering an actual prune + archive to `DRIFT_ARCHIVE.md`, and verifying the ordering (newest entries kept, oldest archived). The test files add the source but don't exercise `prune_resolved_drift_entries()` with an over-threshold fixture.
 
 ## Drift Observations
-- `DRIFT_LOG.md` (general) — The Resolved section has grown to 39 entries spanning multiple initiatives with no pruning mechanism. A future cleanup pass could move entries older than N runs to a `DRIFT_ARCHIVE.md` to keep the active log readable.
+- None

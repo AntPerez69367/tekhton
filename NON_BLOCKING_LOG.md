@@ -5,6 +5,8 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-29 | "Resolve all 1 unresolved architectural drift observations in DRIFT_LOG.md."] `lib/drift_prune.sh` header `# Expects:` comment omits `TEKHTON_SESSION_DIR` (used in `mktemp` fallback) and the implicit dependency on `log()` from `common.sh`. Minor doc gap.
+- [ ] [2026-03-29 | "Resolve all 1 unresolved architectural drift observations in DRIFT_LOG.md."] `lib/drift_prune.sh:30` — `awk ... 2>/dev/null || true` suppresses awk stderr silently; consistent with the `drift_cleanup.sh` pattern but the redirect is unnecessary since awk doesn't write to stderr during normal pattern matching.
 - [ ] [2026-03-29 | "Resolve all 3 unresolved architectural drift observations in DRIFT_LOG.md."] `DRIFT_LOG.md:11–18` — The Resolved section now contains near-duplicate entries for each of the 3 resolved observations: lines 11–13 document WHY each observation was stale, while lines 14, 16, and 18 contain the original observation text (also stamped RESOLVED 2026-03-29). Each resolved observation is described twice with different wording. Not harmful, but a cleanup pass could collapse each pair into a single entry.
 (none)
 

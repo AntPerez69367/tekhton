@@ -306,6 +306,9 @@ reset_runs_since_audit() {
         -e "s/Last audit: .*/Last audit: ${date_tag}/" \
         "$drift_file" > "$tmpfile"
     mv "$tmpfile" "$drift_file"
+
+    # Prune old resolved entries after audit to prevent unbounded growth
+    prune_resolved_drift_entries
 }
 
 # should_trigger_audit — Returns 0 (true) if audit threshold is reached.

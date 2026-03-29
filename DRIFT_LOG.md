@@ -5,10 +5,10 @@
 - Runs since audit: 1
 
 ## Unresolved Observations
-- [2026-03-29 | "Resolve all 3 unresolved architectural drift observations in DRIFT_LOG.md."] `DRIFT_LOG.md` (general) — The Resolved section has grown to 39 entries spanning multiple initiatives with no pruning mechanism. A future cleanup pass could move entries older than N runs to a `DRIFT_ARCHIVE.md` to keep the active log readable.
 (none)
 
 ## Resolved
+- [RESOLVED 2026-03-29] `DRIFT_LOG.md` (general) — The Resolved section has grown to 39 entries spanning multiple initiatives with no pruning mechanism. A future cleanup pass could move entries older than N runs to a `DRIFT_ARCHIVE.md` to keep the active log readable.
 - [RESOLVED 2026-03-29] `NON_BLOCKING_LOG.md:97–121` — Observation about duplicate "Test Audit Concerns" resolved blocks was stale. All four blocks have distinct dates (2026-03-24, 2026-03-25, 2026-03-28, 2026-03-29) with different content. No duplicates exist.
 - [RESOLVED 2026-03-29] `lib/dashboard_emitters.sh:162` — Observation about `dep_arr` not declared `local` was stale. Line 162 contains `local i dep_list dep_item dep_arr`, correctly declaring it before the `read -ra dep_arr` on line 166.
 - [RESOLVED 2026-03-29] `lib/milestone_archival.sh:50-54,63-65` — Observation about duplicated DAG-mode guard was stale. A `local is_dag_mode` variable is set once at function entry (line 40) and referenced later (line 69), exactly as the observation recommended.
