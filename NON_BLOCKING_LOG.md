@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-29 | "[BUG] Milestone archival re-archives ALL completed milestones on every run instead of skipping already-archived ones — MILESTONE_ARCHIVE.md grows by the full milestone set each invocation; needs an idempotency check (e.g., grep for milestone ID before appending)"] No code was changed this run — the fix was already present. HUMAN_NOTES.md item should be marked resolved so it doesn't resurface in future runs.
 - [ ] [2026-03-28 | "M39"] `finalize_display.sh:99`: the `IFS='|' read -r _ _ _ _ _ notes_unchecked` pattern assumes `get_notes_summary` always returns exactly 6 pipe-separated fields. A comment noting the field contract would prevent future silent failures if that count changes.
 - [ ] [2026-03-28 | "M39"] `finalize_display.sh:111-119`: "normal" and "warning" severity branches for human notes both emit the same tip lines. Intentional but slightly redundant — consider a shared variable if the block grows.
 - [ ] [2026-03-28 | "M38"] `stages/coder.sh`: The `declare -p _STAGE_STATUS &>/dev/null 2>&1` guard duplicates stderr redirect (`&>` already redirects both; the trailing `2>&1` is redundant but harmless).
@@ -110,3 +111,10 @@ The coder is prompted to address these when the count exceeds the threshold.
 #### INTEGRITY: Tautological assertion in success branch (6.3)
 #### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
 #### NAMING: No PASS counter in test_agent_fifo_invocation.sh
+
+### Test Audit Concerns (2026-03-29)
+#### INTEGRITY: Edge-case test accepts any outcome — always passes
+#### COVERAGE: DAG-mode missing-file path not exercised
+#### WEAKENING
+#### NAMING
+#### SCOPE

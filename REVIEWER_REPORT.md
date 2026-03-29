@@ -1,7 +1,7 @@
-# Reviewer Report — M39
+# Reviewer Report
 
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,15 +10,21 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `finalize_display.sh:99`: the `IFS='|' read -r _ _ _ _ _ notes_unchecked` pattern assumes `get_notes_summary` always returns exactly 6 pipe-separated fields. A comment noting the field contract would prevent future silent failures if that count changes.
-- `finalize_display.sh:111-119`: "normal" and "warning" severity branches for human notes both emit the same tip lines. Intentional but slightly redundant — consider a shared variable if the block grows.
+- No code was changed this run — the fix was already present. HUMAN_NOTES.md item should be marked resolved so it doesn't resurface in future runs.
 
 ## Coverage Gaps
-- No test coverage for `_severity_for_count` — threshold edge cases (count == warn, count == crit, count == 0) are simple to unit test and protect against future threshold refactors.
-- No test asserting that `emit_dashboard_action_items` writes `data/action_items.js` with the correct `TK_ACTION_ITEMS` structure (analogous to the existing `test_m38_dashboard_coverage.sh` patterns).
-
-## ACP Verdicts
 - None
 
 ## Drift Observations
-- None
+- `lib/milestone_archival.sh:50-54` and `lib/milestone_archival.sh:63-65` repeat the identical DAG-mode guard (`MILESTONE_DAG_ENABLED == true` + `has_milestone_manifest`) twice within the same function. A local `is_dag_mode` variable set once at function entry would reduce duplication and make the condition easier to audit.
+- The global-grep idempotency fix (passing `archive_initiative=""` in DAG mode) assumes milestone numbers are globally unique across all initiatives in a project's lifecycle. This holds for the current codebase but is not enforced structurally. If a project ever resets milestone numbering (e.g., a fresh DAG manifest starting at m01 after an earlier inline run), a prior milestone number in the archive could produce a false-positive match, silently skipping the new milestone. Worth a code comment explaining the uniqueness assumption.
+
+---
+
+## Review Notes
+
+The fix at `lib/milestone_archival.sh:49-54` is correct and well-targeted. Root cause analysis matches the code: `_get_initiative_name()` returns the initiative containing the DAG pointer comment (the current one), not the initiative under which a given milestone was originally archived. Passing that name to `_milestone_in_archive()` scoped the search incorrectly, causing cross-initiative misses.
+
+The fix — setting `archive_initiative=""` when DAG mode is active and a manifest is present — routes `_milestone_in_archive()` to the global grep path (`lib/milestone_archival_helpers.sh:117-119`), which correctly finds any milestone heading in the archive regardless of which initiative section it was written under.
+
+`test_milestone_archival_dag_rearchive.sh` provides full regression coverage: 6 tests verify the original bug (cross-initiative milestones are not re-archived), 4 tests verify the positive case (new milestones still archive correctly and are idempotent on second call), and 1 test verifies no duplicate content is written. The test setup faithfully reproduces the real-world scenario (archive contains milestones from two older initiatives; DAG manifest contains m01/m02 mapped to numbers 1/2; CLAUDE.md has a V3 DAG pointer). Test suite passes 198/198 shell tests and 76/76 Python tests.

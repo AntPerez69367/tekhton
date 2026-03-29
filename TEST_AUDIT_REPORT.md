@@ -1,49 +1,96 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 14 test functions
-Verdict: PASS
+Tests audited: 2 files, ~17 assertions
+Verdict: CONCERNS
+
+---
+
+### Pre-Audit Note: CODER_SUMMARY.md absent
+
+`CODER_SUMMARY.md` was not present on disk and does not appear in git status.
+Scope-alignment analysis was performed directly against the implementation files
+(`lib/milestone_archival.sh`, `lib/milestone_archival_helpers.sh`) and
+`INTAKE_REPORT.md` in lieu of a coder summary.
+
+---
 
 ### Findings
 
-#### SCOPE: Audit context metadata inconsistency
-- File: tests/test_inbox_processing.sh
-- Issue: The audit context states "Implementation files changed: none" (reflecting only the JR Coder's `DRIFT_LOG.md` cleanup). The tests exercise two untracked files — `lib/inbox.sh` and `tools/watchtower_server.py` — which appear in git status as `??` (new, untracked). These were authored by a prior stage (senior coder, M36 implementation) and are the actual implementation under test. The audit metadata does not surface this.
+#### INTEGRITY: Edge-case test accepts any outcome — always passes
+- File: `tests/test_milestone_archival_number_reuse_edge.sh:135` and `:152`
+- Issue: Both branches of the `if [ $result -eq 1 ]; then ... elif [ $result -eq 0 ]; then ...fi`
+  block open with a hardcoded-pass assertion (`assert "..." "0"`). Because exactly one
+  branch always executes and both lead to `"0"` (PASS), the test as a whole passes
+  regardless of whether the implementation skips or archives the number-reuse milestone.
+  This means the test cannot detect a future regression that flips the behavior in either
+  direction. The file documents the edge case but provides zero regression protection for it.
+
+  Concretely:
+  ```bash
+  # line 135 — always passes (hardcoded "0")
+  assert "archiving new Milestone 1 with same number as old milestone: skipped (edge case)" "0"
+  # line 152 — always passes (hardcoded "0")
+  assert "archiving new Milestone 1 succeeds" "0"
+  ```
+
+  The subsequent assertions within each branch (line-count checks, grep counts) do test
+  real state, but they are only reached after the always-passing opener, and since both
+  paths are treated as equally valid the test provides no regression boundary at all.
+
+- Severity: HIGH
+- Action: Determine which outcome is correct for this edge case and assert it explicitly.
+  Based on the implementation (`_milestone_in_archive` in global-search mode uses a
+  heading-number regex that will match the old "Milestone 1" heading), the current
+  behavior is to SKIP the new Milestone 1. The test should assert `result=1` and fail
+  if the implementation changes. If the team truly accepts both outcomes as correct,
+  convert the file to a documentation comment with no assertions — a test that always
+  passes regardless of behavior is indistinguishable from no test at all. Do NOT
+  introduce implementation changes to satisfy the test; pick one expected behavior
+  and assert it.
+
+#### COVERAGE: DAG-mode missing-file path not exercised
+- File: `tests/test_milestone_archival_dag_rearchive.sh`
+- Issue: All scenarios use a well-formed manifest with milestone files that exist on disk.
+  The path at `lib/milestone_archival.sh:80` (`block` empty after `dag_get_file` returns
+  a path to a missing file → return 1) is reachable in production when a manifest entry
+  is stale or a file was manually deleted. This path has no test coverage.
 - Severity: LOW
-- Action: No test changes needed. For future audits of this milestone, the audit context should list `lib/inbox.sh` and `tools/watchtower_server.py` as implementation files.
+- Action: Add a test scenario in `test_milestone_archival_dag_rearchive.sh` that adds a
+  manifest entry pointing to a non-existent file and asserts `archive_completed_milestone`
+  returns 1 without modifying the archive.
 
-#### COVERAGE: Unknown-tag fallback not tested
-- File: tests/test_inbox_processing.sh
-- Issue: `lib/inbox.sh:64-67` has an explicit fallback: if a note's tag is not BUG/FEAT/POLISH, it is coerced to FEAT. Tests cover BUG and FEAT tags but no test exercises this path (e.g., a note tagged `[CUSTOM]`).
-- Severity: LOW
-- Action: Add a test case with a note using an unrecognized tag (e.g., `[CUSTOM]`) and assert it is appended as a `[FEAT]` entry and moved to processed.
+---
 
-#### COVERAGE: Missing MANIFEST.cfg edge case untested
-- File: tests/test_inbox_processing.sh
-- Issue: `lib/inbox.sh:106-109` — `_process_manifest_append` returns 1 early when no `MANIFEST.cfg` exists. Tests cover duplicate ID and missing dependency rejection, but not the case where a `manifest_append_*.cfg` arrives and no manifest file exists at all.
-- Severity: LOW
-- Action: Add a test that places a `manifest_append_*.cfg` in an inbox with no `MANIFEST.cfg` present and asserts the file is NOT moved to processed.
+### Findings: None for remaining rubric categories
 
-#### COVERAGE: Fixed port in server smoke test
-- File: tests/test_inbox_processing.sh:58-86
-- Issue: Port 18271 is hard-coded. A port collision produces "Server did not start within timeout" — a misleading failure message in CI. The test handles the failure gracefully (it does not hang), but the root cause is obscured.
-- Severity: LOW
-- Action: Consider deriving the port from `$$` or a random value in a safe range, or emit a `SKIP` message when the bind fails rather than a `FAIL`.
+#### EXERCISE
+Both test files source the real implementation modules
+(`lib/milestone_archival.sh`, `lib/milestone_archival_helpers.sh`,
+`lib/milestone_dag.sh`, `lib/milestone_dag_helpers.sh`,
+`lib/milestone_dag_migrate.sh`) with only `run_build_gate()` stubbed out.
+All assertions flow from actual `archive_completed_milestone` calls. No mocking
+of the functions under test.
 
-#### COVERAGE: milestone_dag.sh not sourced in test harness
-- File: tests/test_inbox_processing.sh:109-113
-- Issue: `lib/inbox.sh` header (line 8) documents: "Expects: common.sh, notes_cli.sh, milestone_dag.sh sourced first." Each test subshell sources `common.sh` and `notes_cli.sh` but omits `milestone_dag.sh`. Tests pass today because current code paths do not call any `dag_*` functions. If future `inbox.sh` changes call milestone_dag functions, tests will fail with "command not found" rather than a meaningful assertion error.
-- Severity: LOW
-- Action: Add `source "${TEKHTON_HOME}/lib/milestone_dag.sh"` to each subshell's preamble to match the documented dependency contract.
+#### WEAKENING
+No existing tests were modified. Both files are new additions.
 
-#### None: Assertion honesty
-All assertions derive expected values from implementation logic. The `/api/ping` response string `'{"ok": true}'` correctly matches Python's `json.dumps({"ok": True})` output. `grep` patterns match the exact format written by `_process_note` and `add_human_note`. No always-true assertions or hard-coded magic values were found.
+#### NAMING
+Assertion descriptions in `test_milestone_archival_dag_rearchive.sh` are specific
+and encode both scenario and expected outcome (e.g., "archive file does not grow
+when m01 is already archived under a different initiative"). The edge-case file's
+names are consistent with its stated documentation purpose.
 
-#### None: Test weakening
-`test_inbox_processing.sh` is a new file. No pre-existing tests were modified.
+#### SCOPE
+`lib/milestone_dag_helpers.sh` exists on disk (confirmed via glob). All files
+sourced by both test scripts are present. No orphaned imports. `JR_CODER_SUMMARY.md`
+is listed as deleted per the audit context; neither test file references it. The
+core fix verified in `lib/milestone_archival.sh:49-54` (setting `archive_initiative=""`
+for DAG mode) directly aligns with what `test_milestone_archival_dag_rearchive.sh`
+exercises.
 
-#### None: Naming and intent
-All 14 test names clearly encode both scenario and expected outcome (e.g., `"manifest_append with duplicate ID rejected, MANIFEST.cfg unchanged"`, `"absent inbox directory: returns 0 without error"`).
-
-#### None: Implementation exercise
-Tests source and invoke the real `process_watchtower_inbox()` function with no mocking of core logic. File system side effects (HUMAN_NOTES.md appended, files moved to `processed/`, MANIFEST.cfg updated) are verified against actual file contents. The server smoke test starts a real Python process and queries it over HTTP.
+#### ASSERTION HONESTY (`test_milestone_archival_dag_rearchive.sh`)
+All assertions in this file derive their expected values from actual function calls.
+Line counts (`wc -l`) and grep counts are compared against pre-call baselines rather
+than hard-coded values. The return-value captures use the `cmd && result=1 || result=0`
+inversion pattern correctly under `set -euo pipefail`. No always-true assertions found.

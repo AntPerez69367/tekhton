@@ -1,5 +1,5 @@
 ## Summary
-This change modifies `archive_completed_milestone()` in `lib/milestone_archival.sh` to skip initiative-scoped archive lookups when DAG mode is active, passing an empty string to `_milestone_in_archive()` for a global search instead. The change is a focused, single-function logic fix with no authentication, network, or user-input surface. No security concerns were identified.
+No code changes were made in this pipeline run. The coder agent verified that the milestone archival idempotency fix was already present in `lib/milestone_archival.sh` prior to this run. With zero modified files there is no new attack surface to evaluate.
 
 ## Findings
 None

@@ -5,11 +5,9 @@ PASS
 88
 
 ## Reasoning
-- Scope is well-defined across four named sub-scopes with specific files listed for each
-- Acceptance criteria are concrete and testable: flag combinations, log message text, color levels, suggested commands
-- Watch For section addresses the key interaction risks (`--with-notes` gate logic, template whitespace, threshold reuse)
-- New config keys have explicit defaults and are mapped to `lib/config_defaults.sh` and `lib/config.sh`
-- The four scopes are cohesive (all notes injection hygiene) — no split needed
-- `WITH_NOTES` and `FIX_NONBLOCKERS_MODE` variables are assumed to already exist; Watch For confirms `--with-notes` is an existing flag, so this assumption is reasonable
-- No UI testing infrastructure in scope for this project, so Watchtower criterion "reflects the same severity coloring" is sufficient
-- Omission: no formal "Migration impact" section, but new config keys are purely additive with defaults — existing users unaffected; no migration action required
+- Scope is well-defined: the bug is in milestone archival logic, the symptom is clear (MILESTONE_ARCHIVE.md grows on every run), and the fix is specified (idempotency check via grep for milestone ID before appending)
+- The affected file is implied by the bug description (`lib/milestone_archival.sh` and `MILESTONE_ARCHIVE.md`)
+- Acceptance criteria are implicit but unambiguous: run the pipeline on a project with completed milestones twice; verify MILESTONE_ARCHIVE.md contains each milestone exactly once after the second run
+- Fix approach is concrete: grep for the milestone ID in MILESTONE_ARCHIVE.md before appending — if found, skip
+- No migration impact: no new config keys, no format changes
+- No UI components involved
