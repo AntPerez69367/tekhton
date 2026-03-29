@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-29
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-29 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `NON_BLOCKING_LOG.md:97–121` — Duplicate "Test Audit Concerns" resolved blocks accumulate over time with identical content. The cleanup mechanism that removes stale open notes does not deduplicate resolved sections. Low priority, but a future cleanup pass could collapse these.
 - [2026-03-29 | "Address all 41 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/dashboard_emitters.sh`, `lib/ui_validate.sh`, `stages/coder.sh`, `stages/tester.sh` — all substantially exceed the 300-line file ceiling; pre-existing technical debt accumulated across milestones
 - [2026-03-29 | "Address all 41 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/dashboard_emitters.sh:162` — `dep_arr` not declared `local`; same issue existed with the old `_dep_arr` name — rename corrected the style but left the scoping gap
 

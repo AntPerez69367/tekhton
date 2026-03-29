@@ -5,12 +5,15 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-29 | "Address all 41 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/ui_validate_report.sh:1,13` — `set -euo pipefail` appears twice (lines 1 and 13); the duplicate at line 13 can be removed
-- [ ] [2026-03-29 | "Address all 41 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/ui_validate.sh:1,19` — Same duplicate `set -euo pipefail` pattern; pre-existing, worth cleaning in a future pass
-- [ ] [2026-03-29 | "Address all 41 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/dashboard_emitters.sh:162,166` — `dep_arr` used in `read -ra dep_arr` but not declared alongside the other loop locals (`i`, `dep_list`, `dep_item`) on line 162; minor scope hygiene
+- [ ] [2026-03-29 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `NON_BLOCKING_LOG.md` — Two duplicate "Test Audit Concerns" blocks exist in the Resolved section: one pair dated 2026-03-28 (lines ~97 and ~103) and one pair dated 2026-03-29 (lines ~109 and ~116). These are pre-existing and were not introduced by this pass, but the log should eventually have the duplicates collapsed into single entries.
 (none)
 
 ## Resolved
+
+### Non-Blocking Cleanup Pass (2026-03-29b)
+- [x] `lib/ui_validate_report.sh:1,13` — duplicate `set -euo pipefail` already removed in prior pass. Only one instance on line 2 remains. No code change needed.
+- [x] `lib/ui_validate.sh:1,19` — duplicate `set -euo pipefail` already removed in prior pass. Only one instance on line 2 remains. No code change needed.
+- [x] `lib/dashboard_emitters.sh:162,166` — `dep_arr` already declared in `local` on line 162 (fixed when `_dep_arr` was renamed to `dep_arr` in prior pass). No code change needed.
 
 ### Non-Blocking Cleanup Pass (2026-03-29)
 - [x] `config_defaults.sh`: Added `# --- Auto-fix on test failure ---` section header to separate AUTO_FIX_* defaults from TEST_BASELINE_* defaults.
@@ -97,19 +100,6 @@ The coder is prompted to address these when the count exceeds the threshold.
 #### INTEGRITY: Tautological assertion in success branch (6.3)
 #### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
 #### NAMING: No PASS counter in test_agent_fifo_invocation.sh
-
-### Test Audit Concerns (2026-03-28)
-#### INTEGRITY: Tautological assertion in success branch (4.2)
-#### INTEGRITY: Tautological assertion in success branch (6.3)
-#### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
-#### NAMING: No PASS counter in test_agent_fifo_invocation.sh
-
-### Test Audit Concerns (2026-03-29)
-#### INTEGRITY: Edge-case test accepts any outcome — always passes
-#### COVERAGE: DAG-mode missing-file path not exercised
-#### WEAKENING
-#### NAMING
-#### SCOPE
 
 ### Test Audit Concerns (2026-03-29)
 #### INTEGRITY: Edge-case test accepts any outcome — always passes

@@ -1,15 +1,15 @@
+# Tester Report
+
 ## Planned Tests
-- [x] `tests/test_nonblocking_ui_validate_report.sh` — Verify no duplicate `set -euo pipefail` in ui_validate_report.sh
-- [x] `tests/test_nonblocking_ui_validate.sh` — Verify no duplicate `set -euo pipefail` in ui_validate.sh
-- [x] `tests/test_nonblocking_dashboard_emitters.sh` — Verify `dep_arr` is declared in local statement on line 162
+- [x] Verify NON_BLOCKING_LOG.md: 3 items moved from Open to Resolved
+- [x] Verify NON_BLOCKING_LOG.md Open section is empty
+- [x] Detect duplicate blocks in NON_BLOCKING_LOG.md Resolved section
 
 ## Test Run Results
-Passed: 203  Failed: 0
+Passed: 6  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_nonblocking_ui_validate_report.sh`
-- [x] `tests/test_nonblocking_ui_validate.sh`
-- [x] `tests/test_nonblocking_dashboard_emitters.sh`
+- [x] tests/test_nonblocking_log_structure.sh
