@@ -1739,6 +1739,13 @@ if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
     archive_all_completed_milestones "CLAUDE.md"
 fi
 
+# --- Run checkpoint (Milestone 24) ------------------------------------------
+# Create a git checkpoint before any agent runs so users can rollback.
+# This MUST run before startup cleanup — the checkpoint stashes uncommitted
+# changes, and cleanup modifies files on disk. If cleanup ran first, the stash
+# would revert those cleanup edits.
+create_run_checkpoint
+
 # --- Startup cleanup: clear completed/resolved items from logs ----------------
 # Remove [x] items from HUMAN_NOTES.md and NON_BLOCKING_LOG.md Open section,
 # [RESOLVED] items from DRIFT_LOG.md, and resolved entries from
@@ -1760,10 +1767,6 @@ if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]] && [[ -z "${UI_TEST_CMD:-}" ]
     UI_TEST_CMD=$(detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
     export UI_TEST_CMD
 fi
-
-# --- Run checkpoint (Milestone 24) ------------------------------------------
-# Create a git checkpoint before any agent runs so users can rollback.
-create_run_checkpoint
 
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
 

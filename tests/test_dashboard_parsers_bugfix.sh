@@ -315,7 +315,7 @@ export PATH="${stub_bin}:${original_path}"
 
 # Now call _parse_run_summaries with the stubbed python3 (forcing bash fallback)
 mkdir -p "$TMPDIR/.claude/logs_fallback"
-cat > "$TMPDIR/.claude/logs_fallback/RUN_SUMMARY.1.json" << 'EOF'
+cat > "$TMPDIR/.claude/logs_fallback/RUN_SUMMARY_20260315_100001.json" << 'EOF'
 {"outcome":"success","total_agent_calls":9,"wall_clock_seconds":60,"milestone":"m03_fallback"}
 EOF
 
@@ -354,7 +354,7 @@ echo "=== Test Suite 4: _parse_run_summaries integration ==="
 mkdir -p "$TMPDIR/.claude/logs"
 
 # Create recent summary with new field names
-cat > "$TMPDIR/.claude/logs/RUN_SUMMARY.1.json" << 'EOF'
+cat > "$TMPDIR/.claude/logs/RUN_SUMMARY_20260315_100001.json" << 'EOF'
 {
   "outcome": "success",
   "total_agent_calls": 8,
@@ -364,7 +364,7 @@ cat > "$TMPDIR/.claude/logs/RUN_SUMMARY.1.json" << 'EOF'
 EOF
 
 # Create older summary with old field names
-cat > "$TMPDIR/.claude/logs/RUN_SUMMARY.2.json" << 'EOF'
+cat > "$TMPDIR/.claude/logs/RUN_SUMMARY_20260315_100002.json" << 'EOF'
 {
   "outcome": "partial",
   "total_turns": 3,
@@ -414,7 +414,7 @@ else
 fi
 
 # Malformed JSON (bash fallback extracts what it can with defaults)
-cat > "$TMPDIR/.claude/logs/RUN_SUMMARY.json" << 'EOF'
+cat > "$TMPDIR/.claude/logs/RUN_SUMMARY_20260315_100000.json" << 'EOF'
 { this is not valid json }
 EOF
 

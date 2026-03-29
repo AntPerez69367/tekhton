@@ -186,6 +186,9 @@ try:
         'total_time_s': d.get('total_time_s', d.get('wall_clock_seconds', 0)),
         'milestone': d.get('milestone', ''),
         'run_type': d.get('run_type', 'adhoc'),
+        'task_label': d.get('task_label', ''),
+        'timestamp': d.get('timestamp', ''),
+        'team': d.get('team', ''),
         'stages': d.get('stages', {})
     }))
 except: pass
@@ -211,7 +214,10 @@ except: pass
             local run_type
             run_type=$(sed -n 's/.*"run_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
             : "${run_type:=adhoc}"
-            json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"${milestone}\",\"run_type\":\"${run_type}\",\"stages\":{}}"
+            local task_label
+            task_label=$(sed -n 's/.*"task_label"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            : "${task_label:=}"
+            json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"${milestone}\",\"run_type\":\"${run_type}\",\"task_label\":\"${task_label}\",\"stages\":{}}"
         fi
 
         if [[ -n "$json_content" ]]; then
@@ -223,7 +229,7 @@ except: pass
             result="${result}${json_content}"
         fi
         count=$(( count + 1 ))
-    done < <(ls -t "$dir"/RUN_SUMMARY*.json 2>/dev/null || true)
+    done < <(ls -t "$dir"/RUN_SUMMARY_*.json 2>/dev/null || true)
 
     result="${result}]"
     echo "$result"
