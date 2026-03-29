@@ -2,29 +2,44 @@
 TWEAKED
 
 ## Confidence
-62
+55
 
 ## Reasoning
-- Core intent is clear: add the original task/milestone text and a Milestone Map link to the Intake Report section of the Reports page
-- Two gaps needed filling:
-  1. "original notes" is ambiguous — could mean human notes, milestone content, or the raw task string. Interpreted as the task/milestone description text submitted for intake evaluation.
-  2. "ideally a link" soft-codes a requirement, leaving developers free to skip it. Promoted to a hard acceptance criterion since anchor linking to an existing page is low-effort.
-- No acceptance criteria were provided; added testable ones below.
-- UI Testability: no verifiable criteria listed for a UI-modifying feature — added one.
+- Core intent is clear: auto-spawn a fix run when self-tests fail instead of exiting
+- Missing acceptance criteria entirely — the milestone is a feature description, not a spec
+- Implicit assumption: applies to `--human` mode (notes + task context), but not stated
+- No infinite loop protection mentioned — spawned run could also fail tests, triggering another spawn
+- No guidance on whether to prompt the user before spawning or proceed automatically
+- No Watch For section or files-to-modify guidance
+- No config opt-out mentioned for users who prefer the current "exit cleanly" behavior
 
 ## Tweaked Content
 
-[FEAT] The "Intake Report" section of the Reports page currently shows only Verdict and Confidence. It should also display the original milestone/task text that was evaluated, and include a link to the full milestone entry in the Milestone Map page.
+[FEAT] Currently if there are failures during the Tekhton Self-Tests, the pipeline gives its final summary and then notes there are failed tests and exits cleanly. Instead of exiting it should immediately spawn a fix run with the same notes + a new note to "Fix failed tests" so that the user can get right into fixing instead of having to trigger a new run manually.
+
+[PM: Added scope clarification] **Scope:** This applies to `--human` mode runs where human notes are the task driver. When the pipeline exits with test failures, a new `--human` run is spawned automatically with the same note tag filter (if any) and a synthetic note prepended: `- [ ] Fix failed tests`. [PM: Confirm this scope — does this also apply to regular task runs? If so, what task string should the spawned run use?]
 
 ### Acceptance Criteria
-- The Intake Report section displays the original task/milestone description text beneath the Verdict and Confidence fields
-- The original text is visually distinguished (e.g., a labelled "Task" or "Notes" subsection, styled consistently with the rest of the report)
-- A "View in Milestone Map →" link appears in the Intake Report section that navigates to the corresponding milestone entry in the Milestone Map page [PM: promoted from "ideally" to required; anchor linking to an existing page is low-cost and high-value for context]
-- If no Milestone Map entry exists for the current intake result, the link is omitted rather than shown as broken
-- The Reports page loads without console errors after this change
 
-### Files Likely Affected
-[PM: no files listed in original — developer should identify the Reports page component and any data model that backs the Intake Report section]
+[PM: No acceptance criteria in original — added below]
 
-### Migration Impact
-None — display-only change; no new config keys or file format changes.
+- When a `--human` run completes with one or more test failures, a follow-up `--human` run is automatically spawned (no manual re-invocation required)
+- The spawned run includes all notes from the original run plus a new unchecked note: `- [ ] Fix failed tests`
+- If the same test failures recur on the spawned run, the pipeline exits cleanly (no further auto-spawn — maximum one auto-spawn per original run to prevent infinite loops)
+- If the original run had zero test failures, no auto-spawn occurs
+- The auto-spawn behavior is guarded by a new config key `AUTO_SPAWN_ON_TEST_FAILURE` (default: `true`) so users can opt out
+- The pipeline logs a clear banner before spawning: e.g., `[Tekhton] Test failures detected — spawning fix run...`
+- `bash tests/run_tests.sh` passes after this change
+
+### Watch For
+
+[PM: No Watch For section in original — added below]
+
+- **Infinite loop risk**: The spawned run must be marked so it does not trigger another auto-spawn on failure. Use a flag file (e.g., `.claude/state/auto_spawn_active`) or pass a `--no-auto-spawn` flag to the child invocation.
+- **Note injection**: Prepend the new note to the top of the effective notes list so it appears first and is not lost among existing notes.
+- **Exit code propagation**: If the spawned run fails, the outer process exit code should reflect that failure, not the original run's success.
+- **Non-human mode**: If this feature is extended to task runs in the future, the spawned task string must be defined. Defer that case for now and document it as out of scope.
+
+## Questions
+- Should auto-spawn apply only to `--human` mode, or also to regular task runs? If regular task runs, what task string does the spawned run use?
+- Should the user be prompted with a Y/N confirmation before the auto-spawn, or is it fully automatic?

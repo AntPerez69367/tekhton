@@ -295,9 +295,60 @@ run_final_checks() {
 
     echo
     log "Running ${TEST_CMD}..."
-    if bash -c "${TEST_CMD}" 2>&1 | tee -a "$log_file"; then
+    local test_output=""
+    local test_exit=0
+    set +e
+    test_output=$(bash -c "${TEST_CMD}" 2>&1)
+    test_exit=$?
+    set -e
+    printf '%s\n' "$test_output" | tee -a "$log_file"
+
+    if [ $test_exit -eq 0 ]; then
         print_run_summary
         success "${TEST_CMD}: all passing"
+    elif [[ "${TEST_FIX_ENABLED:-true}" = "true" ]]; then
+        # --- Auto-fix loop for test failures ---
+        local max_fix_attempts="${TEST_FIX_MAX_ATTEMPTS:-2}"
+        local fix_attempt=0
+
+        while [ $test_exit -ne 0 ] && [ "$fix_attempt" -lt "$max_fix_attempts" ]; do
+            fix_attempt=$((fix_attempt + 1))
+            warn "${TEST_CMD}: failures detected. Spawning test fix agent (attempt ${fix_attempt}/${max_fix_attempts})..."
+
+            export TEST_FAILURES_CONTENT
+            TEST_FAILURES_CONTENT=$(printf '%s' "$test_output" | tail -120)
+            local test_fix_prompt
+            test_fix_prompt=$(render_prompt "test_fix")
+
+            local fix_model="${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}"
+            local fix_turns="${TEST_FIX_MAX_TURNS:-$((CODER_MAX_TURNS / 3))}"
+
+            run_agent \
+                "Test Fix (attempt ${fix_attempt})" \
+                "$fix_model" \
+                "$fix_turns" \
+                "$test_fix_prompt" \
+                "$log_file" \
+                "$AGENT_TOOLS_BUILD_FIX"
+            log "Test fix agent finished (attempt ${fix_attempt})."
+
+            # Re-run tests to check if fixes worked
+            log "Re-running ${TEST_CMD} after test fix..."
+            set +e
+            test_output=$(bash -c "${TEST_CMD}" 2>&1)
+            test_exit=$?
+            set -e
+            printf '%s\n' "$test_output" | tee -a "$log_file"
+        done
+
+        if [ $test_exit -eq 0 ]; then
+            print_run_summary
+            success "${TEST_CMD}: all passing after ${fix_attempt} fix attempt(s)."
+        else
+            print_run_summary
+            error "${TEST_CMD}: failures remain after ${fix_attempt} fix attempt(s)."
+            final_result=1
+        fi
     else
         print_run_summary
         error "${TEST_CMD}: failures detected (see output above)."

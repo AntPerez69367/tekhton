@@ -56,6 +56,11 @@ set -euo pipefail
 : "${SEED_CONTRACTS_ENABLED:=false}"
 : "${DESIGN_FILE:=}"
 
+# --- Test fix defaults (auto-fix on final check test failures) ---
+: "${TEST_FIX_ENABLED:=true}"              # Spawn fix agent when TEST_CMD fails in final checks
+: "${TEST_FIX_MAX_ATTEMPTS:=2}"            # Max fix attempts before giving up
+: "${TEST_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
+
 # --- Drift detection defaults ---
 : "${ARCHITECTURE_LOG_FILE:=ARCHITECTURE_LOG.md}"
 : "${DRIFT_LOG_FILE:=DRIFT_LOG.md}"
