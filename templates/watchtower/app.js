@@ -812,25 +812,37 @@
   }
   function renderStageBreakdown(runs) {
     var stageTotals = {}, stageCount = {}, sn;
-    for (var i = 0; i < stageOrder.length; i++) { stageTotals[stageOrder[i]] = { turns: 0, time: 0, budget: 0 }; stageCount[stageOrder[i]] = 0; }
+    for (var i = 0; i < stageOrder.length; i++) { stageTotals[stageOrder[i]] = { turns: 0, time: 0 }; stageCount[stageOrder[i]] = 0; }
     for (var r = 0; r < runs.length; r++) {
       var stages = runs[r].stages || {};
-      for (var s = 0; s < stageOrder.length; s++) { sn = stageOrder[s]; var sd = stages[sn]; if (sd) { stageTotals[sn].turns += (sd.turns || 0); stageTotals[sn].time += (sd.duration_s || 0); if (sd.budget > 0) stageTotals[sn].budget += Math.round(((sd.turns || 0) / sd.budget) * 100); stageCount[sn]++; } }
+      for (var s = 0; s < stageOrder.length; s++) { sn = stageOrder[s]; var sd = stages[sn]; if (sd) { stageTotals[sn].turns += (sd.turns || 0); stageTotals[sn].time += (sd.duration_s || 0); stageCount[sn]++; } }
     }
     var lastRun = runs.length ? runs[0] : null, lastStages = lastRun ? (lastRun.stages || {}) : {};
+    var activeStages = [];
+    for (var f = 0; f < stageOrder.length; f++) { if (stageCount[stageOrder[f]] > 0) activeStages.push(stageOrder[f]); }
+    if (activeStages.length === 0) return '<p>No per-stage data available yet.</p>';
     var maxAvg = 1;
-    for (var t = 0; t < stageOrder.length; t++) { var a = stageCount[stageOrder[t]] ? stageTotals[stageOrder[t]].turns / stageCount[stageOrder[t]] : 0; if (a > maxAvg) maxAvg = a; }
-    var html = '<table class="breakdown-table"><thead><tr><th>Stage</th><th>Avg Turns</th><th>Last Run</th><th>Avg Time</th><th>Budget Util</th><th class="bar-chart-cell">Distribution</th></tr></thead><tbody>';
-    for (var b = 0; b < stageOrder.length; b++) {
-      sn = stageOrder[b]; var cnt = stageCount[sn] || 1;
-      var avgT = Math.round(stageTotals[sn].turns / cnt), bu = Math.round(stageTotals[sn].budget / cnt);
-      var lsd = lastStages[sn], lbu = lsd && lsd.budget > 0 ? Math.round(((lsd.turns || 0) / lsd.budget) * 100) : 0;
-      var bc = bu >= 100 ? 'budget-red' : bu >= 80 ? 'budget-amber' : 'budget-green';
-      var lbc = lbu >= 100 ? 'budget-red' : lbu >= 80 ? 'budget-amber' : 'budget-green';
+    for (var t = 0; t < activeStages.length; t++) { var a = stageCount[activeStages[t]] ? stageTotals[activeStages[t]].turns / stageCount[activeStages[t]] : 0; if (a > maxAvg) maxAvg = a; }
+    var html = '<table class="breakdown-table"><thead><tr><th>Stage</th><th>Avg Turns</th><th>Last Run</th><th>Avg Time</th><th class="bar-chart-cell">Distribution</th></tr></thead><tbody>';
+    for (var b = 0; b < activeStages.length; b++) {
+      sn = activeStages[b]; var cnt = stageCount[sn] || 1;
+      var avgT = Math.round(stageTotals[sn].turns / cnt);
+      var lsd = lastStages[sn];
+      var lastCell = '-';
+      if (lsd) {
+        var lt = lsd.turns || 0, lb = lsd.budget || 0;
+        if (lb > 0) {
+          var lbu = Math.round((lt / lb) * 100);
+          var lbc = lbu >= 100 ? 'budget-red' : lbu >= 80 ? 'budget-amber' : 'budget-green';
+          lastCell = lt + '/' + lb + ' <span class="' + lbc + '">(' + lbu + '%)</span>';
+        } else {
+          lastCell = '' + lt;
+        }
+      }
+      var avgTime = Math.round(stageTotals[sn].time / cnt);
       html += '<tr><td>' + (stageLabels[sn] || sn) + '</td><td>' + avgT + '</td>';
-      html += '<td>' + (lsd ? (lsd.turns || 0) + ' <span class="' + lbc + '">(' + lbu + '%)</span>' : '-') + '</td>';
-      html += '<td>' + fmtDuration(Math.round(stageTotals[sn].time / cnt)) + '</td>';
-      html += '<td><span class="' + bc + '">' + bu + '%</span></td>';
+      html += '<td>' + lastCell + '</td>';
+      html += '<td>' + (avgTime > 0 ? fmtDuration(avgTime) : '-') + '</td>';
       html += '<td class="bar-chart-cell"><div class="bar-wrap"><div class="bar-fill" style="width:' + Math.round((avgT / maxAvg) * 100) + '%"></div></div></td></tr>';
     }
     return html + '</tbody></table>';

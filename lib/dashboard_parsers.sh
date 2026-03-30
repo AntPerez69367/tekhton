@@ -218,11 +218,15 @@ for line in lines[-int(sys.argv[2]):]:
             elif tt == 'drift':
                 run_type = 'drift'
         # Build per-stage data from individual turn counts
+        # Use adjusted_* as per-stage budget (turn limit from scout calibration)
         stages = {}
+        budget_map = {'coder': 'adjusted_coder', 'reviewer': 'adjusted_reviewer', 'tester': 'adjusted_tester'}
         for sname, skey in [('coder','coder_turns'),('reviewer','reviewer_turns'),('tester','tester_turns'),('scout','scout_turns')]:
             t = d.get(skey, 0)
+            bkey = budget_map.get(sname)
+            b = int(d.get(bkey, 0)) if bkey else 0
             if t and int(t) > 0:
-                stages[sname] = {'turns': int(t), 'duration_s': 0, 'budget': 0}
+                stages[sname] = {'turns': int(t), 'duration_s': 0, 'budget': b}
         # Task label: first 80 chars of task
         task = d.get('task', '')
         task_label = task[:80] if task else ''
@@ -290,8 +294,37 @@ print(json.dumps(results))
         local timestamp
         timestamp=$(printf '%s' "$line" | sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
 
+        # Extract per-stage turn counts and budgets (mirrors Python parser)
+        local coder_t reviewer_t tester_t scout_t
+        coder_t=$(printf '%s' "$line" | sed -n 's/.*"coder_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        reviewer_t=$(printf '%s' "$line" | sed -n 's/.*"reviewer_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        tester_t=$(printf '%s' "$line" | sed -n 's/.*"tester_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        scout_t=$(printf '%s' "$line" | sed -n 's/.*"scout_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        local adj_coder adj_reviewer adj_tester
+        adj_coder=$(printf '%s' "$line" | sed -n 's/.*"adjusted_coder"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        adj_reviewer=$(printf '%s' "$line" | sed -n 's/.*"adjusted_reviewer"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        adj_tester=$(printf '%s' "$line" | sed -n 's/.*"adjusted_tester"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        : "${coder_t:=0}" "${reviewer_t:=0}" "${tester_t:=0}" "${scout_t:=0}"
+        : "${adj_coder:=0}" "${adj_reviewer:=0}" "${adj_tester:=0}"
+        local stages_json="{"
+        local sfirst=true
+        local _sn _st _sb
+        for _sn in coder reviewer tester scout; do
+            case "$_sn" in
+                coder)    _st="$coder_t"; _sb="$adj_coder" ;;
+                reviewer) _st="$reviewer_t"; _sb="$adj_reviewer" ;;
+                tester)   _st="$tester_t"; _sb="$adj_tester" ;;
+                scout)    _st="$scout_t"; _sb=0 ;;
+            esac
+            if [[ "$_st" -gt 0 ]]; then
+                if [[ "$sfirst" = true ]]; then sfirst=false; else stages_json="${stages_json},"; fi
+                stages_json="${stages_json}\"${_sn}\":{\"turns\":${_st},\"duration_s\":0,\"budget\":${_sb}}"
+            fi
+        done
+        stages_json="${stages_json}}"
+
         local json_content
-        json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"\",\"run_type\":\"${run_type}\",\"task_label\":\"${task_label}\",\"timestamp\":\"${timestamp}\",\"stages\":{}}"
+        json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"\",\"run_type\":\"${run_type}\",\"task_label\":\"${task_label}\",\"timestamp\":\"${timestamp}\",\"stages\":${stages_json}}"
 
         if [[ "$first" = true ]]; then
             first=false
