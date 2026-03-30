@@ -10,7 +10,6 @@ set -euo pipefail
 #   generate_ui_validation_report — parse JSON results, write report
 #   get_ui_validation_summary     — one-line pass/fail summary for banners
 # =============================================================================
-set -euo pipefail
 
 # generate_ui_validation_report RESULTS...
 # Reads JSON output lines from ui_smoke_test.js and produces
@@ -164,6 +163,8 @@ get_ui_validation_summary() {
 _json_field() {
     local json="$1"
     local key="$2"
+    # Requires grep with PCRE support (-P). On minimal images (Alpine) without
+    # PCRE, this silently returns empty → report cells show "?". Acceptable tradeoff.
     echo "$json" | grep -oP "\"${key}\"\\s*:\\s*\"?\\K[^\",}]+" | head -1 || true
 }
 

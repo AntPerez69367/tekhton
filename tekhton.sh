@@ -205,6 +205,9 @@ DRY_RUN_MODE=false
 CONTINUE_PREVIEW=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
+# Auto-fix recursion guard: inherited from parent invocation via env export.
+# Incremented by the tester stage before spawning a fix run.
+export TEKHTON_FIX_DEPTH="${TEKHTON_FIX_DEPTH:-0}"
 TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""
@@ -709,6 +712,7 @@ source "${TEKHTON_HOME}/lib/ui_validate_report.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
+source "${TEKHTON_HOME}/lib/drift_prune.sh"
 source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
@@ -1384,8 +1388,10 @@ if [[ "$HUMAN_MODE" = true ]]; then
         # On crash-recovery resume, CURRENT_NOTE_LINE is already set from env
         # (exported at line ~991). The claimed note is [~], invisible to
         # pick_next_note which only scans [ ] notes. Restore from env directly.
+        _note_restored=false
         if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
             log "Human mode: restoring claimed note from prior run"
+            _note_restored=true
         else
             CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
         fi
@@ -1401,7 +1407,14 @@ if [[ "$HUMAN_MODE" = true ]]; then
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
         # Capture count BEFORE claiming so pre-flight display is accurate (M33 Bug 5)
         _PRE_CLAIM_NOTE_COUNT=$(count_human_notes)
-        claim_single_note "$CURRENT_NOTE_LINE"
+        if [[ "$_note_restored" = true ]]; then
+            # Resume path: note may be [~] (prior run exited cleanly, cleanup
+            # didn't reset) or [ ] (prior run crashed, cleanup did reset).
+            # Try claiming — if it's already [~], the [ ] match fails harmlessly.
+            claim_single_note "$CURRENT_NOTE_LINE" || true
+        else
+            claim_single_note "$CURRENT_NOTE_LINE"
+        fi
         export CURRENT_NOTE_LINE
         log "Human mode: picked note — ${TASK}"
         # Imply COMPLETE_MODE so single-note gets the orchestration loop
@@ -1735,12 +1748,22 @@ if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
     archive_all_completed_milestones "CLAUDE.md"
 fi
 
-# --- Startup cleanup: clear completed items from logs -----------------------
-# Remove [x] items from NON_BLOCKING_LOG.md and [RESOLVED] items from DRIFT_LOG.md
-# so only the current run's completions appear. The commit message at the end of
-# the run captures what was resolved; these logs don't need to keep them forever.
+# --- Run checkpoint (Milestone 24) ------------------------------------------
+# Create a git checkpoint before any agent runs so users can rollback.
+# This MUST run before startup cleanup — the checkpoint stashes uncommitted
+# changes, and cleanup modifies files on disk. If cleanup ran first, the stash
+# would revert those cleanup edits.
+create_run_checkpoint
+
+# --- Startup cleanup: clear completed/resolved items from logs ----------------
+# Remove [x] items from HUMAN_NOTES.md and NON_BLOCKING_LOG.md Open section,
+# [RESOLVED] items from DRIFT_LOG.md, and resolved entries from
+# NON_BLOCKING_LOG.md Resolved section. Commit messages already captured what
+# was resolved; these logs don't need to keep them across runs.
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
+clear_completed_human_notes
+clear_resolved_nonblocking_notes > /dev/null
 
 # --- UI framework detection (Milestone 28) -----------------------------------
 # Runs at startup to populate UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD.
@@ -1753,10 +1776,6 @@ if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]] && [[ -z "${UI_TEST_CMD:-}" ]
     UI_TEST_CMD=$(detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
     export UI_TEST_CMD
 fi
-
-# --- Run checkpoint (Milestone 24) ------------------------------------------
-# Create a git checkpoint before any agent runs so users can rollback.
-create_run_checkpoint
 
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
 
@@ -1804,7 +1823,7 @@ _run_pipeline_stages() {
             "{\"confidence\":${INTAKE_CONFIDENCE:-0}}")
         _STAGE_STATUS[intake]="complete"
         _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
-        _STAGE_DURATION[intake]="${LAST_AGENT_ELAPSED:-0}"
+        _STAGE_DURATION[intake]="$(( SECONDS - ${_STAGE_START_TS[intake]:-$SECONDS} ))"
         emit_dashboard_run_state 2>/dev/null || true
         # If START_AT was "intake", advance to "coder" for subsequent stages
         if [ "$START_AT" = "intake" ]; then
@@ -1877,7 +1896,7 @@ _run_pipeline_stages() {
                     "{\"files_changed\":${_coder_files_changed},\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[coder]="complete"
                 _STAGE_TURNS[coder]="${ACTUAL_CODER_TURNS:-${LAST_AGENT_TURNS:-0}}"
-                _STAGE_DURATION[coder]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[coder]="$(( SECONDS - ${_STAGE_START_TS[coder]:-$SECONDS} ))"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -1904,7 +1923,7 @@ _run_pipeline_stages() {
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[security]="complete"
                 _STAGE_TURNS[security]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[security]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[security]="$(( SECONDS - ${_STAGE_START_TS[security]:-$SECONDS} ))"
                 emit_dashboard_security 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -1930,7 +1949,7 @@ _run_pipeline_stages() {
                     "$_review_verdict_json" "{\"cycles\":${REVIEW_CYCLE:-0}}")
                 _STAGE_STATUS[reviewer]="complete"
                 _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[reviewer]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[reviewer]="$(( SECONDS - ${_STAGE_START_TS[reviewer]:-$SECONDS} ))"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -1957,7 +1976,7 @@ _run_pipeline_stages() {
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[tester_write]="complete"
                 _STAGE_TURNS[tester_write]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[tester_write]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[tester_write]="$(( SECONDS - ${_STAGE_START_TS[tester_write]:-$SECONDS} ))"
                 emit_dashboard_run_state 2>/dev/null || true
                 export TESTER_MODE=""
             fi
@@ -1978,7 +1997,7 @@ _run_pipeline_stages() {
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[tester]="complete"
                 _STAGE_TURNS[tester]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[tester]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[tester]="$(( SECONDS - ${_STAGE_START_TS[tester]:-$SECONDS} ))"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
                 export TESTER_MODE=""
@@ -2090,7 +2109,6 @@ _run_human_complete_loop() {
 # and runs the full pipeline. The heuristic resolver in finalize marks addressed
 # items [x]. Loop terminates when no open items remain or safety bounds hit.
 _run_fix_nonblockers_loop() {
-    : "${MAX_PIPELINE_ATTEMPTS:=5}"
     : "${AUTONOMOUS_TIMEOUT:=7200}"
     local nb_attempt=0
     local start_time
@@ -2106,9 +2124,9 @@ _run_fix_nonblockers_loop() {
             break
         fi
 
-        # Safety bound: max attempts
-        if [[ "$nb_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
-            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS}). ${remaining} item(s) remain."
+        # Safety bound: max passes
+        if [[ "$nb_attempt" -gt "${FIX_NONBLOCKERS_MAX_PASSES:-3}" ]]; then
+            warn "Reached FIX_NONBLOCKERS_MAX_PASSES (${FIX_NONBLOCKERS_MAX_PASSES:-3}). ${remaining} item(s) remain."
             break
         fi
 
@@ -2160,7 +2178,6 @@ _run_fix_nonblockers_loop() {
 # DRIFT_LOG.md. Loop terminates when no unresolved observations remain or
 # safety bounds hit.
 _run_fix_drift_loop() {
-    : "${MAX_PIPELINE_ATTEMPTS:=5}"
     : "${AUTONOMOUS_TIMEOUT:=7200}"
     local drift_attempt=0
     local start_time
@@ -2176,9 +2193,9 @@ _run_fix_drift_loop() {
             break
         fi
 
-        # Safety bound: max attempts
-        if [[ "$drift_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
-            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS}). ${remaining} observation(s) remain."
+        # Safety bound: max passes
+        if [[ "$drift_attempt" -gt "${FIX_DRIFT_MAX_PASSES:-3}" ]]; then
+            warn "Reached FIX_DRIFT_MAX_PASSES (${FIX_DRIFT_MAX_PASSES:-3}). ${remaining} observation(s) remain."
             break
         fi
 

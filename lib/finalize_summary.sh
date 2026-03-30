@@ -247,5 +247,11 @@ _hook_emit_run_summary() {
         "$timestamp_iso" \
         > "$summary_file"
 
+    # Archive a timestamped copy so _parse_run_summaries finds all historical runs.
+    # The glob RUN_SUMMARY*.json in dashboard_parsers.sh picks up both the live
+    # file and all archived copies, sorted newest-first by mtime.
+    local ts="${TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
+    cp "$summary_file" "${summary_dir}/RUN_SUMMARY_${ts}.json" 2>/dev/null || true
+
     log "Run summary written to ${summary_file}"
 }

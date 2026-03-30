@@ -1,15 +1,25 @@
 ## Verdict
-PASS
+TWEAKED
 
 ## Confidence
-88
+62
 
 ## Reasoning
-- Scope is well-defined across four named sub-scopes with specific files listed for each
-- Acceptance criteria are concrete and testable: flag combinations, log message text, color levels, suggested commands
-- Watch For section addresses the key interaction risks (`--with-notes` gate logic, template whitespace, threshold reuse)
-- New config keys have explicit defaults and are mapped to `lib/config_defaults.sh` and `lib/config.sh`
-- The four scopes are cohesive (all notes injection hygiene) — no split needed
-- `WITH_NOTES` and `FIX_NONBLOCKERS_MODE` variables are assumed to already exist; Watch For confirms `--with-notes` is an existing flag, so this assumption is reasonable
-- No UI testing infrastructure in scope for this project, so Watchtower criterion "reflects the same severity coloring" is sufficient
-- Omission: no formal "Migration impact" section, but new config keys are purely additive with defaults — existing users unaffected; no migration action required
+- The bug is well-described with concrete, reproducible symptoms (specific wrong values, directionally-incorrect update behavior)
+- The business impact is clearly stated
+- However, there are no explicit acceptance criteria — only symptoms are listed
+- No files to modify are identified, which is fine for a bug report but leaves the developer to locate the calculation code
+- No UI testability criterion is listed for what is clearly a UI-facing fix
+- The root cause is not stated (unit mismatch? wrong aggregation formula? incorrect data field?), but the symptoms are specific enough that a developer can diagnose and fix
+
+## Tweaked Content
+
+[BUG] Watchtower Trends page: Average stage times are incorrect. Tester shows 3:38 avg despite no run under 5 min; an 11-min run decreased the average to 3:21 instead of increasing it. The average run time shows as 8m50s when in actual fact most runs are well over 20 minutes, some reaching over an hour. This is critical for users to have an accurate expectation of how long runs will take and to see the impact of their optimizations.
+
+**Acceptance Criteria:**
+
+- [PM: Added from symptoms] Average stage durations displayed on the Trends page are mathematically correct: the displayed value equals the arithmetic mean of all included run durations for that stage
+- [PM: Added from symptoms] Adding a run whose duration exceeds the current average increases the displayed average; adding a run shorter than the current average decreases it (directional correctness)
+- [PM: Added from symptoms] The overall average run time reflects actual total run durations — runs known to exceed 20 minutes must not be represented as sub-10-minute in the average
+- [PM: Added — UI testability] The Trends page loads without console errors after the fix, and all average time values render in a human-readable format consistent with the rest of the UI (e.g., `mm:ss` or `Xm Ys`)
+- [PM: Added] If stage timing data comes from `RUN_SUMMARY.json` or a similar artifact, verify the correct field is being read and that unit conversions (seconds → minutes, milliseconds → seconds, etc.) are applied consistently

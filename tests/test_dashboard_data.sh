@@ -166,8 +166,8 @@ grep -q "TK_SECURITY" "${dash_dir}/data/security.js" || \
 grep -q '"HIGH"' "${dash_dir}/data/security.js" || \
     { echo "FAIL: security.js missing HIGH severity"; exit 1; }
 
-# --- Test: emit_dashboard_metrics reads RUN_SUMMARY.json ---
-cat > "${LOG_DIR}/RUN_SUMMARY.json" << 'EOF'
+# --- Test: emit_dashboard_metrics reads RUN_SUMMARY_*.json ---
+cat > "${LOG_DIR}/RUN_SUMMARY_20260315_100000.json" << 'EOF'
 {
     "outcome": "success",
     "total_turns": 45,

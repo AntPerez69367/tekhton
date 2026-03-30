@@ -46,8 +46,8 @@ assert "HTML has viewport meta" grep -q 'name="viewport"' "${WATCHTOWER_DIR}/ind
 assert "HTML includes style.css" grep -q 'href="style.css"' "${WATCHTOWER_DIR}/index.html"
 assert "HTML includes app.js" grep -q 'src="app.js"' "${WATCHTOWER_DIR}/index.html"
 
-# --- Test 3: All 4 tab sections exist ---
-assert "tab-live section" grep -q 'id="tab-live"' "${WATCHTOWER_DIR}/index.html"
+# --- Test 3: Tab sections exist (live run is now a persistent banner) ---
+assert "live-banner div" grep -q 'id="live-banner"' "${WATCHTOWER_DIR}/index.html"
 assert "tab-milestones section" grep -q 'id="tab-milestones"' "${WATCHTOWER_DIR}/index.html"
 assert "tab-reports section" grep -q 'id="tab-reports"' "${WATCHTOWER_DIR}/index.html"
 assert "tab-trends section" grep -q 'id="tab-trends"' "${WATCHTOWER_DIR}/index.html"
@@ -117,7 +117,7 @@ assert "CSS has 1200px breakpoint" grep -q '1200px' "${WATCHTOWER_DIR}/style.css
 assert "CSS has 768px breakpoint" grep -q '768px\|767px' "${WATCHTOWER_DIR}/style.css"
 
 # --- Test 10: app.js has required render functions ---
-assert "app.js has renderLiveRun" grep -q 'renderLiveRun' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has renderLiveRunBanner" grep -q 'renderLiveRunBanner' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has renderMilestoneMap" grep -q 'renderMilestoneMap' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has renderReports" grep -q 'renderReports' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has renderTrends" grep -q 'renderTrends' "${WATCHTOWER_DIR}/app.js"
@@ -177,7 +177,7 @@ assert "tekhton.sh sources inbox.sh" grep -q 'source.*inbox.sh' "${TEKHTON_HOME}
 # --- Test 22: Parallel teams support (M37) ---
 assert "dashboard.sh has parallel_mode" grep -q 'parallel_mode' "${TEKHTON_HOME}/lib/dashboard.sh"
 assert "dashboard.sh has emit_dashboard_team_state" grep -q 'emit_dashboard_team_state' "${TEKHTON_HOME}/lib/dashboard.sh"
-assert "app.js has team-cards-row" grep -q 'team-cards-row' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has renderLiveRunBanner with teams" grep -q 'teams active' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has parallel_mode detection" grep -q 'parallel_mode' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has renderMilestonesByGroup" grep -q 'renderMilestonesByGroup' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has renderTeamPerformance" grep -q 'renderTeamPerformance' "${WATCHTOWER_DIR}/app.js"

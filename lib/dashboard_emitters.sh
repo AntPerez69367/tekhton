@@ -124,8 +124,15 @@ emit_dashboard_milestones() {
     local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
-    local ms_dir="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}"
-    local manifest="${ms_dir}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    local ms_dir
+    local manifest
+    if declare -f _dag_milestone_dir &>/dev/null; then
+        ms_dir=$(_dag_milestone_dir)
+        manifest=$(_dag_manifest_path)
+    else
+        ms_dir="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}"
+        manifest="${ms_dir}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    fi
 
     # Pass 1: Parse manifest into parallel arrays
     local -a ms_ids=() ms_titles=() ms_statuses=() ms_deps=() ms_files=() ms_pgroups=()
@@ -152,12 +159,12 @@ emit_dashboard_milestones() {
 
     # Pass 2: Build reverse dependency map (id → comma-separated list of IDs it enables)
     local -A enables_map=()
-    local i dep_list dep_item
+    local i dep_list dep_item dep_arr
     for i in "${!ms_ids[@]}"; do
         dep_list="${ms_deps[$i]}"
         if [[ -n "$dep_list" ]]; then
-            IFS=',' read -ra _dep_arr <<< "$dep_list"
-            for dep_item in "${_dep_arr[@]}"; do
+            IFS=',' read -ra dep_arr <<< "$dep_list"
+            for dep_item in "${dep_arr[@]}"; do
                 dep_item="${dep_item## }"; dep_item="${dep_item%% }"
                 [[ -z "$dep_item" ]] && continue
                 if [[ -n "${enables_map[$dep_item]:-}" ]]; then
@@ -395,6 +402,8 @@ emit_dashboard_init() {
 
 # emit_dashboard_inbox
 # Reads .claude/watchtower_inbox/ and generates data/inbox.js listing pending items.
+# Note: milestone_*.md files are shown but associated manifest_append_*.cfg entries
+# are not enumerated separately. They are submitted as a pair; acceptable UX gap.
 emit_dashboard_inbox() {
     if ! is_dashboard_enabled; then return 0; fi
 
@@ -418,7 +427,7 @@ emit_dashboard_inbox() {
                 ftype="note"
                 # Extract title from the checkbox line
                 title=$(grep -m1 '^\- \[ \] \[' "$file" 2>/dev/null | sed 's/^- \[ \] \[[A-Z]*\] //' || true)
-            elif [[ "$basename" == milestone_* ]] && [[ "$basename" != manifest_append_* ]]; then
+            elif [[ "$basename" == milestone_* ]]; then
                 ftype="milestone"
                 title=$(grep -m1 '^# Milestone' "$file" 2>/dev/null | sed 's/^# //' || true)
             elif [[ "$basename" == task_* ]]; then

@@ -1,49 +1,46 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 14 test functions
-Verdict: PASS
+Tests audited: 3 files, ~100 test assertions
+Verdict: CONCERNS
+
+---
 
 ### Findings
 
-#### SCOPE: Audit context metadata inconsistency
-- File: tests/test_inbox_processing.sh
-- Issue: The audit context states "Implementation files changed: none" (reflecting only the JR Coder's `DRIFT_LOG.md` cleanup). The tests exercise two untracked files — `lib/inbox.sh` and `tools/watchtower_server.py` — which appear in git status as `??` (new, untracked). These were authored by a prior stage (senior coder, M36 implementation) and are the actual implementation under test. The audit metadata does not surface this.
+#### INTEGRITY: Always-pass assertion in Test 7
+- File: `tests/test_watchtower_actions_auto_refresh.sh:284-295`
+- Issue: Both branches of the if/else call `pass()`. The test checks whether `manualRefresh()` calls `refreshData()`, but regardless of the result — found or not found — it records a pass. There is no `fail()` call anywhere in this test block. A regression that removes the `refreshData()` call from `manualRefresh()` would produce a green result with the message "exists and will benefit from the guard indirectly".
+  ```bash
+  if grep -A 5 "function manualRefresh()" "$APP_JS" | grep -q "refreshData()"; then
+      pass "manualRefresh() calls refreshData(), inheriting the guard"
+  else
+      pass "manualRefresh() exists and will benefit from the guard indirectly"  # ← always passes
+  fi
+  ```
+- Severity: HIGH
+- Action: Replace the else-branch `pass` with `fail "manualRefresh() does not call refreshData() — guard is not inherited"`.
+
+#### SCOPE: TESTER_REPORT.md claims files were modified that were not
+- File: `TESTER_REPORT.md` (cross-referenced against git status)
+- Issue: The "Files Modified" checklist marks `tests/test_watchtower_html.sh` and `tests/test_watchtower_actions_auto_refresh.sh` as modified (`[x]`). Neither file appears in `git status` as modified or untracked — only `tests/test_watchtower_trends_filter_fix.sh` is new in this task. The two existing test files were not changed. The checked boxes misrepresent what work was done.
+- Severity: MEDIUM
+- Action: Correct TESTER_REPORT.md to reflect that only `tests/test_watchtower_trends_filter_fix.sh` was authored in this task. The other two files are pre-existing tests verified still passing — list them under a "Verified Passing (unchanged)" section, not "Files Modified".
+
+#### EXERCISE: Node.js logic tests use an inline copy of matchFilter, not the real implementation
+- File: `tests/test_watchtower_trends_filter_fix.sh:229-231` (Test 8)
+- Issue: The Node.js test block defines its own `matchFilter` function verbatim rather than loading or parsing `app.js`. If the real implementation's `matchFilter` logic changes, this test still passes because it is testing the copy. The grep-based tests (Tests 1–7, 10) do exercise the real source; Test 8 adds confidence in the logic model but is decoupled from the file under test.
+- Severity: MEDIUM
+- Action: Either (a) add a pre-check in Test 8 that extracts `matchFilter` from `app.js` and asserts the extracted source matches the inline definition, or (b) add a comment explicitly documenting that Test 8 is a standalone logic unit test and that Tests 1–3 + 10 provide source-coupling coverage. The silent decoupling is the problem, not the approach itself.
+
+#### COVERAGE: No behavioral test for the dynamic run-count span DOM update
+- File: `tests/test_watchtower_trends_filter_fix.sh` (Test 7, lines 188-213)
+- Issue: Root cause 2 of the bug was the static header count (`runs.length` never updating). The fix adds `rc.textContent = shown` inside the filter-click handler (`app.js:704-705`). Test 7 verifies that `classList.toggle('hidden'` and `classList.toggle('active'` appear in the source, but no assertion confirms that `rc.textContent = shown` is present in the click handler body. Test 9 checks that `run-count` appears in the header, but not in the update path.
 - Severity: LOW
-- Action: No test changes needed. For future audits of this milestone, the audit context should list `lib/inbox.sh` and `tools/watchtower_server.py` as implementation files.
+- Action: Add a targeted grep inside the click handler section (scoped with sed, matching the pattern used in Test 10) that confirms `rc.textContent = shown` is present: `echo "$CLICK_HANDLER" | grep -q "rc.textContent = shown"`.
 
-#### COVERAGE: Unknown-tag fallback not tested
-- File: tests/test_inbox_processing.sh
-- Issue: `lib/inbox.sh:64-67` has an explicit fallback: if a note's tag is not BUG/FEAT/POLISH, it is coerced to FEAT. Tests cover BUG and FEAT tags but no test exercises this path (e.g., a note tagged `[CUSTOM]`).
+#### NAMING: Test 7 heading overstates what is verified
+- File: `tests/test_watchtower_actions_auto_refresh.sh:284`
+- Issue: The section heading reads `=== Test 7: manualRefresh() behavior with the guard ===` but the test never distinguishes guarded from unguarded behavior (both outcomes pass). The name implies behavioral validation that does not exist.
 - Severity: LOW
-- Action: Add a test case with a note using an unrecognized tag (e.g., `[CUSTOM]`) and assert it is appended as a `[FEAT]` entry and moved to processed.
-
-#### COVERAGE: Missing MANIFEST.cfg edge case untested
-- File: tests/test_inbox_processing.sh
-- Issue: `lib/inbox.sh:106-109` — `_process_manifest_append` returns 1 early when no `MANIFEST.cfg` exists. Tests cover duplicate ID and missing dependency rejection, but not the case where a `manifest_append_*.cfg` arrives and no manifest file exists at all.
-- Severity: LOW
-- Action: Add a test that places a `manifest_append_*.cfg` in an inbox with no `MANIFEST.cfg` present and asserts the file is NOT moved to processed.
-
-#### COVERAGE: Fixed port in server smoke test
-- File: tests/test_inbox_processing.sh:58-86
-- Issue: Port 18271 is hard-coded. A port collision produces "Server did not start within timeout" — a misleading failure message in CI. The test handles the failure gracefully (it does not hang), but the root cause is obscured.
-- Severity: LOW
-- Action: Consider deriving the port from `$$` or a random value in a safe range, or emit a `SKIP` message when the bind fails rather than a `FAIL`.
-
-#### COVERAGE: milestone_dag.sh not sourced in test harness
-- File: tests/test_inbox_processing.sh:109-113
-- Issue: `lib/inbox.sh` header (line 8) documents: "Expects: common.sh, notes_cli.sh, milestone_dag.sh sourced first." Each test subshell sources `common.sh` and `notes_cli.sh` but omits `milestone_dag.sh`. Tests pass today because current code paths do not call any `dag_*` functions. If future `inbox.sh` changes call milestone_dag functions, tests will fail with "command not found" rather than a meaningful assertion error.
-- Severity: LOW
-- Action: Add `source "${TEKHTON_HOME}/lib/milestone_dag.sh"` to each subshell's preamble to match the documented dependency contract.
-
-#### None: Assertion honesty
-All assertions derive expected values from implementation logic. The `/api/ping` response string `'{"ok": true}'` correctly matches Python's `json.dumps({"ok": True})` output. `grep` patterns match the exact format written by `_process_note` and `add_human_note`. No always-true assertions or hard-coded magic values were found.
-
-#### None: Test weakening
-`test_inbox_processing.sh` is a new file. No pre-existing tests were modified.
-
-#### None: Naming and intent
-All 14 test names clearly encode both scenario and expected outcome (e.g., `"manifest_append with duplicate ID rejected, MANIFEST.cfg unchanged"`, `"absent inbox directory: returns 0 without error"`).
-
-#### None: Implementation exercise
-Tests source and invoke the real `process_watchtower_inbox()` function with no mocking of core logic. File system side effects (HUMAN_NOTES.md appended, files moved to `processed/`, MANIFEST.cfg updated) are verified against actual file contents. The server smoke test starts a real Python process and queries it over HTTP.
+- Action: Fix the always-pass defect (see INTEGRITY finding above); the naming will then be accurate.

@@ -56,12 +56,18 @@ set -euo pipefail
 : "${SEED_CONTRACTS_ENABLED:=false}"
 : "${DESIGN_FILE:=}"
 
+# --- Final check fix defaults (auto-fix on final check test failures) ---
+: "${FINAL_FIX_ENABLED:=true}"              # Spawn fix agent when TEST_CMD fails in final checks
+: "${FINAL_FIX_MAX_ATTEMPTS:=2}"            # Max fix attempts before giving up
+: "${FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
+
 # --- Drift detection defaults ---
 : "${ARCHITECTURE_LOG_FILE:=ARCHITECTURE_LOG.md}"
 : "${DRIFT_LOG_FILE:=DRIFT_LOG.md}"
 : "${HUMAN_ACTION_FILE:=HUMAN_ACTION_REQUIRED.md}"
 : "${DRIFT_OBSERVATION_THRESHOLD:=8}"
 : "${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD:=5}"
+: "${DRIFT_RESOLVED_KEEP_COUNT:=20}"      # Max resolved entries to retain in DRIFT_LOG.md
 : "${NON_BLOCKING_LOG_FILE:=NON_BLOCKING_LOG.md}"
 : "${NON_BLOCKING_INJECTION_THRESHOLD:=8}"
 
@@ -174,6 +180,8 @@ set -euo pipefail
 : "${AUTONOMOUS_TIMEOUT:=7200}"           # Wall-clock timeout for --complete in seconds (2h)
 : "${MAX_AUTONOMOUS_AGENT_CALLS:=200}"    # Safety valve for --complete mode (effectively unlimited for normal use)
 : "${AUTONOMOUS_PROGRESS_CHECK:=true}"    # Enable stuck-detection between loop iterations
+: "${FIX_NONBLOCKERS_MAX_PASSES:=3}"     # Hard limit on --fix-nonblockers loop iterations
+: "${FIX_DRIFT_MAX_PASSES:=3}"           # Hard limit on --fix-drift loop iterations
 
 # --- Quota management defaults (Milestone 16) ---
 : "${QUOTA_RETRY_INTERVAL:=300}"          # Seconds between quota refresh checks (5 min)
@@ -275,6 +283,11 @@ set -euo pipefail
 : "${CAUSAL_LOG_FILE:=.claude/logs/CAUSAL_LOG.jsonl}"
 : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
+
+# --- Tester stage fix defaults (auto-fix on test failure) ---
+: "${TESTER_FIX_ENABLED:=false}"           # Auto-seed fix run on test failure (opt-in)
+: "${TESTER_FIX_MAX_DEPTH:=1}"             # Max recursive fix attempts (recursion guard)
+: "${TESTER_FIX_OUTPUT_LIMIT:=4000}"       # Max chars of test output in fix task string
 
 # --- Test baseline defaults (pre-existing failure detection) ---
 : "${TEST_BASELINE_ENABLED:=true}"
@@ -383,6 +396,8 @@ _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 _clamp_config_value MAX_PIPELINE_ATTEMPTS 20
+_clamp_config_value FIX_NONBLOCKERS_MAX_PASSES 20
+_clamp_config_value FIX_DRIFT_MAX_PASSES 20
 _clamp_config_value AUTONOMOUS_TIMEOUT 14400
 _clamp_config_value MAX_AUTONOMOUS_AGENT_CALLS 500
 _clamp_config_value METRICS_MIN_RUNS 100
@@ -400,6 +415,8 @@ _clamp_config_value CAUSAL_LOG_RETENTION_RUNS 200
 _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
 _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
+_clamp_config_value AUTO_FIX_MAX_DEPTH 5
+_clamp_config_value AUTO_FIX_OUTPUT_LIMIT 16000
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
 _clamp_config_value BUILD_GATE_TIMEOUT 1800
 _clamp_config_value BUILD_GATE_ANALYZE_TIMEOUT 900
