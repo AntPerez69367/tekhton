@@ -120,7 +120,7 @@ else
 fi
 
 # Verify coder budget extracted correctly
-if echo "$RESULT" | grep -q '"coder":{"turns":5,"duration_s":0,"budget":8'; then
+if echo "$RESULT" | grep -q '"coder":{"turns":5,"duration_s":200,"budget":8'; then
     pass "1.8 Coder budget value (8) extracted correctly"
 else
     fail "1.8 Coder budget value (8) extracted correctly"
@@ -155,14 +155,14 @@ EOF
 RESULT=$(_parse_run_summaries_from_jsonl "$METRICS_FILE" 1)
 
 # Verify coder still present with zero budget
-if echo "$RESULT" | grep -q '"coder":{"turns":3,"duration_s":0,"budget":0'; then
+if echo "$RESULT" | grep -q '"coder":{"turns":3,"duration_s":150,"budget":0'; then
     pass "2.1 Coder stage with zero budget still included"
 else
     fail "2.1 Coder stage with zero budget still included"
 fi
 
 # Verify reviewer with zero budget
-if echo "$RESULT" | grep -q '"reviewer":{"turns":2,"duration_s":0,"budget":0'; then
+if echo "$RESULT" | grep -q '"reviewer":{"turns":2,"duration_s":100,"budget":0'; then
     pass "2.2 Reviewer stage with zero budget still included"
 else
     fail "2.2 Reviewer stage with zero budget still included"

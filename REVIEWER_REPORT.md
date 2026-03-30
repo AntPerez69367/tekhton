@@ -10,26 +10,13 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- The primary task (auto-refresh guard) was already implemented in a prior commit and confirmed via all 21 passing tests. The coder correctly identified this, documented it clearly, and pivoted to the HUMAN_NOTES item. No action needed — this is informational.
+- Historical JSONL records that already have an under-reported `total_time_s` (recorded before this fix) will continue to pull down averages until enough new correct records accumulate. This is an unavoidable side-effect of fixing a metric recording bug and requires no code change, but users should be aware averages will improve gradually over subsequent runs.
+- The proportional per-stage duration estimation (`time_s * turns / total_turns`) is an approximation that breaks down when a stage uses many turns but runs quickly (or few turns but runs slowly — e.g., long model think times). For averages across many runs it's acceptable, but a Drift Observation is noted below.
 
 ## Coverage Gaps
-- None
+- No test covers the new `total_time` computation path in `record_run_metrics()` — specifically that `_STAGE_DURATION` sum takes precedence over `TOTAL_TIME` and that the fallback to `TOTAL_TIME` fires when the array is empty.
+- No test for the new proportional duration estimation branch in `_parse_run_summaries_from_jsonl` (both Python and shell paths).
 
 ## Drift Observations
-- None
-
----
-
-## Review Notes
-
-### Auto-Refresh Guard (primary task)
-Already in place. `refreshData()` → `Promise.all().then()` calls `renderLiveRunBanner()` unconditionally, captures `var active = getActiveTab()`, and gates `renderActiveTab()` behind `if (active === 'reports')`. All 21 tests in `test_watchtower_actions_auto_refresh.sh` verify this contract. No changes were needed and none were made.
-
-### Stage Duration Fix (HUMAN_NOTES item)
-The `_STAGE_START_TS` / `_STAGE_DURATION` pattern is correct and consistent:
-
-- **All 7 stages covered**: `intake`, `scout`, `coder`, `security`, `reviewer`, `tester_write`, `tester`
-- **Formula**: `$(( SECONDS - ${_STAGE_START_TS[stage]:-$SECONDS} ))` — safe fallback to 0 if start timestamp is missing
-- **Scout stage** (`stages/coder.sh`): start and end blocks both sit inside `if declare -p _STAGE_STATUS &>/dev/null` guards, same pattern as pre-existing `_STAGE_STATUS`, `_STAGE_TURNS`, `_STAGE_DURATION` assignments in those blocks
-- **Arithmetic**: Uses bash `SECONDS` special variable (seconds since shell start), which is monotonically increasing — no race condition possible
-- No hardcoded values, no architecture boundary violations, no project-specific logic introduced
+- `lib/dashboard_parsers.sh:236–239` (shell fallback) and the equivalent Python block: duration estimation assumes turns-per-stage is a proxy for time-per-stage. If the codebase ever records stage durations directly for all stages (making the estimate unnecessary), the two estimation blocks become dead code — worth a cleanup note when `_STAGE_DURATION` coverage is confirmed complete.
+- `lib/metrics.sh:107` iterates over a hardcoded list (`intake scout coder build_gate security reviewer tester`) to sum `_STAGE_DURATION`. If new stages are added in future milestones, this list will silently miss them and undercount `total_time`. Consider using a loop over all keys of `_STAGE_DURATION` instead (`"${!_STAGE_DURATION[@]}"`) to be future-proof.

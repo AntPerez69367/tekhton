@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-30
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-03-30 | "[BUG] Watchtower Trends page: Average stage times are incorrect. Tester shows 3:38 avg despite no run under 5 min; an 11-min run decreased the average to 3:21 instead of increasing it. The average run time shows as 8m50s when in actual fact most runs are well over 20 minutes, some reaching over an hour. This is critical for users to have an accurate expectation of how long runs will take and to see the impact of their optimizations."] `lib/dashboard_parsers.sh:236–239` (shell fallback) and the equivalent Python block: duration estimation assumes turns-per-stage is a proxy for time-per-stage. If the codebase ever records stage durations directly for all stages (making the estimate unnecessary), the two estimation blocks become dead code — worth a cleanup note when `_STAGE_DURATION` coverage is confirmed complete.
+- [2026-03-30 | "[BUG] Watchtower Trends page: Average stage times are incorrect. Tester shows 3:38 avg despite no run under 5 min; an 11-min run decreased the average to 3:21 instead of increasing it. The average run time shows as 8m50s when in actual fact most runs are well over 20 minutes, some reaching over an hour. This is critical for users to have an accurate expectation of how long runs will take and to see the impact of their optimizations."] `lib/metrics.sh:107` iterates over a hardcoded list (`intake scout coder build_gate security reviewer tester`) to sum `_STAGE_DURATION`. If new stages are added in future milestones, this list will silently miss them and undercount `total_time`. Consider using a loop over all keys of `_STAGE_DURATION` instead (`"${!_STAGE_DURATION[@]}"`) to be future-proof.
 (none)
 
 ## Resolved

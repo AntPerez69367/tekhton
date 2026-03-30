@@ -228,6 +228,15 @@ for line in lines[-int(sys.argv[2]):]:
             dur = int(d.get(sname + '_duration_s', 0))
             if t and int(t) > 0:
                 stages[sname] = {'turns': int(t), 'duration_s': dur, 'budget': b}
+        # Estimate per-stage durations proportionally from total_time_s when
+        # individual duration_s fields are missing (legacy metrics records).
+        total_ts = int(d.get('total_time_s', 0))
+        has_any_dur = any(s.get('duration_s', 0) > 0 for s in stages.values())
+        if total_ts > 0 and not has_any_dur and stages:
+            total_turns = sum(s['turns'] for s in stages.values())
+            if total_turns > 0:
+                for s in stages.values():
+                    s['duration_s'] = round(total_ts * s['turns'] / total_turns)
         # Task label: first 80 chars of task
         task = d.get('task', '')
         task_label = task[:80] if task else ''
@@ -314,6 +323,18 @@ print(json.dumps(results))
         : "${coder_t:=0}" "${reviewer_t:=0}" "${tester_t:=0}" "${scout_t:=0}"
         : "${adj_coder:=0}" "${adj_reviewer:=0}" "${adj_tester:=0}"
         : "${coder_dur:=0}" "${reviewer_dur:=0}" "${tester_dur:=0}" "${scout_dur:=0}"
+        # Estimate per-stage durations proportionally when missing (legacy records)
+        if [[ "$time_s" -gt 0 ]] && \
+           [[ "$coder_dur" -eq 0 ]] && [[ "$reviewer_dur" -eq 0 ]] && \
+           [[ "$tester_dur" -eq 0 ]] && [[ "$scout_dur" -eq 0 ]]; then
+            local _total_st=$(( coder_t + reviewer_t + tester_t + scout_t ))
+            if [[ "$_total_st" -gt 0 ]]; then
+                coder_dur=$(( time_s * coder_t / _total_st ))
+                reviewer_dur=$(( time_s * reviewer_t / _total_st ))
+                tester_dur=$(( time_s * tester_t / _total_st ))
+                scout_dur=$(( time_s * scout_t / _total_st ))
+            fi
+        fi
         local stages_json="{"
         local sfirst=true
         local _sn _st _sb _sd

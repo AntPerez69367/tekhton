@@ -74,7 +74,6 @@ record_run_metrics() {
 
     local milestone_mode="${MILESTONE_MODE:-false}"
     local total_turns="${TOTAL_TURNS:-0}"
-    local total_time="${TOTAL_TIME:-0}"
     local verdict="${VERDICT:-unknown}"
 
     # Per-stage data from STAGE_SUMMARY (format: "\n  Label: N/M turns, Xm Ys")
@@ -97,6 +96,21 @@ record_run_metrics() {
         reviewer_duration_s="${_STAGE_DURATION[reviewer]:-0}"
         tester_duration_s="${_STAGE_DURATION[tester]:-0}"
         scout_duration_s="${_STAGE_DURATION[scout]:-0}"
+    fi
+
+    # Compute total_time from stage durations (wall-clock) rather than
+    # TOTAL_TIME (agent-invocation-only sum) to match finalize_summary.sh
+    # and give accurate run durations in the dashboard.
+    local computed_time=0
+    local _stg_name
+    if declare -p _STAGE_DURATION &>/dev/null; then
+        for _stg_name in intake scout coder build_gate security reviewer tester; do
+            computed_time=$(( computed_time + ${_STAGE_DURATION[$_stg_name]:-0} ))
+        done
+    fi
+    local total_time="$computed_time"
+    if [[ "$total_time" -eq 0 ]]; then
+        total_time="${TOTAL_TIME:-0}"
     fi
 
     # Scout estimates vs actual
