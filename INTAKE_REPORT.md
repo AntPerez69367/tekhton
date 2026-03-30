@@ -2,28 +2,23 @@
 TWEAKED
 
 ## Confidence
-72
+62
 
 ## Reasoning
-- Scope is clear: disable auto-refresh on the Actions screen only
-- Root cause and expected behavior are unambiguous — the screen has no live data, so refresh serves no purpose
-- Human notes corroborate this as part of a broader pattern (auto-refresh should be limited to Reports and Live Run pages)
-- Missing explicit acceptance criteria — the task is a bug description, not a milestone spec; testable criteria need to be stated
-- No UI-verifiable criteria present despite this being a UI bug fix (rubric flags this)
+- Scope is clear: the bug is on the Watchtower Actions screen, Parallel Groups selector only allows selecting existing groups — new ones cannot be created
+- The "new projects have one or zero options" detail pins the regression surface well
+- No acceptance criteria are present at all — added testable ones below
+- UI Testability rubric requires at least one UI-verifiable criterion; none existed
 
 ## Tweaked Content
-[BUG] Watchtower Actions screen: Auto-refresh wipes all form fields every few seconds, making the screen unusable during a pipeline run. Actions screen has no live run data and should not refresh at all.
 
-**Root Cause Context:**
-Auto-refresh is currently applied globally. It should only apply to pages that display live run data (Reports and Live Run). The Actions screen has no live data and must be excluded.
+**[BUG] Watchtower Actions screen: Cannot add new Parallel Groups, only existing ones are selectable. New projects have only one (or zero) options available**
+
+The Parallel Groups control on the Watchtower Actions screen behaves as a read-only selector over existing groups. Users cannot create or name a new group inline. For new projects with no prior runs this leaves one or zero options, making the feature unusable.
 
 **Acceptance Criteria:**
-- [PM: Added] Auto-refresh does NOT trigger on the Actions screen — navigating to Actions and waiting 2× the refresh interval results in no page reload
-- [PM: Added] Form fields on the Actions screen (inputs, selects, text areas) retain their values after the refresh interval has elapsed
-- [PM: Added] Pages that legitimately need auto-refresh (Reports, Live Run) are unaffected by this change — they continue to refresh at their configured interval
-- [PM: Added] No console errors appear on the Actions screen related to refresh logic
-- [PM: Added] The fix is implemented by conditional exclusion in the auto-refresh mechanism (e.g., page type/route guard), not by increasing the refresh interval
-
-**Watch For:**
-- [PM: Added] If auto-refresh is driven by a single global timer/interval, verify that removing it from one page does not accidentally remove it from all pages
-- [PM: Added] Check whether the refresh mechanism checks current route/page identity — if not, a route-aware guard must be added
+- [PM: Added] Users can type a new Parallel Group name into the Actions screen control and have it accepted (either via a text input, a combobox with free-text entry, or an "Add new group" affordance — whichever matches the existing UI pattern for this screen)
+- [PM: Added] After creating a new group name, it appears as a selectable option in the same control for subsequent actions in that session
+- [PM: Added] On a brand-new project with zero prior runs, the Parallel Groups control is usable (not empty/locked) — at minimum it allows entry of a first group name
+- [PM: Added] The Actions screen loads without console errors before and after the fix
+- [PM: Added] Existing group names (from prior runs) continue to appear as selectable options — no regression on the selection path

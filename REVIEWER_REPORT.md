@@ -1,7 +1,7 @@
 # Reviewer Report
 
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,14 +10,13 @@ APPROVED
 - None
 
 ## Non-Blocking Notes
-- `manualRefresh()` also routes through `refreshData()`, so it too skips `renderActiveTab()` when the Actions tab is active. This is the correct behavior (prevents form wipe on manual refresh), but worth noting for documentation clarity.
-- CODER_SUMMARY.md notes that auto-refresh still applies to all other non-data tabs (Milestones, Trends, etc.) — there's a separate open bug for this. The fix here is correctly scoped to just the Actions tab as specified by the task.
+- Session datalist persistence (app.js:1106) is lost when the user switches tabs and returns to Actions, because `renderActions()` fully rebuilds the form via innerHTML on every tab activation. The new group will not appear in datalist suggestions after a tab switch. This is an inherent limitation of the stateless re-render model (no in-memory store for newly-created milestones until page reload) and is acceptable given the scope, but worth a future note.
 
 ## Coverage Gaps
-- None
+- No automated test covers the datalist update path (session-level group persistence after milestone creation). Acceptable since this is a UI-only change to template output.
 
 ## Drift Observations
 - None
 
 ## ACP Verdicts
-(No Architecture Change Proposals in CODER_SUMMARY.md — section omitted.)
+None present in CODER_SUMMARY.md.

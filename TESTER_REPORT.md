@@ -1,11 +1,10 @@
 ## Planned Tests
-- [x] `tests/test_watchtower_actions_auto_refresh.sh` — Verify Actions tab auto-refresh guard prevents renderActiveTab() calls
+- [x] `tests/test_watchtower_parallel_groups_datalist.sh` — Parallel Groups datalist population and session-level persistence
 
 ## Test Run Results
-Passed: 19  Failed: 0
+Passed: 21  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_watchtower_actions_auto_refresh.sh`

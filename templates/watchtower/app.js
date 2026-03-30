@@ -992,9 +992,10 @@
     var ms = milestones();
     for (var i = 0; i < ms.length; i++) h += '<option value="' + esc(ms[i].id) + '">' + esc(ms[i].id) + ' — ' + esc(truncate(ms[i].title, 40)) + '</option>';
     h += '</select><div class="form-hint">Hold Ctrl/Cmd to select multiple</div></div>';
-    h += '<div class="form-group"><label>Parallel Group (optional)</label><input type="text" id="ms-group" list="ms-group-list" placeholder="e.g. foundation"><datalist id="ms-group-list">';
+    h += '<div class="form-group"><label>Parallel Group (optional)</label><input type="text" id="ms-group" list="ms-group-list" placeholder="Type new or pick existing">';
+    h += '<datalist id="ms-group-list">';
     for (var g = 0; g < groups.length; g++) h += '<option value="' + esc(groups[g]) + '">';
-    h += '</datalist></div>';
+    h += '</datalist><div class="form-hint">Free-text: type any group name</div></div>';
     h += '<div class="form-actions"><button class="btn-submit" id="ms-submit">Create Milestone</button></div>';
     h += '<div class="form-error" id="ms-form-error"></div>';
     h += '<div class="form-success" id="ms-form-success"></div>';
@@ -1102,6 +1103,7 @@
             (document.getElementById('ms-title') || {}).value = '';
             (document.getElementById('ms-desc') || {}).value = '';
             var cnt = document.getElementById('ms-desc-count'); if (cnt) cnt.textContent = '0';
+            if (group.trim()) { var dl = document.getElementById('ms-group-list'); if (dl) { var dup = false; for (var o = 0; o < dl.options.length; o++) if (dl.options[o].value === group.trim()) { dup = true; break; } if (!dup) { var opt = document.createElement('option'); opt.value = group.trim(); dl.appendChild(opt); } } }
           }
         });
       });
