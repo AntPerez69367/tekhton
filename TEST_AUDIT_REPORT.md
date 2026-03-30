@@ -1,49 +1,107 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 11 test cases (`tests/test_drift_prune_realistic.sh`)
+Tests audited: 1 file (tests/test_plan_browser.sh), 26 pass/fail assertions
 Verdict: PASS
 
 ---
 
 ### Findings
 
-#### COVERAGE: Test 11 assertion is vacuously true
-- File: tests/test_drift_prune_realistic.sh:211-217
-- Issue: The missing-file no-op test calls `prune_resolved_drift_entries` after `rm -f DRIFT_LOG.md`, then enters `if [ ! -f ... ]; then :; fi`. The if-body is a no-op (`:`) and the else branch is absent, so the block can never set `FAIL=1` regardless of what the function does. The only actual check is that the function exits 0 (enforced by `set -euo pipefail`). If the implementation unexpectedly recreated the file, the test would still report PASS.
-- Severity: MEDIUM
-- Action: Replace the vacuous if-block with `assert_file_not_contains "missing-file prune: no file created" "${PROJECT_DIR}/DRIFT_LOG.md" ""` or add a `[ -f ... ] && echo "FAIL..." && FAIL=1` check to assert the file was not created.
-
-#### COVERAGE: Test 10 does not assert archive remains absent after under-threshold prune
-- File: tests/test_drift_prune_realistic.sh:195-202
-- Issue: The test removes `DRIFT_ARCHIVE.md` before calling `prune_resolved_drift_entries` with 10 entries (below the 20-entry threshold). The implementation correctly returns early at line 41 of `lib/drift_prune.sh` (`if [ "$total_count" -le "$keep_count" ]; then return 0; fi`), so no archive is created. The test verifies 10 entries remain but never asserts the archive was NOT recreated. The comment at lines 205-207 hedges ("this may be expected behavior") but the code path is deterministic — the archive should not be created.
-- Severity: LOW
-- Action: Add `[ ! -f "${PROJECT_DIR}/DRIFT_ARCHIVE.md" ] || { echo "FAIL: archive created for under-threshold prune"; FAIL=1; }` after the prune call to make the non-creation assertion explicit.
-
-#### (None — all other rubric points passed)
+None — all prior HIGH and MEDIUM findings were resolved by the rework. See the
+resolution notes below for each prior finding.
 
 ---
 
-### Rubric Assessment
+### Prior Findings — Resolution Status
 
-**1. Assertion Honesty — PASS.**
-All expected values (20 kept, 10 archived, 30 total) derive directly from `DRIFT_RESOLVED_KEEP_COUNT=20` and the 30-entry fixture. Entry numbers in assertions (Entry 1, Entry 20, Entry 21, Entry 30) correspond to the exact loop indices used to generate the fixture. No unexplained magic numbers.
+#### INTEGRITY: TESTER_REPORT falsely claims no implementation files changed
+- **Status: RESOLVED**
+- TESTER_REPORT.md "Files Modified" section now explicitly lists `lib/plan_server.sh:41-43`
+  and `lib/plan_browser.sh:141-146` with a description of each change. A reviewer
+  reading the report can identify every file touched without consulting git diff.
 
-**2. Edge Case Coverage — PASS.**
-Three distinct scenarios are exercised: over-threshold (30 entries → prune), at-threshold (20 entries → idempotent no-op), below-threshold (10 entries → no-op), and missing-file (graceful return). This is solid coverage for a pruning function. The one gap (Test 11, noted above) is MEDIUM, not a coverage failure.
+#### EXERCISE: HTML escaping test does not exercise the actual Bug 2 fix
+- **Status: RESOLVED**
+- Test "Awk BEGIN block prevents double-encoding in form" (test_plan_browser.sh:340–355)
+  sets `PLAN_PROJECT_TYPE="web & mobile"`, calls `_generate_plan_form`, and checks
+  that the generated `index.html` contains `Type: <strong>web &amp; mobile</strong>`
+  (single-encoded), not `web &amp;amp; mobile` (double-encoded).
+- This test walks the full awk pipeline at plan_browser.sh:141–156: `_html_escape`
+  converts `&` → `&amp;`, the awk BEGIN block converts `&amp;` → `\&amp;` for safe
+  gsub use, and the final HTML receives the singly-encoded value. The test is
+  mechanically correct.
+- Observation (LOW, no action required): The awk BEGIN block escapes `&` using
+  `gsub(/&/, "\\\\&", ...)`, which in awk produces the replacement string `\&amp;`.
+  In awk's gsub replacement, `\&` denotes a literal `&`, so the output is `&amp;`.
+  This chain is correct and the test confirms it end-to-end.
 
-**3. Implementation Exercise — PASS.**
-The test sources `lib/drift_prune.sh` directly and calls `prune_resolved_drift_entries()` with real files in a temp directory. No mocking. The `count_entries_in_section` helper uses the same awk idiom as the implementation, which is intentional and appropriate.
+#### COVERAGE: Occupied-port test soft-passes when socket bind fails
+- **Status: RESOLVED**
+- When the dummy socket cannot be bound, the test now emits
+  `SKIP: could not bind dummy port — skipping occupied-port test` (line 311)
+  without incrementing PASS. The skip is visible, distinct from a pass, and
+  cannot silently inflate the pass count on infrastructure failure.
 
-**4. Test Weakening — NOT APPLICABLE.**
-This replaces no prior passing tests. The previous audit (which yielded NEEDS_WORK) found that the wrong test files had been audited; the correct file (`test_drift_prune_realistic.sh`) was excluded. That prior verdict is now superseded by this audit.
+#### COVERAGE: HTML escape test omits `&` from input
+- **Status: RESOLVED**
+- Test "Ampersand encodes to &amp; (single-encoded)" (test_plan_browser.sh:333–338)
+  verifies `_html_escape 'a & b'` produces exactly `a &amp; b`. This confirms
+  that the bash `_html_escape` function processes `&` first (preventing it from
+  re-encoding the `&` introduced by later `<` → `&lt;` substitutions).
 
-**5. Test Naming — PASS.**
-Test names encode scenario and expected outcome (e.g., "Entry 1 kept (newest)", "Entry 21 removed (oldest kept was 20)", "idempotent: still 20 entries after second prune", "under threshold: all 10 entries remain").
+---
 
-**6. Scope Alignment — PASS.**
-The test file exercises `lib/drift_prune.sh:prune_resolved_drift_entries()`, which is the exact function identified in the bug report. The awk fix at line 149 (changed from gawk 3-argument `match($0, /pattern/, array)` to POSIX `match($0, /pattern/)` + `substr($0, RSTART+6, RLENGTH-6)`) is correct: for a match of `Entry [0-9]+`, `RSTART+6` skips the 6-char "Entry " prefix, and `RLENGTH-6` is the digit count. Verified against the implementation's entry format (`Entry $i — resolved observation`) for values 1–30.
+### Full Rubric Evaluation (Current State)
 
-**Awk Fix Verification:**
-- Pattern `Entry [0-9]+` matches "Entry 1" (RLENGTH=7), "Entry 10" (RLENGTH=8), "Entry 20" (RLENGTH=8). `RLENGTH-6` correctly yields 1, 2, 2 digits respectively.
-- Compatible with mawk, gawk, nawk, busybox awk (POSIX-compliant). The prior gawk-only 3-argument form is absent. Fix is sound.
+#### 1. Assertion Honesty — PASS
+All assertions derive from real function call outputs. No fabricated expected values
+detected. The awk double-encoding test supplies a known input, calls the actual
+implementation, and compares against the logically correct expected output.
+
+#### 2. Edge Case Coverage — PASS
+The suite covers: free port, occupied port (with correct SKIP on infrastructure
+failure), HTML special characters (`<`, `>`, `"`, `&`), double-encoding prevention
+through the full awk render path, pre-populated answers (resume path), empty
+answers (fresh path), and mode selection. No gaps material to the two bugs under
+test.
+
+#### 3. Implementation Exercise — PASS
+Tests call the real implementations directly:
+- `_html_escape` (plan_browser.sh:23–31) — tested at lines 325 and 333
+- `_generate_plan_form` awk path (plan_browser.sh:141–156) — tested at line 346
+- `_plan_is_port_in_use` regex fix (plan_server.sh:41–43) — tested at lines 183 and 295
+- `_plan_find_available_port` — tested at lines 190 and 303
+- `_write_plan_server_script` — tested at lines 205 and 235
+- `_select_interview_mode` — tested at line 362
+No mocking of the functions under test.
+
+#### 4. Test Weakening Detection — PASS
+No existing assertions were removed or broadened. The occupied-port SKIP change
+makes the suite more honest, not weaker: a bind failure now produces a visible
+SKIP instead of a fabricated pass.
+
+#### 5. Test Naming and Intent — PASS
+Pass/fail messages encode scenario and expected outcome:
+- "Port finding skips occupied port $DUMMY_PORT, found $found_port"
+- "Awk BEGIN block prevents double-encoding in form"
+- "Ampersand encodes to &amp; (single-encoded)"
+
+#### 6. Scope Alignment — PASS
+All referenced functions exist in the sourced libraries. No orphaned or stale
+references detected. No coder-removed functions called in tests.
+
+---
+
+### Non-Material Observations (no action required)
+
+- **Port exhaustion not tested**: `_plan_find_available_port` returns 1 if all
+  50 candidate ports are occupied. This path is untested, but it is an extreme
+  operational condition unlikely to occur in CI and not related to either reported
+  bug. Not flagged.
+- **`_html_escape ""` not tested**: Empty string input to `_html_escape` is not
+  covered. The function's bash parameter expansion handles empty strings correctly
+  by construction. Not flagged.
+- **CODER_SUMMARY.md absent**: The required reading list references this file,
+  but it does not exist. TESTER_REPORT.md serves its role for this audit. The
+  two implementation changes are fully documented there.
