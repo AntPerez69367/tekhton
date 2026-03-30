@@ -225,8 +225,9 @@ for line in lines[-int(sys.argv[2]):]:
             t = d.get(skey, 0)
             bkey = budget_map.get(sname)
             b = int(d.get(bkey, 0)) if bkey else 0
+            dur = int(d.get(sname + '_duration_s', 0))
             if t and int(t) > 0:
-                stages[sname] = {'turns': int(t), 'duration_s': 0, 'budget': b}
+                stages[sname] = {'turns': int(t), 'duration_s': dur, 'budget': b}
         # Task label: first 80 chars of task
         task = d.get('task', '')
         task_label = task[:80] if task else ''
@@ -304,21 +305,28 @@ print(json.dumps(results))
         adj_coder=$(printf '%s' "$line" | sed -n 's/.*"adjusted_coder"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         adj_reviewer=$(printf '%s' "$line" | sed -n 's/.*"adjusted_reviewer"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         adj_tester=$(printf '%s' "$line" | sed -n 's/.*"adjusted_tester"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        # Extract per-stage durations when available (added by metrics.sh)
+        local coder_dur reviewer_dur tester_dur scout_dur
+        coder_dur=$(printf '%s' "$line" | sed -n 's/.*"coder_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        reviewer_dur=$(printf '%s' "$line" | sed -n 's/.*"reviewer_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        tester_dur=$(printf '%s' "$line" | sed -n 's/.*"tester_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        scout_dur=$(printf '%s' "$line" | sed -n 's/.*"scout_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         : "${coder_t:=0}" "${reviewer_t:=0}" "${tester_t:=0}" "${scout_t:=0}"
         : "${adj_coder:=0}" "${adj_reviewer:=0}" "${adj_tester:=0}"
+        : "${coder_dur:=0}" "${reviewer_dur:=0}" "${tester_dur:=0}" "${scout_dur:=0}"
         local stages_json="{"
         local sfirst=true
-        local _sn _st _sb
+        local _sn _st _sb _sd
         for _sn in coder reviewer tester scout; do
             case "$_sn" in
-                coder)    _st="$coder_t"; _sb="$adj_coder" ;;
-                reviewer) _st="$reviewer_t"; _sb="$adj_reviewer" ;;
-                tester)   _st="$tester_t"; _sb="$adj_tester" ;;
-                scout)    _st="$scout_t"; _sb=0 ;;
+                coder)    _st="$coder_t"; _sb="$adj_coder"; _sd="$coder_dur" ;;
+                reviewer) _st="$reviewer_t"; _sb="$adj_reviewer"; _sd="$reviewer_dur" ;;
+                tester)   _st="$tester_t"; _sb="$adj_tester"; _sd="$tester_dur" ;;
+                scout)    _st="$scout_t"; _sb=0; _sd="$scout_dur" ;;
             esac
             if [[ "$_st" -gt 0 ]]; then
                 if [[ "$sfirst" = true ]]; then sfirst=false; else stages_json="${stages_json},"; fi
-                stages_json="${stages_json}\"${_sn}\":{\"turns\":${_st},\"duration_s\":0,\"budget\":${_sb}}"
+                stages_json="${stages_json}\"${_sn}\":{\"turns\":${_st},\"duration_s\":${_sd},\"budget\":${_sb}}"
             fi
         done
         stages_json="${stages_json}}"

@@ -86,6 +86,15 @@ record_run_metrics() {
         scout_turns=$(_extract_stage_turns "$STAGE_SUMMARY" "Scout")
     fi
 
+    # Per-stage durations from _STAGE_DURATION (populated by tekhton.sh)
+    local coder_duration_s=0 reviewer_duration_s=0 tester_duration_s=0 scout_duration_s=0
+    if declare -p _STAGE_DURATION &>/dev/null; then
+        coder_duration_s="${_STAGE_DURATION[coder]:-0}"
+        reviewer_duration_s="${_STAGE_DURATION[reviewer]:-0}"
+        tester_duration_s="${_STAGE_DURATION[tester]:-0}"
+        scout_duration_s="${_STAGE_DURATION[scout]:-0}"
+    fi
+
     # Scout estimates vs actual
     local scout_est_coder="${SCOUT_REC_CODER_TURNS:-0}"
     local scout_est_reviewer="${SCOUT_REC_REVIEWER_TURNS:-0}"
@@ -125,6 +134,10 @@ record_run_metrics() {
     retry_count=$(echo "$retry_count" | grep -oE '[0-9]+' | tail -1); retry_count="${retry_count:-0}"
     continuation_attempts=$(echo "$continuation_attempts" | grep -oE '[0-9]+' | tail -1); continuation_attempts="${continuation_attempts:-0}"
     pipeline_attempts=$(echo "$pipeline_attempts" | grep -oE '[0-9]+' | tail -1); pipeline_attempts="${pipeline_attempts:-0}"
+    coder_duration_s=$(echo "$coder_duration_s" | grep -oE '[0-9]+' | tail -1); coder_duration_s="${coder_duration_s:-0}"
+    reviewer_duration_s=$(echo "$reviewer_duration_s" | grep -oE '[0-9]+' | tail -1); reviewer_duration_s="${reviewer_duration_s:-0}"
+    tester_duration_s=$(echo "$tester_duration_s" | grep -oE '[0-9]+' | tail -1); tester_duration_s="${tester_duration_s:-0}"
+    scout_duration_s=$(echo "$scout_duration_s" | grep -oE '[0-9]+' | tail -1); scout_duration_s="${scout_duration_s:-0}"
     total_agent_calls=$(echo "$total_agent_calls" | grep -oE '[0-9]+' | tail -1); total_agent_calls="${total_agent_calls:-0}"
 
     # Outcome
@@ -168,6 +181,11 @@ record_run_metrics() {
         "$continuation_attempts" \
         "$verdict" \
         "$outcome")
+
+    # Append per-stage durations when available
+    if [[ "$coder_duration_s" -gt 0 || "$reviewer_duration_s" -gt 0 || "$tester_duration_s" -gt 0 || "$scout_duration_s" -gt 0 ]]; then
+        record="${record},\"coder_duration_s\":${coder_duration_s},\"reviewer_duration_s\":${reviewer_duration_s},\"tester_duration_s\":${tester_duration_s},\"scout_duration_s\":${scout_duration_s}"
+    fi
 
     # Append orchestration fields when in --complete mode (M16)
     if [[ "$pipeline_attempts" -gt 0 ]]; then

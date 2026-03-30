@@ -242,6 +242,11 @@ main {
 .waiting-banner p { color:var(--text-secondary); font-size:0.85rem; margin-bottom:0.25rem; }
 .waiting-banner code { background:var(--bg-input); padding:0.15rem 0.4rem; border-radius:3px; font-family:var(--font-data); font-size:0.8rem; }
 
+/* --- Persistent Live Run Banner --- */
+#live-banner { max-width:1400px; width:100%; margin:0 auto; overflow:hidden; transition:max-height 0.3s ease, opacity 0.3s ease; }
+#live-banner.banner-hidden { max-height:0; opacity:0; pointer-events:none; padding:0; }
+#live-banner.banner-visible { max-height:300px; opacity:1; padding:0.5rem 1rem 0; }
+
 .swimlanes { display:flex; gap:0.75rem; min-height:300px; }
 .swimlane { flex:1; min-width:0; }
 .swimlane-header { font-size:0.8rem; font-weight:700; text-transform:uppercase; color:var(--text-muted); padding:0.4rem 0.5rem; border-bottom:2px solid var(--border-color); margin-bottom:0.5rem; text-align:center; }

@@ -1,5 +1,3 @@
-# Reviewer Report
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,13 +8,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- Session datalist persistence (app.js:1106) is lost when the user switches tabs and returns to Actions, because `renderActions()` fully rebuilds the form via innerHTML on every tab activation. The new group will not appear in datalist suggestions after a tab switch. This is an inherent limitation of the stateless re-render model (no in-memory store for newly-created milestones until page reload) and is acceptable given the scope, but worth a future note.
+- `#live-banner.banner-visible` caps at `max-height:300px` with `overflow:hidden`. For parallel runs with many teams (5+), team cards could be clipped. Consider bumping to 400–500px or `fit-content` for safety.
+- `checkRefreshLifecycle()` only schedules the next poll when `status === 'running'` or `'initializing'` — not `'waiting'`. The banner correctly shows the waiting state, but auto-refresh won't re-trigger once a run transitions to `'waiting'` after the timer has already stopped. Pre-existing behavior now more visible since the banner is always shown.
 
 ## Coverage Gaps
-- No automated test covers the datalist update path (session-level group persistence after milestone creation). Acceptable since this is a UI-only change to template output.
+- None
 
 ## Drift Observations
 - None
-
-## ACP Verdicts
-None present in CODER_SUMMARY.md.

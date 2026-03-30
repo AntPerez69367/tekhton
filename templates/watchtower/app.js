@@ -87,7 +87,8 @@
     try { saved = localStorage.getItem('tk_active_tab'); } catch (e) { /* noop */ }
     for (var i = 0; i < btns.length; i++)
       btns[i].addEventListener('click', function () { switchTab(this.dataset.tab); });
-    switchTab(saved && document.getElementById('tab-' + saved) ? saved : 'live');
+    var defaultTab = saved && saved !== 'live' && document.getElementById('tab-' + saved) ? saved : 'reports';
+    switchTab(defaultTab);
   }
   function switchTab(tabId) {
     var btns = document.querySelectorAll('.tab-btn'), tabs = document.querySelectorAll('.tab-content');
@@ -97,14 +98,13 @@
     renderTab(tabId);
   }
   function getActiveTab() {
-    try { return localStorage.getItem('tk_active_tab') || 'live'; } catch (e) { return 'live'; }
+    try { var t = localStorage.getItem('tk_active_tab'); return t && t !== 'live' ? t : 'reports'; } catch (e) { return 'reports'; }
   }
   function renderActiveTab() {
     renderTab(getActiveTab());
   }
   function renderTab(tabId) {
     switch (tabId) {
-      case 'live': renderLiveRun(); break;
       case 'milestones': renderMilestoneMap(); break;
       case 'reports': renderReports(); break;
       case 'trends': renderTrends(); break;
@@ -136,7 +136,7 @@
     el.style.display = stopped ? 'inline' : 'none';
   }
 
-  // --- Tab 1: Live Run ---
+  // --- Stage constants ---
   var stageOrder = ['intake', 'scout', 'coder', 'build_gate', 'security', 'reviewer', 'tester'];
   var stageLabels = { intake: 'Intake', scout: 'Scout', coder: 'Coder', build_gate: 'Build', security: 'Security', reviewer: 'Review', tester: 'Test' };
   var teamColors = ['#4a9eff', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4'];
@@ -225,37 +225,40 @@
     return h;
   }
 
-  function renderLiveRun() {
-    var c = document.getElementById('tab-live');
-    if (!c) return;
-    var s = state(), h = '';
-    if ((!s.pipeline_status || s.pipeline_status === 'initializing') && !timeline().length) {
-      c.innerHTML = '<div class="empty-state">No runs yet \u2014 run tekhton to see data here</div>'; return;
-    }
+  // --- Persistent Live Run Banner ---
+  function renderLiveRunBanner() {
+    var banner = document.getElementById('live-banner');
+    if (!banner) return;
+    var s = state();
     var st = (s.pipeline_status || 'idle').toLowerCase();
+    var isActive = st === 'running' || st === 'initializing' || st === 'waiting';
+    if (!isActive) {
+      banner.className = 'banner-hidden';
+      banner.innerHTML = '';
+      return;
+    }
+    banner.className = 'banner-visible';
+    var h = '';
     var teams = s.teams || {};
     var teamIds = []; for (var tk in teams) if (teams.hasOwnProperty(tk)) teamIds.push(tk);
     teamIds.sort();
     var isParallel = s.parallel_mode === true && teamIds.length > 1;
-
     if (isParallel) {
-      // --- Multi-team layout ---
       h += '<div class="live-status-banner ' + esc(st) + '">' + statusIcon(st) + ' Pipeline ' + esc(st.toUpperCase()) + ' \u2014 ' + teamIds.length + ' teams active</div>';
-      if (s.waiting_for)
-        h += '<div class="waiting-banner"><h3>\u23F8 Pipeline WAITING \u2014 Human Input Required</h3><p>' + esc(s.waiting_for) + '</p><p>To respond, edit: <code>.claude/CLARIFICATIONS.md</code></p></div>';
-      h += '<div class="team-cards-row">';
+      h += '<div class="stage-progress compact">';
       for (var ti = 0; ti < teamIds.length; ti++) {
-        h += renderTeamCard(teamIds[ti], teams[teamIds[ti]], getTeamColor(teamIds[ti], teamIds));
+        var team = teams[teamIds[ti]], ts = (team.status || 'pending').toLowerCase();
+        var tColor = getTeamColor(teamIds[ti], teamIds);
+        h += '<span class="stage-chip ' + esc(ts) + '" style="color:' + tColor + '">' + statusIcon(ts) + ' ' + esc(teamIds[ti]);
+        if (team.current_stage) h += ': ' + esc(stageLabels[team.current_stage] || team.current_stage);
+        h += '</span>';
       }
       h += '</div>';
     } else {
-      // --- Single pipeline layout (existing) ---
       var ml = s.active_milestone ? ' \u2014 Milestone ' + esc(s.active_milestone.id) + ': ' + esc(s.active_milestone.title) : '';
       h += '<div class="live-status-banner ' + esc(st) + '">' + statusIcon(st) + ' Pipeline ' + esc(st.toUpperCase()) + ml + '</div>';
-      if (s.waiting_for)
-        h += '<div class="waiting-banner"><h3>\u23F8 Pipeline WAITING \u2014 Human Input Required</h3><p>' + esc(s.waiting_for) + '</p><p>To respond, edit: <code>.claude/CLARIFICATIONS.md</code></p></div>';
       var stgs = s.stages || {};
-      h += '<div class="stage-progress">' + renderStageChips(stgs) + '</div>';
+      h += '<div class="stage-progress compact">' + renderStageChips(stgs) + '</div>';
       if (s.current_stage && stgs[s.current_stage]) {
         var d = stgs[s.current_stage];
         h += '<div class="stage-detail">' + esc(stageLabels[s.current_stage] || s.current_stage) + ': ';
@@ -268,91 +271,10 @@
         h += '</div>';
       }
     }
-
-    // Action items summary (shown when pipeline is complete)
-    if (st === 'success' || st === 'failed') {
-      h += renderActionItemsSummary();
+    if (s.waiting_for) {
+      h += '<div class="waiting-banner"><h3>\u23F8 Pipeline WAITING</h3><p>' + esc(s.waiting_for) + '</p></div>';
     }
-
-    // Timeline (unified, color-coded by team when parallel)
-    var ev, events = timeline();
-    if (events.length) {
-      if (isParallel) {
-        h += '<div class="timeline-header"><span>Unified Timeline</span>';
-        h += '<div class="team-filter-chips">';
-        h += '<button class="filter-btn team-filter-btn' + (!activeTeamFilter ? ' active' : '') + '" data-team-filter="">All</button>';
-        for (var tf = 0; tf < teamIds.length; tf++) {
-          var tfc = getTeamColor(teamIds[tf], teamIds);
-          h += '<button class="filter-btn team-filter-btn' + (activeTeamFilter === teamIds[tf] ? ' active' : '') + '" data-team-filter="' + esc(teamIds[tf]) + '" style="border-left:3px solid ' + tfc + '">' + esc(teamIds[tf]) + '</button>';
-        }
-        h += '</div></div>';
-      }
-      h += '<div class="timeline" id="timeline-scroll">';
-      for (var j = 0; j < events.length; j++) {
-        ev = events[j]; if (!ev) continue;
-        var eid = ev.id || '', det = ev.detail || ev.type || '';
-        if (typeof det === 'object') det = JSON.stringify(det);
-        var evTeam = ev.team || '';
-        var evColor = evTeam && isParallel ? getTeamColor(evTeam, teamIds) : '';
-        var evHidden = isParallel && activeTeamFilter && evTeam && evTeam !== activeTeamFilter;
-        h += '<div class="timeline-event' + (evHidden ? ' hidden' : '') + '" data-event-id="' + esc(eid) + '" data-team="' + esc(evTeam) + '"' + (evColor ? ' style="border-left-color:' + evColor + '"' : '') + '>';
-        h += '<span class="time">' + fmtTime(ev.ts) + '</span>';
-        if (evTeam && isParallel) h += '<span class="timeline-team-tag" style="color:' + evColor + '">[' + esc(evTeam) + ']</span>';
-        h += '<span class="detail">' + esc(ev.type || '') + ': ' + esc(det) + '</span>';
-        if (eid) h += '<span class="trace-link" data-trace="' + esc(eid) + '">[trace]</span>';
-        h += '</div>';
-      }
-      h += '</div>';
-    }
-    c.innerHTML = h;
-
-    // Bind team card clicks (filter timeline)
-    var tcards = c.querySelectorAll('.team-card');
-    for (var tc = 0; tc < tcards.length; tc++) tcards[tc].addEventListener('click', function () {
-      var tid = this.dataset.team;
-      activeTeamFilter = (activeTeamFilter === tid) ? null : tid;
-      applyTeamFilter();
-    });
-    // Bind team filter buttons
-    var tfbs = c.querySelectorAll('.team-filter-btn');
-    for (var tfb = 0; tfb < tfbs.length; tfb++) tfbs[tfb].addEventListener('click', function () {
-      var fv = this.dataset.teamFilter || null;
-      activeTeamFilter = (activeTeamFilter === fv) ? null : fv;
-      applyTeamFilter();
-    });
-
-    var tl = c.querySelectorAll('.trace-link');
-    for (var k = 0; k < tl.length; k++)
-      tl[k].addEventListener('click', function (e) { e.stopPropagation(); toggleCausalHighlight(this.dataset.trace); });
-    if (st === 'failed' && events.length) { var last = events[events.length - 1]; if (last && last.id) toggleCausalHighlight(last.id); }
-  }
-
-  function applyTeamFilter() {
-    var evts = document.querySelectorAll('.timeline-event');
-    for (var i = 0; i < evts.length; i++) {
-      var et = evts[i].dataset.team || '';
-      evts[i].classList.toggle('hidden', !!(activeTeamFilter && et && et !== activeTeamFilter));
-    }
-    var btns = document.querySelectorAll('.team-filter-btn');
-    for (var j = 0; j < btns.length; j++) {
-      var bv = btns[j].dataset.teamFilter || null;
-      btns[j].classList.toggle('active', bv === activeTeamFilter);
-    }
-    var cards = document.querySelectorAll('.team-card');
-    for (var k = 0; k < cards.length; k++) {
-      cards[k].classList.toggle('team-card-selected', cards[k].dataset.team === activeTeamFilter);
-    }
-  }
-  var activeTrace = null;
-  function toggleCausalHighlight(eventId) {
-    var allEvents = document.querySelectorAll('.timeline-event');
-    if (activeTrace === eventId) {
-      for (var i = 0; i < allEvents.length; i++) allEvents[i].classList.remove('causal-highlight');
-      activeTrace = null; return;
-    }
-    activeTrace = eventId;
-    var chain = getCausalChain(eventId);
-    for (var j = 0; j < allEvents.length; j++) allEvents[j].classList.toggle('causal-highlight', !!chain[allEvents[j].dataset.eventId || '']);
+    banner.innerHTML = h;
   }
 
   // --- Tab 2: Milestone Map ---
@@ -721,15 +643,16 @@
     if (!ct) return;
     var runs = (metrics().runs || []);
     if (!runs.length) { ct.innerHTML = '<div class="empty-state">No runs yet \u2014 run tekhton to see data here</div>'; return; }
-    var h = '<div class="trends-grid">', tT = 0, tTm = 0, sC = 0, rC = 0, oc;
+    var h = '<div class="trends-grid">', tT = 0, tTm = 0, tTmCount = 0, sC = 0, rC = 0, oc;
     for (var i = 0; i < runs.length; i++) {
-      tT += (runs[i].total_turns || 0); tTm += (runs[i].total_time_s || 0);
+      tT += (runs[i].total_turns || 0);
+      if (runs[i].total_time_s > 0) { tTm += runs[i].total_time_s; tTmCount++; }
       oc = (runs[i].outcome || '').toLowerCase();
       if (oc === 'split') sC++; if (oc === 'rejected') rC++;
     }
     h += '<div class="card trend-section"><h3>Efficiency</h3>';
     h += statRow('Avg turns/run', Math.round(tT / runs.length) + trendArrow(runs, 'total_turns'));
-    h += statRow('Avg run duration', fmtDuration(Math.round(tTm / runs.length)) + trendArrow(runs, 'total_time_s'));
+    h += statRow('Avg run duration', (tTmCount > 0 ? fmtDuration(Math.round(tTm / tTmCount)) : '-') + trendArrow(runs, 'total_time_s'));
     h += statRow('Review rejection rate', Math.round((rC / runs.length) * 100) + '%');
     h += statRow('Split frequency', Math.round((sC / runs.length) * 100) + '%');
     var tg = {}, tn, ta = '';
@@ -810,21 +733,27 @@
     return diff < 0 ? '<span class="trend-arrow down">\u2193</span>' : '<span class="trend-arrow up">\u2191</span>';
   }
   function renderStageBreakdown(runs) {
-    var stageTotals = {}, stageCount = {}, sn;
-    for (var i = 0; i < stageOrder.length; i++) { stageTotals[stageOrder[i]] = { turns: 0, time: 0 }; stageCount[stageOrder[i]] = 0; }
+    var stageTotals = {}, stageTurnCount = {}, stageTimeCount = {}, sn;
+    for (var i = 0; i < stageOrder.length; i++) { stageTotals[stageOrder[i]] = { turns: 0, time: 0 }; stageTurnCount[stageOrder[i]] = 0; stageTimeCount[stageOrder[i]] = 0; }
     for (var r = 0; r < runs.length; r++) {
       var stages = runs[r].stages || {};
-      for (var s = 0; s < stageOrder.length; s++) { sn = stageOrder[s]; var sd = stages[sn]; if (sd) { stageTotals[sn].turns += (sd.turns || 0); stageTotals[sn].time += (sd.duration_s || 0); stageCount[sn]++; } }
+      for (var s = 0; s < stageOrder.length; s++) {
+        sn = stageOrder[s]; var sd = stages[sn];
+        if (sd) {
+          stageTotals[sn].turns += (sd.turns || 0); stageTurnCount[sn]++;
+          if (sd.duration_s > 0) { stageTotals[sn].time += sd.duration_s; stageTimeCount[sn]++; }
+        }
+      }
     }
     var lastRun = runs.length ? runs[0] : null, lastStages = lastRun ? (lastRun.stages || {}) : {};
     var activeStages = [];
-    for (var f = 0; f < stageOrder.length; f++) { if (stageCount[stageOrder[f]] > 0) activeStages.push(stageOrder[f]); }
+    for (var f = 0; f < stageOrder.length; f++) { if (stageTurnCount[stageOrder[f]] > 0) activeStages.push(stageOrder[f]); }
     if (activeStages.length === 0) return '<p>No per-stage data available yet.</p>';
     var maxAvg = 1;
-    for (var t = 0; t < activeStages.length; t++) { var a = stageCount[activeStages[t]] ? stageTotals[activeStages[t]].turns / stageCount[activeStages[t]] : 0; if (a > maxAvg) maxAvg = a; }
+    for (var t = 0; t < activeStages.length; t++) { var a = stageTurnCount[activeStages[t]] ? stageTotals[activeStages[t]].turns / stageTurnCount[activeStages[t]] : 0; if (a > maxAvg) maxAvg = a; }
     var html = '<table class="breakdown-table"><thead><tr><th>Stage</th><th>Avg Turns</th><th>Last Run</th><th>Avg Time</th><th class="bar-chart-cell">Distribution</th></tr></thead><tbody>';
     for (var b = 0; b < activeStages.length; b++) {
-      sn = activeStages[b]; var cnt = stageCount[sn] || 1;
+      sn = activeStages[b]; var cnt = stageTurnCount[sn] || 1;
       var avgT = Math.round(stageTotals[sn].turns / cnt);
       var lsd = lastStages[sn];
       var lastCell = '-';
@@ -838,7 +767,8 @@
           lastCell = '' + lt;
         }
       }
-      var avgTime = Math.round(stageTotals[sn].time / cnt);
+      var timeCnt = stageTimeCount[sn];
+      var avgTime = timeCnt > 0 ? Math.round(stageTotals[sn].time / timeCnt) : 0;
       html += '<tr><td>' + (stageLabels[sn] || sn) + '</td><td>' + avgT + '</td>';
       html += '<td>' + lastCell + '</td>';
       html += '<td>' + (avgTime > 0 ? fmtDuration(avgTime) : '-') + '</td>';
@@ -1137,8 +1067,9 @@
     })(dataFiles[i]);
     Promise.all(promises).then(function () {
       buildCausalIndex();
+      renderLiveRunBanner();
       var active = getActiveTab();
-      if (active !== 'actions') renderActiveTab();
+      if (active === 'reports') renderActiveTab();
       updateStatusIndicator(); checkRefreshLifecycle();
     }).catch(function (err) { if (typeof console !== 'undefined') console.error('Watchtower refresh failed:', err); location.reload(); });
   }
@@ -1163,7 +1094,7 @@
 
   // --- Main render ---
   function render() {
-    buildCausalIndex(); updateStatusIndicator(); initTheme(); initTabs();
+    buildCausalIndex(); updateStatusIndicator(); initTheme(); initTabs(); renderLiveRunBanner();
     var btn = document.getElementById('manual-refresh');
     if (btn) btn.addEventListener('click', manualRefresh);
     document.addEventListener('click', function (e) {
