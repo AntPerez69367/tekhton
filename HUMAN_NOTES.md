@@ -14,7 +14,4 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 ## Features
 
 ## Bugs
-  - **Fixed:** Changed line 146 from gawk 3-arg `match($0, /Entry ([0-9]+)/, a)` to POSIX-compatible `match($0, /Entry [0-9]+/)` with `substr(RSTART, RLENGTH)` extraction
-  - **Verified:** Test passes with mawk, gawk, and POSIX awk
-  - **Scope:** Bug was in test only, not in lib/drift_prune.sh
-  - **Result:** All 219 shell tests pass, all 76 Python tests pass
+- [ ] [BUG] The following tests now fail per the most recent changes: test_human_workflow.sh, test_human_mode_resolve_notes_edge.sh, test_finalize_run.sh. We should analyze if they still make sense and the code needs to be fixed, or if the code change is correct and the tests are no longer good tests.
