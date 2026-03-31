@@ -1,7 +1,7 @@
 # Milestone 41: Note Triage & Sizing Gate
 <!-- milestone-meta
 id: "41"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

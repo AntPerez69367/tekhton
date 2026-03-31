@@ -606,6 +606,21 @@ emit_dashboard_notes() {
             json="${json},"
         fi
 
+        # Extract triage metadata (M41)
+        local triage_disp="" est_turns="" triaged_at="" promoted=""
+        if [[ "$line" =~ triage:([^ ]+) ]]; then
+            triage_disp="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ est_turns:([^ ]+) ]]; then
+            est_turns="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ triaged:([^ ]+) ]]; then
+            triaged_at="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ promoted:([^ ]+) ]]; then
+            promoted="${BASH_REMATCH[1]}"
+        fi
+
         json="${json}{\"id\":\"$(_json_escape "${nid}")\","
         json="${json}\"tag\":\"$(_json_escape "${tag}")\","
         json="${json}\"title\":\"$(_json_escape "${title}")\","
@@ -613,7 +628,11 @@ emit_dashboard_notes() {
         json="${json}\"status\":\"${status}\","
         json="${json}\"priority\":\"$(_json_escape "${priority}")\","
         json="${json}\"source\":\"$(_json_escape "${source_val}")\","
-        json="${json}\"created\":\"$(_json_escape "${created}")\"}"
+        json="${json}\"created\":\"$(_json_escape "${created}")\","
+        json="${json}\"triage_disposition\":\"$(_json_escape "${triage_disp}")\","
+        json="${json}\"estimated_turns\":\"$(_json_escape "${est_turns}")\","
+        json="${json}\"triaged_at\":\"$(_json_escape "${triaged_at}")\","
+        json="${json}\"promoted\":\"$(_json_escape "${promoted}")\"}"
 
     done
 

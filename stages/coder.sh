@@ -446,6 +446,8 @@ ${nb_notes}"
     # In --human (single-note) mode, claim_single_note already ran in tekhton.sh —
     # skip bulk claiming to avoid marking unrelated notes as [~].
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+        # Triage bulk notes and warn about oversized ones (M41)
+        triage_bulk_warn "${NOTES_FILTER:-}" || true
         claim_human_notes
     elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && ! should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."

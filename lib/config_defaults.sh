@@ -158,6 +158,12 @@ set -euo pipefail
 : "${HUMAN_NOTES_WARN_THRESHOLD:=10}"
 : "${HUMAN_NOTES_CRITICAL_THRESHOLD:=20}"
 
+# --- Human Notes Triage (Milestone 41) ---
+: "${HUMAN_NOTES_TRIAGE_ENABLED:=true}"       # Run triage gate before note execution
+: "${HUMAN_NOTES_TRIAGE_MODEL:=haiku}"        # Model for agent escalation (haiku recommended)
+: "${HUMAN_NOTES_PROMOTE_THRESHOLD:=20}"      # Est. turns above which to recommend promotion
+: "${HUMAN_NOTES_PROMOTE_MODE:=confirm}"      # confirm = ask user; auto = promote silently
+
 # --- Turn exhaustion continuation defaults ---
 : "${CONTINUATION_ENABLED:=true}"
 : "${MAX_CONTINUATION_ATTEMPTS:=3}"
@@ -386,6 +392,7 @@ _clamp_config_value ACTION_ITEMS_WARN_THRESHOLD 100
 _clamp_config_value ACTION_ITEMS_CRITICAL_THRESHOLD 200
 _clamp_config_value HUMAN_NOTES_WARN_THRESHOLD 100
 _clamp_config_value HUMAN_NOTES_CRITICAL_THRESHOLD 200
+_clamp_config_value HUMAN_NOTES_PROMOTE_THRESHOLD 200
 _clamp_config_value SECURITY_MAX_TURNS 500
 _clamp_config_value SECURITY_MIN_TURNS 500
 _clamp_config_value SECURITY_MAX_TURNS_CAP 500
