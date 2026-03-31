@@ -243,3 +243,13 @@ REVIEWER_ROLE_FILE=".claude/agents/reviewer.md"
 TESTER_ROLE_FILE=".claude/agents/tester.md"
 JR_CODER_ROLE_FILE=".claude/agents/jr-coder.md"
 # MIGRATION_AUTO=true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 8: Human Notes Triage
+# Sizing gate for human notes — detects oversized notes and offers promotion
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# HUMAN_NOTES_TRIAGE_ENABLED=true          # Run triage gate before note execution
+# HUMAN_NOTES_TRIAGE_MODEL=haiku           # Model for agent escalation (haiku recommended)
+# HUMAN_NOTES_PROMOTE_THRESHOLD=20         # Est. turns above which to recommend promotion
+# HUMAN_NOTES_PROMOTE_MODE=confirm         # confirm = ask user; auto = promote silently

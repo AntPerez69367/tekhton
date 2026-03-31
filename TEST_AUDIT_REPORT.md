@@ -1,107 +1,37 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file (tests/test_plan_browser.sh), 26 pass/fail assertions
-Verdict: PASS
-
----
+Tests audited: 1 file (tests/test_notes_triage.sh), 33 pass/fail assertions across 17 suites
+Verdict: CONCERNS
 
 ### Findings
 
-None — all prior HIGH and MEDIUM findings were resolved by the rework. See the
-resolution notes below for each prior finding.
+#### COVERAGE: triage_before_claim promotion path untested
+- File: tests/test_notes_triage.sh:269
+- Issue: Suite 10 only exercises the `fit` path. n01 is a BUG note that scores <= 1 (disposition=fit), so `triage_before_claim` trivially returns 0 without ever entering the promotion decision logic. The function's primary purpose — detecting an oversized note whose `_TRIAGE_EST_TURNS` exceeds `HUMAN_NOTES_PROMOTE_THRESHOLD` and routing to promote/skip/keep — is never exercised. The return-1 code path, the auto-promote branch (`lib/notes_triage.sh:414`), and the confirm-mode `p`/`s`/`k` dispatch (`lib/notes_triage.sh:422`) have zero test coverage.
+- Severity: HIGH
+- Action: Add a test that sets up a note whose heuristic score is >= 5 (to ensure disposition=oversized), manually sets `_TRIAGE_EST_TURNS` above the promotion threshold, stubs `run_intake_create`, and verifies that `triage_before_claim` returns 1. A second case with `HUMAN_NOTES_PROMOTE_MODE=auto` closes the auto-promote branch.
 
----
+#### COVERAGE: Suite 7 cache invalidation asserts presence, not updated value
+- File: tests/test_notes_triage.sh:205
+- Issue: After modifying n04's text from "Fix button alignment" to "Redesign entire button system across all pages", the test asserts `[[ "$line" =~ triage: ]]`. Since `triage:fit` was already written to the note in Suite 6, this assertion passes even if the cache-invalidation code is broken and the old "fit" value is silently reused. The new heuristic result should be "oversized" ("redesign" +3, "entire" +2, "all" +2 = 7 → score >= 5), but that updated value is never verified.
+- Severity: MEDIUM
+- Action: Change the assertion to `[[ "$line" =~ triage:oversized ]]` to confirm that the re-triage produced the newly computed result, not merely that some triage field exists.
 
-### Prior Findings — Resolution Status
+#### COVERAGE: Mid-range score (2–4) in triage_note untested end-to-end
+- File: tests/test_notes_triage.sh (no direct test)
+- Issue: `triage_note` in `lib/notes_triage.sh:146` has no else branch for scores 2–4; those cases leave `_TRIAGE_DISPOSITION` at the default "fit" and trigger `_triage_agent_escalation`. No test calls `triage_note` (as opposed to `_triage_heuristic_score` directly) with a mid-range input to verify that: (a) disposition defaults to "fit" when `run_agent` is unavailable, and (b) the fallback in `_triage_agent_escalation` fires without error. Suite 3 tests confidence via the scoring function only and never exercises the full `triage_note` → agent escalation → fallback chain.
+- Severity: MEDIUM
+- Action: Add a test that calls `triage_note` on a note whose text scores 2–4 (e.g., "Add dark mode toggle" with FEAT — "add support for" is absent here, plain "Add" is not a keyword, so score ≈ 0–1; pick a phrasing that reliably hits 2–4) with no `run_agent` defined. Assert `_TRIAGE_DISPOSITION == "fit"` and confirm triage metadata is persisted.
 
-#### INTEGRITY: TESTER_REPORT falsely claims no implementation files changed
-- **Status: RESOLVED**
-- TESTER_REPORT.md "Files Modified" section now explicitly lists `lib/plan_server.sh:41-43`
-  and `lib/plan_browser.sh:141-146` with a description of each change. A reviewer
-  reading the report can identify every file touched without consulting git diff.
+#### COVERAGE: Suite 4 does not isolate the length +1 bonus
+- File: tests/test_notes_triage.sh:110
+- Issue: Suite 4 asserts that the test string's character count is > 120, confirming a precondition, but never compares the score for a long vs. short version of the same neutral text. Because the long-text example also contains scope keywords ("integration", "authentication", "API"), the +1 length contribution is invisible against keyword scoring and is effectively untested.
+- Severity: LOW
+- Action: Add a comparison: call `_triage_heuristic_score` with a keyword-free string exactly <= 120 chars to get a baseline score, then pad the same string to > 120 chars and assert the second score equals baseline + 1.
 
-#### EXERCISE: HTML escaping test does not exercise the actual Bug 2 fix
-- **Status: RESOLVED**
-- Test "Awk BEGIN block prevents double-encoding in form" (test_plan_browser.sh:340–355)
-  sets `PLAN_PROJECT_TYPE="web & mobile"`, calls `_generate_plan_form`, and checks
-  that the generated `index.html` contains `Type: <strong>web &amp; mobile</strong>`
-  (single-encoded), not `web &amp;amp; mobile` (double-encoded).
-- This test walks the full awk pipeline at plan_browser.sh:141–156: `_html_escape`
-  converts `&` → `&amp;`, the awk BEGIN block converts `&amp;` → `\&amp;` for safe
-  gsub use, and the final HTML receives the singly-encoded value. The test is
-  mechanically correct.
-- Observation (LOW, no action required): The awk BEGIN block escapes `&` using
-  `gsub(/&/, "\\\\&", ...)`, which in awk produces the replacement string `\&amp;`.
-  In awk's gsub replacement, `\&` denotes a literal `&`, so the output is `&amp;`.
-  This chain is correct and the test confirms it end-to-end.
-
-#### COVERAGE: Occupied-port test soft-passes when socket bind fails
-- **Status: RESOLVED**
-- When the dummy socket cannot be bound, the test now emits
-  `SKIP: could not bind dummy port — skipping occupied-port test` (line 311)
-  without incrementing PASS. The skip is visible, distinct from a pass, and
-  cannot silently inflate the pass count on infrastructure failure.
-
-#### COVERAGE: HTML escape test omits `&` from input
-- **Status: RESOLVED**
-- Test "Ampersand encodes to &amp; (single-encoded)" (test_plan_browser.sh:333–338)
-  verifies `_html_escape 'a & b'` produces exactly `a &amp; b`. This confirms
-  that the bash `_html_escape` function processes `&` first (preventing it from
-  re-encoding the `&` introduced by later `<` → `&lt;` substitutions).
-
----
-
-### Full Rubric Evaluation (Current State)
-
-#### 1. Assertion Honesty — PASS
-All assertions derive from real function call outputs. No fabricated expected values
-detected. The awk double-encoding test supplies a known input, calls the actual
-implementation, and compares against the logically correct expected output.
-
-#### 2. Edge Case Coverage — PASS
-The suite covers: free port, occupied port (with correct SKIP on infrastructure
-failure), HTML special characters (`<`, `>`, `"`, `&`), double-encoding prevention
-through the full awk render path, pre-populated answers (resume path), empty
-answers (fresh path), and mode selection. No gaps material to the two bugs under
-test.
-
-#### 3. Implementation Exercise — PASS
-Tests call the real implementations directly:
-- `_html_escape` (plan_browser.sh:23–31) — tested at lines 325 and 333
-- `_generate_plan_form` awk path (plan_browser.sh:141–156) — tested at line 346
-- `_plan_is_port_in_use` regex fix (plan_server.sh:41–43) — tested at lines 183 and 295
-- `_plan_find_available_port` — tested at lines 190 and 303
-- `_write_plan_server_script` — tested at lines 205 and 235
-- `_select_interview_mode` — tested at line 362
-No mocking of the functions under test.
-
-#### 4. Test Weakening Detection — PASS
-No existing assertions were removed or broadened. The occupied-port SKIP change
-makes the suite more honest, not weaker: a bind failure now produces a visible
-SKIP instead of a fabricated pass.
-
-#### 5. Test Naming and Intent — PASS
-Pass/fail messages encode scenario and expected outcome:
-- "Port finding skips occupied port $DUMMY_PORT, found $found_port"
-- "Awk BEGIN block prevents double-encoding in form"
-- "Ampersand encodes to &amp; (single-encoded)"
-
-#### 6. Scope Alignment — PASS
-All referenced functions exist in the sourced libraries. No orphaned or stale
-references detected. No coder-removed functions called in tests.
-
----
-
-### Non-Material Observations (no action required)
-
-- **Port exhaustion not tested**: `_plan_find_available_port` returns 1 if all
-  50 candidate ports are occupied. This path is untested, but it is an extreme
-  operational condition unlikely to occur in CI and not related to either reported
-  bug. Not flagged.
-- **`_html_escape ""` not tested**: Empty string input to `_html_escape` is not
-  covered. The function's bash parameter expansion handles empty strings correctly
-  by construction. Not flagged.
-- **CODER_SUMMARY.md absent**: The required reading list references this file,
-  but it does not exist. TESTER_REPORT.md serves its role for this audit. The
-  two implementation changes are fully documented there.
+#### COVERAGE: _triage_agent_escalation fallback branches unreachable in test suite
+- File: tests/test_notes_triage.sh (no direct test)
+- Issue: `render_prompt` is stubbed to return `""`. All test inputs are chosen to score either >= 5 or <= 1, so `_TRIAGE_CONFIDENCE` is always "high" and `_triage_agent_escalation` is never called. Both fallback branches in `lib/notes_triage.sh:185` (`run_agent` unavailable) and `lib/notes_triage.sh:233` (empty prompt template) are dead code within this suite.
+- Severity: LOW
+- Action: Addressed as a side effect of the medium finding above — a mid-range `triage_note` test would reach the `run_agent not available` fallback branch at `lib/notes_triage.sh:185`.

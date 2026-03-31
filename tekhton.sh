@@ -707,6 +707,7 @@ source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes_rollback.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
+source "${TEKHTON_HOME}/lib/notes_triage.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 source "${TEKHTON_HOME}/lib/notes_cli.sh"
 source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
@@ -840,6 +841,7 @@ usage() {
         echo "  --with-notes              Force human notes injection regardless of task text"
         echo "  --notes-filter TAG        Inject only [TAG] notes (BUG, FEAT, POLISH)"
         echo "  --add-milestone \"desc\"    Create a scoped milestone via intake agent (no run)"
+        echo "  --triage [TAG]            Triage all unchecked notes (size estimate) without running"
         echo "  --dry-run                 Preview mode: run scout + intake only, show what would happen"
         echo "  --continue-preview        Resume from a previous --dry-run (uses cached results)"
         echo "  --skip-security           Bypass security stage for a single run"
@@ -1192,6 +1194,17 @@ EOF
         --force-audit) FORCE_AUDIT=true; shift ;;
         --fix-nonblockers|--fix-nb) FIX_NONBLOCKERS_MODE=true; shift ;;
         --fix-drift) FIX_DRIFT_MODE=true; shift ;;
+        --triage)
+            shift
+            TRIAGE_FILTER=""
+            if [[ -n "${1:-}" ]] && [[ "$1" =~ ^[A-Z]+$ ]] && [[ ! "$1" =~ ^-- ]]; then
+                TRIAGE_FILTER="$1"
+                shift
+            fi
+            run_triage_report "$TRIAGE_FILTER"
+            _TEKHTON_CLEAN_EXIT=true
+            exit 0
+            ;;
         --dry-run) DRY_RUN_MODE=true; shift ;;
         --continue-preview) CONTINUE_PREVIEW=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
@@ -1425,6 +1438,15 @@ if [[ "$HUMAN_MODE" = true ]]; then
             exit 0
         fi
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
+        # Triage gate: check if note is oversized before claiming (M41)
+        if [[ "$_note_restored" != true ]] && [[ -n "$CURRENT_NOTE_ID" ]]; then
+            if ! triage_before_claim "$CURRENT_NOTE_ID"; then
+                # Note was promoted or skipped — exit single-note mode
+                log "Note ${CURRENT_NOTE_ID} was promoted/skipped by triage."
+                _TEKHTON_CLEAN_EXIT=true
+                exit 0
+            fi
+        fi
         # Capture count BEFORE claiming so pre-flight display is accurate (M33 Bug 5)
         _PRE_CLAIM_NOTE_COUNT=$(count_human_notes)
         if [[ "$_note_restored" = true ]]; then
@@ -2086,6 +2108,15 @@ _run_human_complete_loop() {
         CURRENT_NOTE_ID=$(_extract_note_id "$CURRENT_NOTE_LINE")
 
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
+
+        # Triage gate for --human --complete loop (M41)
+        # Promotions are administrative, not execution failures — don't count against attempts
+        if [[ -n "$CURRENT_NOTE_ID" ]] && ! triage_before_claim "$CURRENT_NOTE_ID"; then
+            log "Note ${CURRENT_NOTE_ID} was promoted/skipped by triage."
+            human_attempt=$(( human_attempt - 1 ))
+            continue
+        fi
+
         export CURRENT_NOTE_LINE
         export CURRENT_NOTE_ID
 
