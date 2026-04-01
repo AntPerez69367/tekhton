@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-01
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-04-01 | "M50"] `stages/review.sh` and `stages/tester.sh` lack `set -euo pipefail` at the top. These are sourced files that inherit the flag from `tekhton.sh`, so they're functionally safe, but the inconsistency with `lib/progress.sh` (which does have the header) and most other `lib/*.sh` files is worth noting for future cleanup.

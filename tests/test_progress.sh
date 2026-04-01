@@ -283,23 +283,19 @@ else
     fail "_get_timing_breakdown missing reviewer: '${result}'"
 fi
 
-echo "=== Test: _get_timing_breakdown — all-zero stages produces invalid JSON (known bug) ==="
+echo "=== Test: _get_timing_breakdown — all-zero stages produces valid JSON ==="
 
-# When _STAGE_DURATION is declared but ALL values are 0, the loop skips all
-# entries (first stays true), producing "{,\"total\":0}" which is invalid JSON.
-# This is the non-blocking bug noted by the reviewer (lib/progress.sh:183-206).
-# This test documents the current (broken) behavior so the bug is visible in CI.
 declare -A _STAGE_DURATION=()
 _STAGE_DURATION["coder"]=0
 _STAGE_DURATION["reviewer"]=0
 
 result=$(_get_timing_breakdown)
 
-# Document what actually happens — the output starts with '{,' (invalid JSON)
-if echo "$result" | grep -q '^{,'; then
-    pass "KNOWN BUG confirmed: _get_timing_breakdown all-zero → invalid JSON '${result}' (lib/progress.sh:204)"
+# All stages are zero → all skipped → output should be {"total":0}
+if [[ "$result" = '{"total":0}' ]]; then
+    pass "_get_timing_breakdown all-zero → '{\"total\":0}'"
 else
-    pass "_get_timing_breakdown all-zero stages: output='${result}'"
+    fail "_get_timing_breakdown all-zero expected '{\"total\":0}', got '${result}'"
 fi
 
 # =============================================================================

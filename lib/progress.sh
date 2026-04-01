@@ -201,6 +201,10 @@ _get_timing_breakdown() {
         fi
         json="${json}\"${_stg}\":${dur}"
     done
-    json="${json},\"total\":${total}}"
+    if [[ "$first" = true ]]; then
+        json="${json}\"total\":${total}}"
+    else
+        json="${json},\"total\":${total}}"
+    fi
     echo "$json"
 }
