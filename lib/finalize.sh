@@ -82,6 +82,11 @@ _hook_final_checks() {
 _hook_drift_artifacts() {
     local exit_code="$1"
     process_drift_artifacts
+    # M47: invalidate drift cache since process_drift_artifacts may have
+    # appended new observations. Relevant when --complete loops re-run stages.
+    if declare -f invalidate_drift_cache &>/dev/null; then
+        invalidate_drift_cache
+    fi
 }
 
 # c. Record run metrics

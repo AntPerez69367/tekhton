@@ -32,10 +32,10 @@ run_stage_tester() {
     if [ "$START_AT" = "tester" ]; then
         TESTER_PROMPT=$(render_prompt "tester_resume")
     else
+        # M47: use cached architecture content
         export ARCHITECTURE_CONTENT
-        if [ -f "${ARCHITECTURE_FILE}" ]; then
-            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
-        else
+        ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+        if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
             ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
         fi
 
@@ -397,11 +397,10 @@ _run_tester_write_failing() {
     local _preflight_file="${TDD_PREFLIGHT_FILE:-TESTER_PREFLIGHT.md}"
     local _max_turns="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
 
-    # Architecture content for the prompt
+    # Architecture content for the prompt (M47: use cache)
     export ARCHITECTURE_CONTENT
-    if [[ -f "${ARCHITECTURE_FILE:-}" ]]; then
-        ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
-    else
+    ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+    if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
         ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE:-ARCHITECTURE.md} not found)"
     fi
 

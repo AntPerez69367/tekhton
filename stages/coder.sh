@@ -175,11 +175,11 @@ $(cat SCOUT_REPORT.md)
             HUMAN_NOTES_CONTENT=$(extract_human_notes)
         fi
 
-        # Build architecture block for scout if available
+        # Build architecture block for scout if available (M47: use cache)
         ARCHITECTURE_BLOCK=""
-        if [ -f "${ARCHITECTURE_FILE}" ]; then
-            local _arch_content
-            _arch_content=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
+        local _arch_content
+        _arch_content=$(_get_cached_architecture_raw)
+        if [[ -n "$_arch_content" ]]; then
             ARCHITECTURE_BLOCK="
 ## Architecture Map (use this to find files — do NOT explore blindly)
 $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
@@ -388,11 +388,11 @@ $(extract_human_notes)
 ${BUG_SCOUT_CONTEXT}"
     fi
 
-    # Architecture context
+    # Architecture context (M47: use cache)
     export ARCHITECTURE_BLOCK=""
-    if [ -f "${ARCHITECTURE_FILE}" ]; then
-        local _arch_main
-        _arch_main=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
+    local _arch_main
+    _arch_main=$(_get_cached_architecture_raw)
+    if [[ -n "$_arch_main" ]]; then
         ARCHITECTURE_BLOCK="
 ## Architecture Map (read FIRST — saves you 10+ turns of exploration)
 $(_wrap_file_content "ARCHITECTURE" "$_arch_main")"
@@ -407,12 +407,8 @@ $(cat "${GLOSSARY_FILE}")"
 
     export MILESTONE_BLOCK=""
     if [ "$MILESTONE_MODE" = true ]; then
-        # DAG path: use character-budgeted sliding window when manifest exists
-        if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-           && declare -f build_milestone_window &>/dev/null \
-           && has_milestone_manifest 2>/dev/null; then
-            build_milestone_window "$CLAUDE_CODER_MODEL" || true
-        fi
+        # DAG path: use cached milestone window (M47) or compute fresh
+        _get_cached_milestone_block "$CLAUDE_CODER_MODEL" 2>/dev/null || true
 
         # Fallback: static block when no DAG or window build failed
         if [[ -z "$MILESTONE_BLOCK" ]]; then
@@ -521,8 +517,12 @@ ${nb_notes}"
 
     # --- Clarification context (from prior pause) ----------------------------
 
-    load_clarifications_content
+    # M47: use cached clarifications when available
     export CLARIFICATIONS_CONTENT
+    CLARIFICATIONS_CONTENT=$(_get_cached_clarifications_content)
+    if [[ -z "$CLARIFICATIONS_CONTENT" ]]; then
+        load_clarifications_content
+    fi
 
     # --- Context compiler (task-scoped filtering) ----------------------------
     # NOTE: build_context_packet is called before should_claim_notes intentionally.

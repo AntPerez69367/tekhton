@@ -27,10 +27,10 @@ run_stage_review() {
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
         log "Review cycle ${REVIEW_CYCLE} / ${MAX_REVIEW_CYCLES}..."
 
+        # M47: use cached architecture content
         export ARCHITECTURE_CONTENT
-        if [ -f "${ARCHITECTURE_FILE}" ]; then
-            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
-        else
+        ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+        if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
             ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
         fi
 

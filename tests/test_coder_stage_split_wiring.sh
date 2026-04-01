@@ -96,6 +96,12 @@ source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 
+# Stub _phase_start/_phase_end before sourcing context_cache.sh
+if ! declare -f _phase_start &>/dev/null; then
+    _phase_start() { :; }
+    _phase_end() { :; }
+fi
+
 # =============================================================================
 # Stub all functions coder.sh calls (defaults — overridden per test)
 # =============================================================================
@@ -123,6 +129,10 @@ _safe_read_file()           { echo ""; }
 
 # _wrap_file_content LABEL CONTENT — return content unchanged
 _wrap_file_content()        { echo "${2:-}"; }
+
+# Source context cache (M47 — needed by coder.sh)
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/context_cache.sh"
 
 # write_pipeline_state STAGE REASON RESUME TASK NOTES
 write_pipeline_state() {
