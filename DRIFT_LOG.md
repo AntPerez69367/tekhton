@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-31
-- Runs since audit: 5
+- Runs since audit: 6
 
 ## Unresolved Observations
+- [2026-04-01 | "Complete the blockers in the REVIEWER_REPORT.md then resume the pipeline run from .claude/PIPELINE_STATE.md"] `lib/context_cache.sh:19-38` — DESIGN NOTES block documents spec divergence inline in source. This is the right call given the permission-denied constraint on the milestone file, but the divergence should eventually be reconciled in `.claude/milestones/m47-intra-run-context-cache.md` once write access is available (noted in CODER_SUMMARY.md Remaining Spec Updates section).
 - [2026-04-01 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/context_cache.sh:19-38` — DESIGN NOTES block documents spec divergence inline in source. This is the right call given the permission-denied constraint on the milestone file, but the divergence should eventually be reconciled in `.claude/milestones/m47-intra-run-context-cache.md` once write access is available (noted in CODER_SUMMARY.md Remaining Spec Updates section).
 - [2026-04-01 | "M47"] `lib/context_cache.sh:144` — `_get_cached_drift_log_content` checks `[[ -n "$_CACHED_DRIFT_LOG_CONTENT" ]]` before returning the cached value (enabling fallback after `invalidate_drift_cache`), while `_get_cached_architecture_content` and `_get_cached_architecture_log_content` do not. The asymmetry is correct (only drift has an invalidator), but the pattern is subtly different from the rest of the accessors. A comment explaining why drift uniquely requires the non-empty guard would help future maintainers.
 - [2026-04-01 | "M47"] `lib/milestone_ops.sh:227-229` — `invalidate_milestone_cache` is called only in the DAG path of `mark_milestone_done`. The inline path silently skips it. This is correct (cache only holds DAG-mode window data), but the guard condition isn't explained inline; the comment only references M47 without explaining why inline mode is exempt.
