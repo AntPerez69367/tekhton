@@ -15,6 +15,27 @@ set -euo pipefail
 #   preload_context_cache   — read shared context files once at startup
 #   invalidate_drift_cache  — clear drift log cache (after review appends)
 #   invalidate_milestone_cache — clear milestone window cache (after advance)
+#
+# DESIGN NOTES (vs. spec §1-2):
+# ------
+# Spec §1 lists _CACHED_HUMAN_NOTES_BLOCK as a cache target. NOT implemented
+# because human notes filtering is lightweight (grep + pattern matching) and
+# called once per stage. Caching the filtered block would require either:
+#   (a) Pre-computing with unknown filters (stage-specific claiming patterns vary)
+#   (b) Invalidating after each stage (defeats the purpose of persistent cache)
+# Instead, stages call extract_human_notes() directly with explicit arguments,
+# making the data flow transparent and avoiding implicit cache coupling.
+#
+# Spec §2 proposes modifying render_prompt() to check for _CACHED_* before disk
+# reads. IMPLEMENTATION CHOSEN: Explicit _get_cached_*() accessor functions
+# called by stages, with fallback to disk reads in planning mode. Rationale:
+# (1) Avoids implicit state in a shared template function
+# (2) Makes cache invalidation explicit: invalidate_drift_cache() called after
+#     review appends, preventing stale reads
+# (3) Easier to reason about: cache semantics are localized, not hidden in
+#     render_prompt() side effects
+# This approach is superior to the implicit approach and is documented in each
+# stage's comment block where cache getters are used.
 # =============================================================================
 
 # Sentinel value distinguishing "cache loaded but file was empty/missing"
@@ -140,6 +161,10 @@ _get_cached_architecture_raw() {
 }
 
 # _get_cached_drift_log_content — Returns wrapped drift log content.
+# Note: Unlike other accessors, this checks -n (non-empty) in addition to
+# _CONTEXT_CACHE_LOADED. This is because invalidate_drift_cache() clears the
+# cached value mid-run (after review appends observations), so an empty string
+# with cache loaded means "invalidated, re-read from disk" — not "file was empty".
 _get_cached_drift_log_content() {
     if [[ "${_CONTEXT_CACHE_LOADED:-false}" == "true" ]] && [[ -n "$_CACHED_DRIFT_LOG_CONTENT" ]]; then
         echo "$_CACHED_DRIFT_LOG_CONTENT"

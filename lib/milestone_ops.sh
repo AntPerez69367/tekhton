@@ -241,6 +241,9 @@ mark_milestone_done() {
     fi
 
     # Inline path: mark [DONE] in CLAUDE.md
+    # Note: no invalidate_milestone_cache here — the cache only holds DAG-mode
+    # window data (built from manifest + milestone files). Inline milestones are
+    # injected via a separate CLAUDE.md parsing path that doesn't use the cache.
     if [[ ! -f "$claude_md" ]]; then
         warn "mark_milestone_done: ${claude_md} not found"
         return 1

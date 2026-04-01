@@ -24,9 +24,6 @@ run_stage_architect() {
 
     # --- Load context for prompt ---------------------------------------------
 
-    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
-    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}"
-
     # M47: use cached context when available
     export DRIFT_LOG_CONTENT
     DRIFT_LOG_CONTENT=$(_get_cached_drift_log_content)
