@@ -1,7 +1,7 @@
 # Milestone 47: Intra-Run Context Cache
 <!-- milestone-meta
 id: "47"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

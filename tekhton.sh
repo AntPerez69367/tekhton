@@ -741,6 +741,7 @@ source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
+source "${TEKHTON_HOME}/lib/context_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
 source "${TEKHTON_HOME}/lib/indexer_history.sh"
@@ -1833,6 +1834,11 @@ if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]] && [[ -z "${UI_TEST_CMD:-}" ]
     UI_TEST_CMD=$(detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
     export UI_TEST_CMD
 fi
+
+# --- Intra-run context cache (Milestone 47) ----------------------------------
+# Pre-read shared context files once. Stages use _get_cached_* accessors instead
+# of re-reading from disk on every agent invocation.
+preload_context_cache
 
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
 

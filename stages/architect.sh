@@ -24,22 +24,23 @@ run_stage_architect() {
 
     # --- Load context for prompt ---------------------------------------------
 
-    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
-    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}"
-
-    export DRIFT_LOG_CONTENT="(No drift log found)"
-    if [ -f "$drift_file" ]; then
-        DRIFT_LOG_CONTENT=$(_wrap_file_content "DRIFT_LOG" "$(_safe_read_file "$drift_file" "DRIFT_LOG")")
+    # M47: use cached context when available
+    export DRIFT_LOG_CONTENT
+    DRIFT_LOG_CONTENT=$(_get_cached_drift_log_content)
+    if [[ -z "$DRIFT_LOG_CONTENT" ]]; then
+        DRIFT_LOG_CONTENT="(No drift log found)"
     fi
 
-    export ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
-    if [ -f "$adl_file" ]; then
-        ARCHITECTURE_LOG_CONTENT=$(_wrap_file_content "ARCHITECTURE_LOG" "$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")")
+    export ARCHITECTURE_LOG_CONTENT
+    ARCHITECTURE_LOG_CONTENT=$(_get_cached_architecture_log_content)
+    if [[ -z "$ARCHITECTURE_LOG_CONTENT" ]]; then
+        ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
     fi
 
-    export ARCHITECTURE_CONTENT="(No architecture file found)"
-    if [ -f "${ARCHITECTURE_FILE}" ]; then
-        ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+    export ARCHITECTURE_CONTENT
+    ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+    if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
+        ARCHITECTURE_CONTENT="(No architecture file found)"
     fi
 
     # Full repo map for architect (broadest view for drift detection)
@@ -188,10 +189,10 @@ run_stage_architect() {
 
         log "Running expedited review of architect remediation..."
 
+        # M47: use cached architecture content
         export ARCHITECTURE_CONTENT
-        if [ -f "${ARCHITECTURE_FILE}" ]; then
-            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
-        else
+        ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+        if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
             ARCHITECTURE_CONTENT="(not found)"
         fi
         export PRIOR_BLOCKERS_BLOCK=""

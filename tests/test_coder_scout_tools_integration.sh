@@ -151,6 +151,11 @@ emit_dashboard_run_state()       { :; }
 emit_event()                     { :; }
 _safe_read_file()                { echo ""; }
 _wrap_file_content()             { echo ""; }
+_phase_start()                   { :; }
+_phase_end()                     { :; }
+# Source context cache (M47 — needed by coder.sh)
+# shellcheck disable=SC1091
+source "${TEKHTON_HOME}/lib/context_cache.sh"
 has_milestone_manifest()         { return 1; }
 build_milestone_window()         { :; }
 has_test_baseline()              { return 1; }

@@ -10,10 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/gates.sh:337` — `grep -qi "no files\|none\|N/A"` uses BRE `\|` alternation which is a GNU grep extension; on BSD/macOS grep this would match the literal string `\|` rather than acting as alternation. Low risk for a Linux-only tool, but worth tracking.
+- `NON_BLOCKING_LOG.md` Resolved section is empty — the 3 resolved items were removed rather than moved; traceability of what was fixed is lost. Consider appending entries under `## Resolved` when closing notes.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `lib/finalize_summary.sh:128` — `grep -oP '"exit_code"\s*:\s*\K[0-9]+'` uses Perl regex (`-oP`), the same portability class as the `grep -oP` fixed in `test_timing_report_generation.sh`. This pre-existing occurrence was not in scope here but is consistent drift.
+- `lib/context_cache.sh:19-38` — DESIGN NOTES block documents spec divergence inline in source. This is the right call given the permission-denied constraint on the milestone file, but the divergence should eventually be reconciled in `.claude/milestones/m47-intra-run-context-cache.md` once write access is available (noted in CODER_SUMMARY.md Remaining Spec Updates section).

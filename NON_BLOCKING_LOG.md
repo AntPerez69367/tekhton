@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-(none)
+- [ ] [2026-04-01 | "Complete the blockers in the REVIEWER_REPORT.md then resume the pipeline run from .claude/PIPELINE_STATE.md"] `NON_BLOCKING_LOG.md` Resolved section is empty — the 3 resolved items were removed rather than moved; traceability of what was fixed is lost. Consider appending entries under `## Resolved` when closing notes.
+- [ ] [2026-04-01 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `NON_BLOCKING_LOG.md` Resolved section is empty — the 3 resolved items were removed rather than moved; traceability of what was fixed is lost. Consider appending entries under `## Resolved` when closing notes.
 
 ## Resolved

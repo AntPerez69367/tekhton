@@ -224,6 +224,10 @@ mark_milestone_done() {
             save_manifest
         fi
         success "Marked Milestone ${milestone_num} (${id}) as done in manifest"
+        # M47: invalidate milestone window cache so next milestone gets fresh window
+        if declare -f invalidate_milestone_cache &>/dev/null; then
+            invalidate_milestone_cache
+        fi
         # Emit milestone_advance event (Milestone 13)
         if command -v emit_event &>/dev/null; then
             emit_event "milestone_advance" "pipeline" "Milestone ${milestone_num} done" \
@@ -237,6 +241,9 @@ mark_milestone_done() {
     fi
 
     # Inline path: mark [DONE] in CLAUDE.md
+    # Note: no invalidate_milestone_cache here — the cache only holds DAG-mode
+    # window data (built from manifest + milestone files). Inline milestones are
+    # injected via a separate CLAUDE.md parsing path that doesn't use the cache.
     if [[ ! -f "$claude_md" ]]; then
         warn "mark_milestone_done: ${claude_md} not found"
         return 1

@@ -1,108 +1,64 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 35 test functions/assertions
-Verdict: PASS
+Tests audited: 2 files under audit (NON_BLOCKING_LOG.md, lib/context_cache.sh); supplementary read of test_context_cache.sh (22 assertions) and test_context_cache_extended.sh (6 assertions) to verify scope alignment
+Verdict: CONCERNS
 
 Note: `CODER_SUMMARY.md` was absent at audit time (file not present in working tree).
-Implementation was verified directly against `lib/timing.sh`, `lib/gates.sh`,
-`lib/finalize_summary.sh`, `lib/milestone_acceptance.sh`, `stages/coder.sh`, and
-`NON_BLOCKING_LOG.md`.
+Implementation verified directly against `lib/context_cache.sh` and the current git
+working tree state.
 
 ---
 
 ### Findings
 
-#### WEAKENING: NON_BLOCKING_LOG.md records 7 resolved items for 8 original open items
+#### WEAKENING: NON_BLOCKING_LOG.md — pre-verified net loss of 1 item
 - File: NON_BLOCKING_LOG.md
-- Issue: The shell pre-verified a net loss of 1 assertion (removed 1, added 0). The task
-  addressed all 8 open non-blocking notes, but the Resolved section contains only 7
-  entries. Items 7 and 8 ("source-of-truth comments" for `tests/test_m43_test_aware.sh`)
-  are collapsed into a single `[x]` line. Each of the 8 original open items should have
-  a 1:1 resolved entry; one item's resolution is not independently traceable in the log.
-  The tester covered them jointly in TESTER_REPORT.md but did not produce a second
-  `[x]` entry in the log.
+- Issue: The shell pre-verified a net loss of 1 assertion (removed 1, added 0). The tester report states only additions were made ("Documented 3 resolved items in Resolved section with explanations"), with no mention of removing existing content. The 3 prior M46 resolved entries (lines 11-13) all use `- [x]` checkbox format; the 3 new M47 resolved entries (lines 15-19) omit `[x]` entirely, using bare `- ` dashes. If the tester touched existing resolved entries to reformat them, one `[x]` line may have been dropped inadvertently. The formatting inconsistency is also a real artifact: automated tooling or the pipeline's own item-counting logic that looks for `[x]` would produce a different count for M47 entries than for M46 entries.
+- Severity: HIGH
+- Action: Run `git diff HEAD~1 -- NON_BLOCKING_LOG.md` to identify exactly what was removed. If a prior resolved entry was dropped, restore it. Standardize the 3 M47 resolved entries (lines 15-19) to `- [x]` format to match the existing convention on lines 11-13.
+
+#### COVERAGE: Drift accessor post-invalidation disk fallback is not end-to-end tested
+- File: lib/context_cache.sh:168-178 (`_get_cached_drift_log_content`)
+- Issue: `_get_cached_drift_log_content` has unique semantics vs every other accessor: it falls back to a disk read when `_CACHED_DRIFT_LOG_CONTENT` is empty even when `_CONTEXT_CACHE_LOADED=true`. This is the post-`invalidate_drift_cache()` path and is the primary reason `invalidate_drift_cache()` exists. The test suite verifies that `invalidate_drift_cache()` clears the variable (test_context_cache.sh:242-246) but does not verify the subsequent disk fallback — i.e., no test calls `_get_cached_drift_log_content` after invalidation and asserts the re-read value. This is a gap in the most important behavior this function provides.
 - Severity: MEDIUM
-- Action: Split the combined M43 entry into two separate `[x]` lines so all 8 original
-  items are individually recorded. No test logic changes required.
+- Action: Add a test to test_context_cache_extended.sh: (1) preload cache with drift content, (2) write new content to DRIFT_LOG_FILE, (3) call `invalidate_drift_cache`, (4) assert `_get_cached_drift_log_content` returns the new disk content (not empty, not the stale cached value).
 
-#### EXERCISE: test_m43_test_aware.sh uses grep -oP — consistent with source-of-truth but non-portable
-- File: tests/test_m43_test_aware.sh:153-154
-- Issue: `_build_test_baseline_summary()` uses `grep -oP '"exit_code"\s*:\s*\K[0-9]+'`
-  and `grep -oP '"failure_count"\s*:\s*\K[0-9]+'`. This is the same portability class
-  as the `grep -oP` fixed in `test_timing_report_generation.sh:101` (non-blocking note
-  #3). However, verification of `stages/coder.sh:348-349` confirms it uses identical
-  `grep -oP` patterns — the test's own comment states "Source of truth is coder.sh —
-  if that logic changes, update this helper too." The test intentionally mirrors the
-  implementation, so portability parity is preserved. On BSD/macOS grep both would fail
-  equally; this is not a test-specific regression introduced by this task.
+#### SCOPE: TESTER_REPORT.md misidentifies REVIEWER_REPORT.md item count
+- File: TESTER_REPORT.md (line 49)
+- Issue: The tester claims "the 2 non-blocking notes from REVIEWER_REPORT.md have been addressed." REVIEWER_REPORT.md contains exactly 1 Non-Blocking Note (empty Resolved section audit trail) and 1 Drift Observation (spec divergence in lib/context_cache.sh:19-38). Drift observations are a distinct category. This miscount is low-risk — the actual work performed appears correct — but it may explain the off-by-one in the weakening detector: believing there was a second non-blocking note, the tester may have made an extra edit to NON_BLOCKING_LOG.md that inadvertently disturbed existing content.
 - Severity: LOW
-- Action: No change required here. If `stages/coder.sh:348-349` is later fixed for
-  portability, `test_m43_test_aware.sh:153-154` must be updated in lockstep per its
-  own comment.
+- Action: No code change needed. Correct the count in TESTER_REPORT.md to "1 non-blocking note from REVIEWER_REPORT.md" for accurate audit trail.
 
-#### COVERAGE: test_nonblocking_log_structure.sh Test 3 silently no-ops in current file state
-- File: tests/test_nonblocking_log_structure.sh:44-63
-- Issue: Test 3 checks for `### Test Audit Concerns (2026-03-28)` and
-  `### Test Audit Concerns (2026-03-29)` headers. Neither exists in the current
-  `NON_BLOCKING_LOG.md`. When count is 0, neither the `-gt 1` nor the `-eq 1` branch
-  executes — no PASS or FAIL is recorded. The tester's claim of "2/2 sub-tests" is
-  correct: only Tests 1 and 2 produce assertions in the current file state. Test 3
-  contributes 0 assertions silently. This is not a defect (guards against stale
-  duplicate blocks from prior reviews), but the quiescent state is non-obvious.
+#### SCOPE: test_context_cache_extended.sh is untracked and not yet committed
+- File: tests/test_context_cache_extended.sh (git status: ??)
+- Issue: The extended test file is untracked. The test runner (tests/run_tests.sh:58) uses glob discovery (`test_*.sh`) so it runs locally while the file exists on disk. However, if the working tree is cleaned before the file is committed (e.g., `git clean -f tests/`), these 6 tests are silently lost. The tester's claim of 310 passing tests depends on this uncommitted file. The file should have been staged as part of the M47 work.
 - Severity: LOW
-- Action: Add an `else` branch for each check that registers a PASS when count is 0
-  (e.g., "No duplicate 'Test Audit Concerns (2026-03-28)' block — correct"), making
-  the quiescent state explicitly observable rather than invisible.
-
-#### SCOPE: INTAKE_REPORT.md deletion — out-of-scope tests may be orphaned
-- File: (none of the three audited files)
-- Issue: `INTAKE_REPORT.md` was deleted. Six test files outside the audit scope
-  (`test_intake_report_edge_cases.sh`, `test_intake_report_rendering.sh`,
-  `test_intake.sh`, `test_report.sh`, `test_dry_run.sh`,
-  `test_dashboard_parsers_bugfix.sh`) reference INTAKE_REPORT.md and may now be
-  orphaned. None of the three audited test files reference it — the audited tests
-  are clean with respect to this deletion.
-- Severity: LOW (out of audit scope)
-- Action: A follow-up audit of the intake test files is warranted. For each test
-  that references `INTAKE_REPORT.md`, determine whether it should be removed or
-  redirected to the replacement artifact.
+- Action: Stage and commit tests/test_context_cache_extended.sh alongside the other M47 changes.
 
 ---
 
 ### Findings: None for the following categories
 
 #### None (Assertion Honesty / INTEGRITY)
-All assertions in the three audited files test real behavior. `_extract_affected_test_files()`
-is invoked with real fixture files; `_build_test_baseline_summary()` is invoked with real
-JSON fixtures; `_hook_emit_timing_report` generates a real file whose content is inspected;
-`_phase_display_name` is called directly against known keys. No tautological or hard-coded
-magic-value assertions found.
-
-#### None (Test Weakening / WEAKENING in test files)
-The tester modified `tests/test_m43_test_aware.sh` (added source-of-truth comments) and
-`tests/test_timing_report_generation.sh` (replaced `grep -oP` with portable `sed` at
-line 101). Both modifications were verified: comments were added without removing any
-assertions, and the sed replacement preserves the same extraction semantics. No assertions
-were removed or broadened.
+All assertions in test_context_cache.sh and test_context_cache_extended.sh test real behavior.
+Functions under test (`preload_context_cache`, `invalidate_drift_cache`, `invalidate_milestone_cache`,
+all `_get_cached_*` accessors) are invoked against real temp-file fixtures. No tautological
+assertions or hard-coded magic values found.
 
 #### None (Naming)
-Test section and `pass()`/`fail()` messages encode scenario and expected outcome throughout
-all three files. Examples: "Empty result when Affected Test Files section absent",
-"Failing baseline includes failure count", "Phases are sorted by duration descending",
-"No report generated when no phases recorded".
+Test section headers and pass/fail message strings encode both scenario and expected outcome.
+Examples: "_get_cached_architecture_content falls back to disk read",
+"_get_cached_milestone_block returns non-zero when DAG disabled and cache empty".
 
 #### None (Implementation Exercise)
-- `test_nonblocking_log_structure.sh`: reads live `NON_BLOCKING_LOG.md` via `sed`/`grep` — no mocking.
-- `test_m43_test_aware.sh`: Suite 3 calls `grep` against live `.prompt.md` files; Suites 1-2
-  use pattern-faithful helpers with source-of-truth comments and real fixture files.
-- `test_timing_report_generation.sh`: sources `lib/common.sh` and `lib/timing.sh` directly,
-  invokes `_hook_emit_timing_report`, `_get_top_phases`, `_format_timing_banner`, and
-  `_phase_display_name` against real associative array state.
+Both test files source `lib/context_cache.sh` directly and call its functions against real
+fixture files in TEST_TMPDIR. No dependency is fully mocked; stubs exist only for
+`build_milestone_window` and `has_milestone_manifest` in the milestone-block tests,
+which is appropriate (those are cross-module dependencies).
 
-#### None (Scope Alignment / SCOPE — audited files)
-No orphaned or stale references found in the three audited test files. All functions under
-test are present in their respective implementation files. `test_m43_test_aware.sh` Suite 3
-references `{{IF:AFFECTED_TEST_FILES}}`, `{{IF:TEST_BASELINE_SUMMARY}}`, and
-`## Affected Test Files` — all verified present in `prompts/coder.prompt.md` and
-`prompts/scout.prompt.md`.
+#### None (Test Weakening in test_context_cache.sh)
+Although test_context_cache.sh was modified (311 → 270 lines), content was moved to
+test_context_cache_extended.sh rather than dropped. The current 22 assertions in
+test_context_cache.sh cover the same behavioral surface as the original. No assertions
+were broadened or removed without replacement.
