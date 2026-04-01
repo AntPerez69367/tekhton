@@ -29,6 +29,8 @@ RED="" CYAN="" YELLOW="" NC=""
 source "${TEKHTON_HOME}/lib/notes_core.sh"
 # shellcheck source=../lib/notes_acceptance.sh
 source "${TEKHTON_HOME}/lib/notes_acceptance.sh"
+# shellcheck source=../lib/notes_acceptance_helpers.sh
+source "${TEKHTON_HOME}/lib/notes_acceptance_helpers.sh"
 
 # --------------------------------------------------------------------------
 echo "Suite 1: BUG acceptance — regression test detection"
