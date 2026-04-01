@@ -1,64 +1,61 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files under audit (NON_BLOCKING_LOG.md, lib/context_cache.sh); supplementary read of test_context_cache.sh (22 assertions) and test_context_cache_extended.sh (6 assertions) to verify scope alignment
-Verdict: CONCERNS
-
-Note: `CODER_SUMMARY.md` was absent at audit time (file not present in working tree).
-Implementation verified directly against `lib/context_cache.sh` and the current git
-working tree state.
-
----
+Tests audited: 4 files, 32 test sections
+Verdict: PASS
 
 ### Findings
 
-#### WEAKENING: NON_BLOCKING_LOG.md — pre-verified net loss of 1 item
-- File: NON_BLOCKING_LOG.md
-- Issue: The shell pre-verified a net loss of 1 assertion (removed 1, added 0). The tester report states only additions were made ("Documented 3 resolved items in Resolved section with explanations"), with no mention of removing existing content. The 3 prior M46 resolved entries (lines 11-13) all use `- [x]` checkbox format; the 3 new M47 resolved entries (lines 15-19) omit `[x]` entirely, using bare `- ` dashes. If the tester touched existing resolved entries to reformat them, one `[x]` line may have been dropped inadvertently. The formatting inconsistency is also a real artifact: automated tooling or the pipeline's own item-counting logic that looks for `[x]` would produce a different count for M47 entries than for M46 entries.
-- Severity: HIGH
-- Action: Run `git diff HEAD~1 -- NON_BLOCKING_LOG.md` to identify exactly what was removed. If a prior resolved entry was dropped, restore it. Standardize the 3 M47 resolved entries (lines 15-19) to `- [x]` format to match the existing convention on lines 11-13.
-
-#### COVERAGE: Drift accessor post-invalidation disk fallback is not end-to-end tested
-- File: lib/context_cache.sh:168-178 (`_get_cached_drift_log_content`)
-- Issue: `_get_cached_drift_log_content` has unique semantics vs every other accessor: it falls back to a disk read when `_CACHED_DRIFT_LOG_CONTENT` is empty even when `_CONTEXT_CACHE_LOADED=true`. This is the post-`invalidate_drift_cache()` path and is the primary reason `invalidate_drift_cache()` exists. The test suite verifies that `invalidate_drift_cache()` clears the variable (test_context_cache.sh:242-246) but does not verify the subsequent disk fallback — i.e., no test calls `_get_cached_drift_log_content` after invalidation and asserts the re-read value. This is a gap in the most important behavior this function provides.
+#### COVERAGE: `_rm_extract_test_outcomes` values not verified
+- File: tests/test_run_memory_emission.sh:96–105
+- Issue: Test 2 verifies the `test_outcomes` field is present in the JSONL record but never asserts its values. No `TESTER_REPORT.md` fixture is created in `TEST_TMPDIR`, so `_rm_extract_test_outcomes` silently returns `{"passed":0,"failed":0,"skipped":0}` on every emission test run. The parsing logic — counting `[x]` and `[ ]` markers — is exercised nowhere in the suite.
 - Severity: MEDIUM
-- Action: Add a test to test_context_cache_extended.sh: (1) preload cache with drift content, (2) write new content to DRIFT_LOG_FILE, (3) call `invalidate_drift_cache`, (4) assert `_get_cached_drift_log_content` returns the new disk content (not empty, not the stale cached value).
+- Action: Add a `TESTER_REPORT.md` fixture with a known number of `- [x]` and `- [ ]` items to `TEST_TMPDIR` before calling `_hook_emit_run_memory`, then assert `"passed":<N>` in the resulting JSONL record.
 
-#### SCOPE: TESTER_REPORT.md misidentifies REVIEWER_REPORT.md item count
-- File: TESTER_REPORT.md (line 49)
-- Issue: The tester claims "the 2 non-blocking notes from REVIEWER_REPORT.md have been addressed." REVIEWER_REPORT.md contains exactly 1 Non-Blocking Note (empty Resolved section audit trail) and 1 Drift Observation (spec divergence in lib/context_cache.sh:19-38). Drift observations are a distinct category. This miscount is low-risk — the actual work performed appears correct — but it may explain the off-by-one in the weakening detector: believing there was a second non-blocking note, the tester may have made an extra edit to NON_BLOCKING_LOG.md that inadvertently disturbed existing content.
+#### COVERAGE: `_rm_extract_decisions` alternate section headers untested
+- File: tests/test_run_memory_emission.sh:162–168
+- Issue: `_rm_extract_decisions` extracts from three section headers: `What Was Implemented`, `Architecture Change Proposals`, and `Architecture Decisions`. Only the `What Was Implemented` branch is exercised by the emission test fixture. The other two branches are dead code from a test perspective.
 - Severity: LOW
-- Action: No code change needed. Correct the count in TESTER_REPORT.md to "1 non-blocking note from REVIEWER_REPORT.md" for accurate audit trail.
+- Action: Add a second `CODER_SUMMARY.md` fixture using `## Architecture Decisions` with bullet items, then assert the extracted text appears in the JSONL record.
 
-#### SCOPE: test_context_cache_extended.sh is untracked and not yet committed
-- File: tests/test_context_cache_extended.sh (git status: ??)
-- Issue: The extended test file is untracked. The test runner (tests/run_tests.sh:58) uses glob discovery (`test_*.sh`) so it runs locally while the file exists on disk. However, if the working tree is cleaned before the file is committed (e.g., `git clean -f tests/`), these 6 tests are silently lost. The tester's claim of 310 passing tests depends on this uncommitted file. The file should have been staged as part of the M47 work.
+#### INTEGRITY: Unconditional `pass` in pruning test 5
+- File: tests/test_run_memory_pruning.sh:158
+- Issue: `pass "Pruning missing file does not error"` is called unconditionally without checking `$?` or any observable output. Under `set -euo pipefail`, a non-zero return from `_prune_run_memory` would cause the script to abort before reaching the `pass` call — so the crash case is detectable — but any test added after this line that genuinely fails would inflate the pass count for this case, and the pattern obscures intent.
 - Severity: LOW
-- Action: Stage and commit tests/test_context_cache_extended.sh alongside the other M47 changes.
+- Action: Make the implicit check explicit: `_prune_run_memory "$memory_file" || fail "prune returned non-zero on missing file"` and remove the unconditional `pass`.
 
----
+#### INTEGRITY: Unconditional `pass` in special_chars test 8
+- File: tests/test_run_memory_special_chars.sh:222
+- Issue: `pass "Keyword filter completed without error on special-char query task"` is unconditional. The inline comment documents the intent as crash-safety testing, and the same `set -euo pipefail` guard applies. This is borderline-acceptable but the unconditional pattern is inconsistent with the rest of the suite.
+- Severity: LOW
+- Action: Acceptable given the explicit comment. Optionally capture `$result` and add `[[ -z "$result" || -n "$result" ]] || fail "..."` to make the assertion explicit without constraining the output value.
+
+#### NAMING: Test 5 comment misidentifies exclusive match source
+- File: tests/test_run_memory_keyword_filter.sh:110–116
+- Issue: The test label says "match via file path" but the keyword `gates` also appears verbatim in run_003's `task` field (`"Improve test coverage for gates"`). The implementation's keyword match operates over the full JSONL line, not only the `files_touched` array. The test exercises real behavior correctly; the label is misleading about which code path is the primary driver.
+- Severity: LOW
+- Action: Update the test label and pass message to `"Matched via 'gates' in task and file path fields"`.
 
 ### Findings: None for the following categories
 
-#### None (Assertion Honesty / INTEGRITY)
-All assertions in test_context_cache.sh and test_context_cache_extended.sh test real behavior.
-Functions under test (`preload_context_cache`, `invalidate_drift_cache`, `invalidate_milestone_cache`,
-all `_get_cached_*` accessors) are invoked against real temp-file fixtures. No tautological
-assertions or hard-coded magic values found.
+#### None (Test Weakening)
+No existing tests were modified. All four files are new.
 
-#### None (Naming)
-Test section headers and pass/fail message strings encode both scenario and expected outcome.
-Examples: "_get_cached_architecture_content falls back to disk read",
-"_get_cached_milestone_block returns non-zero when DAG disabled and cache empty".
+#### None (Scope — Orphaned or Stale References)
+All functions under test (`_hook_emit_run_memory`, `_prune_run_memory`,
+`build_intake_history_from_memory`) exist in `lib/run_memory.sh`. No references to
+deleted files. `JR_CODER_SUMMARY.md` (deleted by coder) is not referenced anywhere
+in the test suite.
+
+#### None (Assertion Honesty — INTEGRITY)
+All assertions verify real function outputs against meaningful fixture inputs.
+Field-value checks in the emission test (run_id, milestone, verdict, duration,
+agent_calls) match exactly the globals set before calling `_hook_emit_run_memory`.
+No tautological assertions (`assertTrue(True)`, `assertEqual(x, x)`) found.
 
 #### None (Implementation Exercise)
-Both test files source `lib/context_cache.sh` directly and call its functions against real
-fixture files in TEST_TMPDIR. No dependency is fully mocked; stubs exist only for
-`build_milestone_window` and `has_milestone_manifest` in the milestone-block tests,
-which is appropriate (those are cross-module dependencies).
-
-#### None (Test Weakening in test_context_cache.sh)
-Although test_context_cache.sh was modified (311 → 270 lines), content was moved to
-test_context_cache_extended.sh rather than dropped. The current 22 assertions in
-test_context_cache.sh cover the same behavioral surface as the original. No assertions
-were broadened or removed without replacement.
+All four test files source `lib/run_memory.sh` directly and call its public
+functions against real temp-file fixtures. `git`, `log`, `warn`, `error`,
+`success`, and `header` stubs are minimal and appropriate — they silence side
+effects while leaving all parsing logic intact. `_json_escape` is copied from
+`causality.sh` (its declared dependency) rather than mocked, which is correct.

@@ -1,5 +1,7 @@
+# Reviewer Report — M49: Structured Run Memory
+
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
 - None
@@ -8,27 +10,14 @@ APPROVED
 - None
 
 ## Non-Blocking Notes
-- None
+- `build_intake_history_from_memory` uses `grep -oP` (Perl-mode regex) for field extraction at lines 281–285 of `lib/run_memory.sh`. GNU grep (Linux/WSL) supports this, but BSD grep (macOS) does not. The fallback `|| echo "unknown"` prevents errors — output degrades to "unknown" fields rather than crashing — so this is safe on the current platform. Flag for portability if macOS support is ever required.
+- The header comment in `tests/test_finalize_run.sh` (line 6) still reads "12 hooks in deterministic sequence, plus M13+M17+M19 hooks". The actual count is now 20. The assertion on line 255 (`"1.1 exactly 20 hooks registered"`) is correct; only the descriptive comment is stale.
 
 ## Coverage Gaps
-- None
-
-## ACP Verdicts
-None present.
+- No test covers a task string containing special characters (e.g., `$`, backticks, single quotes) to verify JSONL integrity under adversarial input. The `_json_escape` function handles `\`, `"`, `\n`, `\r`, `\t`, but not `$` or `` ` `` which appear in task names that reference shell variables. This is a gap worth testing in a follow-up.
 
 ## Drift Observations
-None.
+- `lib/run_memory.sh:281–285` — field extraction from JSONL uses `grep -oP` rather than a shared JSONL parsing helper. `lib/causality.sh` may already have related extraction patterns; if a future milestone adds more JSONL consumers, consolidating the parse logic into a helper would reduce duplication.
 
----
-
-## Review Notes
-
-**SF-1** (`orchestrate_helpers.sh:86–89`): Comment added above the grep invocation at line 91. Content accurately describes the over-count risk and the accepted rationale (exit codes govern correctness; grep counts only throttle early-abort). Comment is well-placed and precise.
-
-**SF-2** (`orchestrate_helpers.sh:139–142`): Comment added immediately before the `+2` comparison at line 143. Explains the 1–2 count variance from "0 errors"/"no failures found" output and why this prevents aborting on measurement noise. Matches the plan spec exactly.
-
-**Senior coder**: Correctly identified zero simplification items and produced a no-op summary. No scope creep.
-
-**Jr coder**: Both SF-1 and SF-2 implemented as comments only — no logic changes. `bash -n` and `shellcheck` verified clean per JR_CODER_SUMMARY.md. Changes are bounded to the plan.
-
-**DDO-1**: Correctly left for human action. No attempt by either coder to modify the milestone spec file autonomously.
+## ACP Verdicts
+None present in CODER_SUMMARY.md.

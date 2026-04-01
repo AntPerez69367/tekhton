@@ -1,8 +1,9 @@
 # Milestone 49: Structured Run Memory
 <!-- milestone-meta
 id: "49"
-status: "pending"
+status: "done"
 -->
+<!-- PM-tweaked: 2026-04-01 -->
 
 ## Overview
 
@@ -45,7 +46,10 @@ At run end, append a structured record to `RUN_MEMORY.jsonl`:
 On next run, build `INTAKE_HISTORY_BLOCK` by reading the last N entries from
 `RUN_MEMORY.jsonl` filtered by keyword relevance to the current task. Keyword
 matching uses simple bash string operations — word overlap between task
-descriptions and stored tasks/files.
+descriptions and stored tasks/files. [PM: Relevance threshold is ≥1 matching
+word (case-insensitive, after stripping common stop words). This keeps filtering
+inclusive while excluding completely unrelated runs. Stop word list: the, a, an,
+is, in, of, to, and, or, for, with, on, at, by, from, that, this, it, be, as.]
 
 ### 3. Memory Pruning
 
@@ -54,6 +58,20 @@ descriptions and stored tasks/files.
 Add `RUN_MEMORY_MAX_ENTRIES` (default: 50). When the file exceeds this count,
 prune oldest entries (FIFO). The file stays small enough for instant bash
 processing.
+
+## Migration Impact
+
+[PM: Added — required for any milestone introducing new files or config keys.]
+
+- **New file:** `RUN_MEMORY.jsonl` is created automatically at first run end.
+  No manual action required. Existing installations gain this file on next run.
+- **New config key:** `RUN_MEMORY_MAX_ENTRIES` (default: 50) in
+  `lib/config_defaults.sh`. No action required; existing `pipeline.conf` files
+  without this key use the default. Users may override in `pipeline.conf`.
+- **No format changes** to existing files. `INTAKE_HISTORY_BLOCK` was previously
+  built from the causal log; it now comes from `RUN_MEMORY.jsonl`. Behavior is
+  additive — if `RUN_MEMORY.jsonl` does not yet exist (first run), the block is
+  empty, matching prior behavior.
 
 ## Acceptance Criteria
 
@@ -66,7 +84,7 @@ processing.
 
 Tests:
 - Memory record is appended correctly with all required fields
-- Keyword filtering returns relevant entries (task word overlap > threshold)
+- Keyword filtering returns relevant entries (≥1 task word overlap, case-insensitive, stop words excluded) [PM: threshold made explicit]
 - Pruning removes oldest entries when limit exceeded
 - Empty memory file doesn't cause errors
 - `INTAKE_HISTORY_BLOCK` is populated in prompt templates
