@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-04-01
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-04-01 | "M50"] `stages/review.sh` and `stages/tester.sh` lack `set -euo pipefail` at the top. These are sourced files that inherit the flag from `tekhton.sh`, so they're functionally safe, but the inconsistency with `lib/progress.sh` (which does have the header) and most other `lib/*.sh` files is worth noting for future cleanup.
 - [2026-04-01 | "Address all 4 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/drift_cleanup.sh:219` — `echo "$line" | grep -qi "^- [x]"` for the skip-in-open branch is inconsistent with the awk-based `[x]` detection used everywhere else in the same file (lines 182, 190, 243). The `echo | grep` pattern also carries a latent risk if `$line` ever starts with `-e` or `-n`. The existing `_resolve_addressed_nonblocking_notes()` at line 136 uses the same pattern, so this is a pre-existing drift, not introduced here — still worth a consolidation pass.
 - [2026-04-01 | "M49"] `lib/run_memory.sh:281–285` — field extraction from JSONL uses `grep -oP` rather than a shared JSONL parsing helper. `lib/causality.sh` may already have related extraction patterns; if a future milestone adds more JSONL consumers, consolidating the parse logic into a helper would reduce duplication.
 - [2026-04-01 | "M48"] None.
