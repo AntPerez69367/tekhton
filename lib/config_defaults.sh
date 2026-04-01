@@ -305,6 +305,9 @@ set -euo pipefail
 : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
 
+# --- Run memory defaults (Milestone 49: structured run-end memory) ---
+: "${RUN_MEMORY_MAX_ENTRIES:=50}"
+
 # --- Pre-finalization fix defaults (cheap Jr Coder fix before full retry) ---
 : "${PREFLIGHT_FIX_ENABLED:=true}"                          # Try Jr Coder fix before full pipeline retry
 : "${PREFLIGHT_FIX_MAX_ATTEMPTS:=2}"                        # Max fix attempts before falling through
@@ -443,6 +446,7 @@ _clamp_config_value SERENA_STARTUP_TIMEOUT 120
 _clamp_config_value SERENA_MAX_RETRIES 10
 _clamp_config_value CAUSAL_LOG_RETENTION_RUNS 200
 _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
+_clamp_config_value RUN_MEMORY_MAX_ENTRIES 500
 _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
 _clamp_config_value AUTO_FIX_MAX_DEPTH 5

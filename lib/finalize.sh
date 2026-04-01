@@ -404,6 +404,10 @@ _hook_health_reassess() {
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
 
+# l1.5. Emit RUN_MEMORY.jsonl (M49)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/run_memory.sh"
+
 # l2. Emit TIMING_REPORT.md (M46)
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/timing.sh"
@@ -489,6 +493,7 @@ register_finalize_hook "_hook_archive_milestone"
 register_finalize_hook "_hook_clear_state"
 register_finalize_hook "_hook_health_reassess"
 register_finalize_hook "_hook_emit_run_summary"
+register_finalize_hook "_hook_emit_run_memory"
 register_finalize_hook "_hook_emit_timing_report"
 register_finalize_hook "_hook_failure_context"
 register_finalize_hook "_hook_express_persist"

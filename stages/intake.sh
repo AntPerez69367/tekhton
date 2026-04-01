@@ -87,9 +87,14 @@ run_stage_intake() {
         INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 8192)
     fi
 
-    # Load intake history from causal log (when available)
+    # Load intake history from structured run memory (M49), fall back to causal log
     export INTAKE_HISTORY_BLOCK=""
-    if [[ "${CAUSAL_LOG_ENABLED:-true}" == "true" ]] && type verdict_history &>/dev/null; then
+    if type build_intake_history_from_memory &>/dev/null; then
+        INTAKE_HISTORY_BLOCK=$(build_intake_history_from_memory "${TASK:-}" 2>/dev/null || true)
+    fi
+    # Fall back to causal log if structured memory produced nothing
+    if [[ -z "$INTAKE_HISTORY_BLOCK" ]] && \
+       [[ "${CAUSAL_LOG_ENABLED:-true}" == "true" ]] && type verdict_history &>/dev/null; then
         INTAKE_HISTORY_BLOCK=$(verdict_history "intake" 10 2>/dev/null || true)
         local rework_data
         rework_data=$(events_by_type "rework_cycle" 10 2>/dev/null || true)

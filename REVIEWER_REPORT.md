@@ -1,5 +1,7 @@
+# Reviewer Report
+
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
 - None
@@ -8,27 +10,10 @@ APPROVED
 - None
 
 ## Non-Blocking Notes
-- None
+- `lib/drift_cleanup.sh` is 302 lines — 2 lines over the 300-line soft ceiling. The expansion of `clear_completed_nonblocking_notes()` to preserve traceability is the right call, but a future pass could trim the blank trailing lines or tighten the helper.
 
 ## Coverage Gaps
 - None
 
-## ACP Verdicts
-None present.
-
 ## Drift Observations
-None.
-
----
-
-## Review Notes
-
-**SF-1** (`orchestrate_helpers.sh:86–89`): Comment added above the grep invocation at line 91. Content accurately describes the over-count risk and the accepted rationale (exit codes govern correctness; grep counts only throttle early-abort). Comment is well-placed and precise.
-
-**SF-2** (`orchestrate_helpers.sh:139–142`): Comment added immediately before the `+2` comparison at line 143. Explains the 1–2 count variance from "0 errors"/"no failures found" output and why this prevents aborting on measurement noise. Matches the plan spec exactly.
-
-**Senior coder**: Correctly identified zero simplification items and produced a no-op summary. No scope creep.
-
-**Jr coder**: Both SF-1 and SF-2 implemented as comments only — no logic changes. `bash -n` and `shellcheck` verified clean per JR_CODER_SUMMARY.md. Changes are bounded to the plan.
-
-**DDO-1**: Correctly left for human action. No attempt by either coder to modify the milestone spec file autonomously.
+- `lib/drift_cleanup.sh:219` — `echo "$line" | grep -qi "^- \[x\]"` for the skip-in-open branch is inconsistent with the awk-based `[x]` detection used everywhere else in the same file (lines 182, 190, 243). The `echo | grep` pattern also carries a latent risk if `$line` ever starts with `-e` or `-n`. The existing `_resolve_addressed_nonblocking_notes()` at line 136 uses the same pattern, so this is a pre-existing drift, not introduced here — still worth a consolidation pass.
