@@ -203,6 +203,9 @@ with open(sys.argv[1]) as f:
 for line in lines[-int(sys.argv[2]):]:
     try:
         d = json.loads(line)
+        # Skip crash/noise records with no agent invocations
+        if int(d.get('total_turns', 0)) == 0:
+            continue
         # Derive run_type from task_type + milestone_mode
         run_type = 'adhoc'
         if d.get('milestone_mode') is True or d.get('milestone_mode') == 'true':
@@ -273,12 +276,15 @@ print(json.dumps(results))
         [[ -z "$line" ]] && continue
         [[ "$count" -ge "$depth" ]] && break
 
-        local outcome
-        outcome=$(printf '%s' "$line" | sed -n 's/.*"outcome"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        : "${outcome:=unknown}"
         local turns
         turns=$(printf '%s' "$line" | sed -n 's/.*"total_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         : "${turns:=0}"
+        # Skip crash/noise records with no agent invocations
+        [[ "$turns" -eq 0 ]] && continue
+
+        local outcome
+        outcome=$(printf '%s' "$line" | sed -n 's/.*"outcome"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        : "${outcome:=unknown}"
         local time_s
         time_s=$(printf '%s' "$line" | sed -n 's/.*"total_time_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         : "${time_s:=0}"

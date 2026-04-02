@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_dashboard_parsers_bugfix.sh — Verify fixes for three dashboard bugs
+# test_dashboard_parsers_bugfix.sh — Verify fixes for dashboard parser bugs
 #
 # Bug #1: dashboard_emitters.sh:155-156 — grep -c pattern producing double "0"
 # Bug #2: dashboard_parsers.sh:159-163 — Python parser field name mismatch
 # Bug #3: dashboard_parsers.sh:175-181 — grep fallback field name mismatch
+# Bug #4: dashboard_parsers.sh:207,277,283 — Zero-turn crash records appearing as blank "HUMAN FEAT" in trends
 #
-# All three bugs involved RUN_SUMMARY.json parsing:
-# - emitters.sh grep -c exits 1 on zero matches, causing || echo "0" to append
-# - parsers.sh used total_turns/total_time_s but JSON uses total_agent_calls/wall_clock_seconds
-# - Both paths now handle actual JSON field names and extract milestone/stages
+# Test Suites 1-5: Cover bugs #1-3 (RUN_SUMMARY.json field name handling)
+# Test Suites 6-6b: Cover bug #4 (zero-turn crash record filtering in metrics.jsonl)
+#
+# Bug #4 root cause: ERR trap handler writes metrics with total_turns=0 and empty task
+# on startup crashes. Parser was treating these as valid runs, producing blank dashboard entries.
+# Fix: Filter records where total_turns == 0 in both Python and bash fallback paths.
 # =============================================================================
 set -euo pipefail
 
@@ -425,6 +428,95 @@ if echo "$result" | grep -q '^\[.*\]$'; then
     pass "5.2 _parse_run_summaries handles malformed JSON gracefully (returns valid JSON)"
 else
     fail "5.2 _parse_run_summaries did not produce valid JSON for malformed input (got: '$result')"
+fi
+
+# =============================================================================
+# Test Suite 6: Zero-turn crash records filtered from JSONL parsing
+# Regression test: crash records (total_turns=0) should not appear as runs
+# in the Trends dashboard. They showed as blank "HUMAN FEAT" entries.
+# =============================================================================
+echo "=== Test Suite 6: Zero-turn crash records filtered from JSONL ==="
+
+# Create metrics.jsonl with crash records and real runs
+mkdir -p "$TMPDIR/.claude/logs_jsonl"
+cat > "$TMPDIR/.claude/logs_jsonl/metrics.jsonl" << 'JSONL'
+{"timestamp":"2026-04-01T21:12:08Z","task":"","task_type":"feature","milestone_mode":false,"total_turns":0,"total_time_s":0,"coder_turns":0,"reviewer_turns":0,"tester_turns":0,"scout_turns":0,"scout_est_coder":0,"scout_est_reviewer":0,"scout_est_tester":0,"adjusted_coder":0,"adjusted_reviewer":0,"adjusted_tester":0,"context_tokens":0,"retry_count":0,"continuation_attempts":0,"verdict":"crashed","outcome":"crashed"}
+{"timestamp":"2026-04-01T21:26:16Z","task":"","task_type":"feature","milestone_mode":false,"total_turns":0,"total_time_s":0,"coder_turns":0,"reviewer_turns":0,"tester_turns":0,"scout_turns":0,"scout_est_coder":0,"scout_est_reviewer":0,"scout_est_tester":0,"adjusted_coder":0,"adjusted_reviewer":0,"adjusted_tester":0,"context_tokens":9967,"retry_count":0,"continuation_attempts":0,"verdict":"crashed","outcome":"crashed"}
+{"timestamp":"2026-04-01T22:04:47Z","task":"M50","task_type":"feature","milestone_mode":true,"total_turns":81,"total_time_s":2790,"coder_turns":1,"reviewer_turns":26,"tester_turns":1,"scout_turns":30,"scout_est_coder":50,"scout_est_reviewer":12,"scout_est_tester":25,"adjusted_coder":70,"adjusted_reviewer":16,"adjusted_tester":60,"context_tokens":5533,"retry_count":0,"continuation_attempts":0,"verdict":"APPROVED_WITH_NOTES","outcome":"success"}
+{"timestamp":"2026-04-01T23:04:02Z","task":"","task_type":"feature","milestone_mode":false,"total_turns":0,"total_time_s":0,"coder_turns":0,"reviewer_turns":0,"tester_turns":0,"scout_turns":0,"scout_est_coder":0,"scout_est_reviewer":0,"scout_est_tester":0,"adjusted_coder":0,"adjusted_reviewer":0,"adjusted_tester":0,"context_tokens":8950,"retry_count":0,"continuation_attempts":0,"verdict":"crashed","outcome":"crashed"}
+{"timestamp":"2026-04-01T23:26:38Z","task":"Fix the bug","task_type":"bug","milestone_mode":false,"total_turns":66,"total_time_s":1255,"coder_turns":16,"reviewer_turns":7,"tester_turns":1,"scout_turns":11,"scout_est_coder":20,"scout_est_reviewer":5,"scout_est_tester":15,"adjusted_coder":40,"adjusted_reviewer":15,"adjusted_tester":30,"context_tokens":5440,"retry_count":0,"continuation_attempts":0,"verdict":"APPROVED","outcome":"success"}
+JSONL
+
+result=$(_parse_run_summaries "$TMPDIR/.claude/logs_jsonl" 50)
+
+# Count how many entries are in the result array
+if command -v python3 &>/dev/null; then
+    entry_count=$(python3 -c "import json,sys; print(len(json.loads(sys.stdin.read())))" <<< "$result" 2>/dev/null || echo "-1")
+else
+    # Rough count: number of "outcome" fields
+    entry_count=$(echo "$result" | grep -o '"outcome"' | wc -l)
+fi
+
+if [ "$entry_count" = "2" ]; then
+    pass "6.1 JSONL parser returns only 2 real runs (filtered 3 crash records)"
+else
+    fail "6.1 JSONL parser returned $entry_count entries, expected 2 (crash records not filtered)"
+fi
+
+# Verify no "crashed" outcomes in result
+if echo "$result" | grep -q '"outcome".*"crashed"'; then
+    fail "6.2 JSONL parser still contains crashed entries"
+else
+    pass "6.2 JSONL parser excludes all crashed/zero-turn entries"
+fi
+
+# Verify the real runs are present
+if echo "$result" | grep -qE '"total_turns".*81|"total_turns": 81'; then
+    pass "6.3 JSONL parser includes M50 run (81 turns)"
+else
+    fail "6.3 JSONL parser missing M50 run (got: $result)"
+fi
+
+if echo "$result" | grep -qE '"total_turns".*66|"total_turns": 66'; then
+    pass "6.4 JSONL parser includes bug fix run (66 turns)"
+else
+    fail "6.4 JSONL parser missing bug fix run (got: $result)"
+fi
+
+# Test Suite 6b: bash fallback path also filters zero-turn records
+echo "=== Test Suite 6b: Zero-turn filtering in bash fallback ==="
+
+stub_bin2="$TMPDIR/stub_bin2"
+mkdir -p "$stub_bin2"
+cat > "$stub_bin2/python3" << 'EOF'
+#!/bin/bash
+exit 1
+EOF
+chmod +x "$stub_bin2/python3"
+
+original_path2="$PATH"
+export PATH="${stub_bin2}:${original_path2}"
+
+result_bash=$(_parse_run_summaries "$TMPDIR/.claude/logs_jsonl" 50 2>/dev/null)
+
+export PATH="$original_path2"
+
+if command -v python3 &>/dev/null; then
+    bash_count=$(python3 -c "import json,sys; print(len(json.loads(sys.stdin.read())))" <<< "$result_bash" 2>/dev/null || echo "-1")
+else
+    bash_count=$(echo "$result_bash" | grep -o '"outcome"' | wc -l)
+fi
+
+if [ "$bash_count" = "2" ]; then
+    pass "6b.1 Bash fallback returns only 2 real runs (filtered crash records)"
+else
+    fail "6b.1 Bash fallback returned $bash_count entries, expected 2"
+fi
+
+if echo "$result_bash" | grep -q '"outcome":"crashed"'; then
+    fail "6b.2 Bash fallback still contains crashed entries"
+else
+    pass "6b.2 Bash fallback excludes all crashed/zero-turn entries"
 fi
 
 # =============================================================================
