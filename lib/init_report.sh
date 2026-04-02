@@ -127,7 +127,7 @@ emit_init_summary() {
         && grep -q '|' "${_milestone_dir}/MANIFEST.cfg" 2>/dev/null; then
         _has_milestones=true
     elif [[ -f "$_claude_md" ]] \
-        && ! grep -q '<!-- TODO:.*--plan -->' "$_claude_md" 2>/dev/null \
+        && ! grep -q '<!-- TODO:.*--plan' "$_claude_md" 2>/dev/null \
         && grep -q '^#### Milestone' "$_claude_md" 2>/dev/null; then
         _has_milestones=true
     fi

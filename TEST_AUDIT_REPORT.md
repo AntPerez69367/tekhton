@@ -1,40 +1,54 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 12 assertions across 8 logical test blocks
+Tests audited: 1 file, 5 test functions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Hardcoded line range in Test 7 makes pattern search fragile
-- File: tests/test_drift_resolution_verification.sh:97
-- Issue: `PATTERN_LINE` is computed via `grep -n '_display_milestone_summary'` to locate the function, but `sed -n '510,520p'` uses a hardcoded range instead of the computed value. `PATTERN_LINE` is only used as a non-empty guard — if the function moves, `sed` scans the wrong lines. Currently safe because lines 510–520 do contain the target pattern, but this is coincidental alignment, not enforced by the test.
+#### EXERCISE: Test 5 copies implementation logic inline rather than calling the real function
+- File: tests/test_init_report_stub_detection.sh:112-164
+- Issue: `test_full_detection_logic` replicates the detection logic from `lib/init_report.sh:126-133`
+  verbatim inside the test body rather than sourcing `init_report.sh` and calling the real code.
+  If `lib/init_report.sh` changes the detection logic, this test will silently pass while the
+  actual implementation regresses. The test currently validates a snapshot of logic, not the live
+  function.
 - Severity: MEDIUM
-- Action: Replace `sed -n '510,520p'` with a dynamic window anchored on `PATTERN_LINE`, e.g. `sed -n "$((PATTERN_LINE)),$((PATTERN_LINE + 10))p"`.
+- Action: Extract the stub-detection condition from `init_report.sh` into a named helper (e.g.
+  `_has_real_milestones()`), then call that helper from the test. If refactoring is out of scope,
+  add an inline comment acknowledging the copy is intentional and note the risk of drift.
 
-#### COVERAGE: Test 3 limits unresolved-section scan to 2 lines via `head -n 2`
-- File: tests/test_drift_resolution_verification.sh:52
-- Issue: `| head -n 2` restricts extraction to the section header plus one body line. This is sufficient only when "(none)" immediately follows the header with no blank line. Test 5 (lines 70–75) provides a complementary check for bullet entries across the full section, which partially compensates, but Test 3 alone would false-fail if the format gains a blank line between header and "(none)".
-- Severity: LOW
-- Action: Remove the `head -n 2` pipe in Test 3 and search the full extracted section for "(none)".
+#### COVERAGE: MANIFEST.cfg branch has zero test coverage
+- File: tests/test_init_report_stub_detection.sh (no test covers this branch)
+- Issue: The detection logic in `lib/init_report.sh:126-128` has two branches: (1) MANIFEST.cfg
+  with pipe-delimited entries (strongest signal per the inline comment), and (2) a non-stub
+  CLAUDE.md with `#### Milestone` headers. All five tests exercise only branch 2. Branch 1 is
+  entirely untested.
+- Severity: MEDIUM
+- Action: Add a test case that creates `.claude/milestones/MANIFEST.cfg` containing a
+  pipe-delimited entry and verifies `_has_milestones` resolves to `true` via the manifest branch.
+  Also add a negative case (MANIFEST.cfg exists but contains no `|`) to confirm it falls through
+  to branch 2.
 
-#### EXERCISE: `lib/drift.sh` is sourced but no drift functions are called
-- File: tests/test_drift_resolution_verification.sh:10
-- Issue: `source "${TEKHTON_HOME}/lib/drift.sh"` is present but no function from it is invoked. All assertions use direct `grep`/`sed` calls on `DRIFT_LOG.md`. The source adds startup overhead and couples the test to parse errors in `drift.sh` unrelated to the task under test.
+#### COVERAGE: Missing CLAUDE.md case not tested
+- File: tests/test_init_report_stub_detection.sh (no test for absent file)
+- Issue: No test covers the case where CLAUDE.md does not exist. The guard `[[ -f "$_claude_md" ]]`
+  at `init_report.sh:129` should cleanly yield `_has_milestones=false`. An absent file could
+  produce unexpected `grep` errors if the guard were accidentally removed.
 - Severity: LOW
-- Action: Remove the `source lib/drift.sh` line. If drift library functions are intended for future expansion, add a comment; otherwise remove to keep the test self-contained.
-
-#### SCOPE: Deleted file `INTAKE_REPORT.md` has no orphaned test references
-- File: tests/test_drift_resolution_verification.sh (all)
-- Issue: None. The test file does not import, reference, or assert anything about `INTAKE_REPORT.md`.
-- Severity: LOW
-- Action: No action required.
+- Action: Add a minimal test case confirming that when neither MANIFEST.cfg nor CLAUDE.md is
+  present, the detection result is `false` with no error output.
 
 ### Positive Observations
 
-- **Assertion Honesty (PASS)**: All assertions derive from actual file/code reads. No hard-coded expected values disconnected from implementation. Test 7 extracts the grep pattern from the real `lib/plan.sh` lines 510–520 and compares it to `^#{2,4}`, consistent with the confirmed fix at line 515 documented in `JR_CODER_SUMMARY.md`.
-- **Regression Confirmation (PASS)**: Test 8 validates both the new pattern (3 milestone-heading levels matched) and the old pattern (2 matched), providing an honest regression anchor. The inline fixture encodes the specification directly.
-- **Implementation Exercise (PASS)**: Tests 7 and 8 exercise the real `lib/plan.sh` artifact and real `grep -E` semantics. Tests 1–6 verify the actual `DRIFT_LOG.md` artifact.
+- **Assertion Honesty (PASS)**: All grep patterns and expected values are derived directly from
+  `lib/init_report.sh:130`. No hard-coded magic values disconnected from implementation.
+- **Regression Anchor (PASS)**: Test 2 (`test_old_pattern_fails`) honestly documents the original
+  bug by confirming the old strict pattern `<!-- TODO:.*--plan -->` does NOT match the actual stub
+  text. This is a legitimate negative regression test.
+- **Test Naming (PASS)**: All five function names clearly encode the scenario and the expected
+  outcome (`test_pattern_no_false_positive_on_real_milestones`, `test_old_pattern_fails`, etc.).
 - **Test Weakening (N/A)**: This is a new test file. No existing tests were modified.
-- **Naming (PASS)**: All assertion labels encode scenario and expected outcome (e.g., `"lib/plan.sh line 515 has corrected pattern (^#{2,4})"`, `"Old pattern ^#{2,3} correctly misses the 4-hash milestone (regression confirmed)"`).
-- **Scope Alignment (PASS)**: The only implementation file changed was `lib/plan.sh:515`. Tests 7 and 8 target precisely that change. Tests 1–6 verify the resolved state of `DRIFT_LOG.md`, which is the stated deliverable of the task.
+- **Scope Alignment (PASS)**: No orphaned imports or stale references. `JR_CODER_SUMMARY.md` was
+  deleted but is not referenced anywhere in the test. `lib/init_report.sh` is present and the
+  pattern under test exists at line 130 as described in TESTER_REPORT.md.
