@@ -1,54 +1,68 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 6 test functions
-Verdict: PASS
+Tests audited: 1 file, 2 new test functions (plus 12 pre-existing functions unchanged)
+Verdict: CONCERNS
 
 ### Findings
 
-#### SCOPE: CODER_SUMMARY.md absent; audit context misstates implementation changes
-- File: tests/test_config_defaults_claude_standard_model.sh (general)
-- Issue: The audit context lists "Implementation Files Changed: none", but `lib/config_defaults.sh` is modified per `git status` and confirmed by REVIEWER_REPORT.md. CODER_SUMMARY.md does not exist in the repo. The tests reference specific implementation line numbers in comments (lines 24–27, 47, 82) and the grep-based Test 4 exercises the real file — so tests are verifiably aligned with the actual fix. The gap is in documentation, not test quality.
+#### INTEGRITY: Unconditional pass() in empty-artifact test
+- File: tests/test_artifact_handler_ops.sh:527
+- Issue: `pass "_merge_artifact_group skips merge gracefully for empty artifact"` fires
+  unconditionally after calling `_merge_artifact_group`. The stated intent is that
+  MERGE_CONTEXT.md was NOT created (because no readable files exist in the empty
+  `.cursor/` directory), but that state is never asserted. Any execution that does not
+  crash — including one that silently wrote content to MERGE_CONTEXT.md — records a
+  pass. This is equivalent to `assertTrue(True)`.
+- Severity: HIGH
+- Action: Replace the unconditional pass() with an explicit assertion:
+  ```bash
+  if [[ ! -f "${MERGE_EMPTY_PROJ}/MERGE_CONTEXT.md" ]]; then
+      pass "_merge_artifact_group skips merge gracefully for empty artifact"
+  else
+      fail "_merge_artifact_group should NOT create MERGE_CONTEXT.md for empty artifact"
+  fi
+  ```
+
+#### EXERCISE: Lazy-load guard test depends on real prompts.sh and template file
+- File: tests/test_artifact_handler_ops.sh:460-507
+- Issue: The guard test correctly mocks `_call_planning_batch` but relies on the real
+  `prompts.sh` being sourced via the guard at `artifact_handler_ops.sh:108-111`, and
+  on `prompts/artifact_merge.prompt.md` existing and being renderable. If either is
+  missing or has unmet transitive dependencies, the test fails for a reason unrelated
+  to the guard itself. The mock at lines 470-481 gates its output on `$_prompt` being
+  non-empty, which requires `render_prompt "artifact_merge"` to succeed end-to-end.
+- Severity: MEDIUM
+- Action: Add a `render_prompt` stub before `_call_planning_batch` to isolate the guard
+  test from template loading concerns:
+  ```bash
+  render_prompt() { echo "STUBBED_PROMPT_FOR_$1"; }
+  ```
+  Undefine it with `unset -f render_prompt` after the test group. This decouples
+  "guard loads prompts.sh when needed" from "render_prompt works end-to-end."
+
+#### COVERAGE: Guard precondition is assumed but not verified
+- File: tests/test_artifact_handler_ops.sh:484
+- Issue: The comment at line 484 states "WITHOUT having sourced prompts.sh beforehand"
+  but the test never asserts this precondition. If an earlier test or a transitively
+  sourced library defined `render_prompt`, the guard would not fire and the test would
+  still pass — proving only that `_merge_artifact_group` works with `render_prompt`
+  already available, not that the guard itself loaded it.
 - Severity: LOW
-- Action: No test changes needed. Ensure CODER_SUMMARY.md is produced by the coder agent on future tasks so the audit context is accurate.
+- Action: Add an explicit precondition check at the start of the test group:
+  ```bash
+  if type render_prompt &>/dev/null; then
+      fail "Precondition: render_prompt already defined before lazy-load guard test"
+  fi
+  ```
 
-#### COVERAGE: Test 4 comment enumerates fewer fix sites than the reviewer identified
-- File: tests/test_config_defaults_claude_standard_model.sh:115-121
-- Issue: The comment lists lines 24, 25, 26, 27, 47, 82 as the fixed lines, but REVIEWER_REPORT.md also identifies lines 238 (CLAUDE_INTAKE_MODEL) and 261 (ARTIFACT_MERGE_MODEL) as having had redundant fallbacks removed. The comment is informational only — Test 4's `grep -E 'CLAUDE_.*MODEL.*:-.*claude-'` scans the entire file and would catch stale fallbacks on any line, including 238 and 261. The structural coverage is complete; the inline comment documentation is incomplete.
+#### COVERAGE: No test for guard failure path (prompts.sh unreachable)
+- File: tests/test_artifact_handler_ops.sh (new test block)
+- Issue: There is no test covering the case where the `source "${_ops_dir}/prompts.sh"`
+  call in the guard fails (e.g., prompts.sh not found in a non-standard install layout).
+  Under `set -euo pipefail` in the implementation, a failed source aborts the function
+  with an error. This failure mode exists and is untested.
 - Severity: LOW
-- Action: Update the comment in Test 4 to note that the grep covers all CLAUDE_*_MODEL lines, or add the two additional line numbers (238, 261) to the existing list.
-
-#### EXERCISE: _clamp_config_value and _clamp_config_float are no-op stubs
-- File: tests/test_config_defaults_claude_standard_model.sh:30-38
-- Issue: Both clamp helpers are stubbed as no-ops, so the clamping block at lines 393–479 of config_defaults.sh is not exercised. This is a conscious and correct trade-off: the task under test is initialization order for CLAUDE_STANDARD_MODEL, not clamping behavior. Existing tests in the broader suite cover clamping. The stubs are required to source config_defaults.sh in isolation without depending on common.sh internals.
-- Severity: LOW
-- Action: No change needed. Adding a comment explaining why the stubs exist (isolation of init-order concern, not clamping) would improve future maintainability.
-
-### Detailed Pass Notes
-
-**Assertion Honesty — GOOD.** All asserted values are traceable to the implementation:
-- `"claude-sonnet-4-6"` (Test 2, line 71): matches `config_defaults.sh:22` exactly.
-- Non-empty derived model checks (Test 3): sourced from real `:=` assignments at lines 24–27, 47, 82.
-- Grep absence check (Test 4): structurally verifies the fix removed hardcoded `:-claude-` fallbacks; the absence is directly observable in the current file state.
-- No hard-coded magic values unmoored from implementation logic.
-
-**Implementation Exercise — GOOD.** All six tests source `lib/config_defaults.sh` directly inside
-subshells. No implementation functions are mocked. Only the two `_clamp_*` helpers are stubbed,
-which is necessary for isolation and does not compromise coverage of the bug being tested.
-
-**Edge Case Coverage — GOOD.** The suite covers:
-- Happy path: variable defined and correct default (Tests 1, 2)
-- Derived variable chain: all downstream model vars non-empty (Test 3)
-- Static structural check: no stale fallback patterns remain (Test 4)
-- Bug reproduction case: strict mode + clean environment → no crash (Test 5)
-- Idempotency: preset values from pipeline.conf not overwritten by defaults (Test 6)
-
-**Test Weakening — N/A.** This is a new test file; no existing tests were modified.
-
-**Naming — GOOD.** Function names encode both the scenario and expected outcome:
-`test_no_unbound_crash_in_strict_mode`, `test_preset_values_respected`,
-`test_no_redundant_fallbacks`, `test_derived_models_safe`. All are self-documenting.
-
-**Scope Alignment — GOOD.** Tests directly exercise `lib/config_defaults.sh` and verify the
-exact failure mode described in the task (unbound variable crash in express mode). The file
-exists, is sourced correctly, and all assertions reflect the current state of the implementation.
+- Action: Consider a negative test that mocks or redirects `_ops_dir` to a path without
+  prompts.sh, then verifies `_merge_artifact_group` exits non-zero and writes no partial
+  output to MERGE_CONTEXT.md.

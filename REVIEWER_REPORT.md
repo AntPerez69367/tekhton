@@ -1,25 +1,19 @@
 # Reviewer Report
 
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- None
+- `lib/artifact_handler_ops.sh` is 308 lines — 8 over the 300-line soft ceiling. The change added ~5 net new lines; consider extracting the merge prompt/batch orchestration into a `_run_merge_batch()` helper during the next cleanup pass.
 
 ## Coverage Gaps
-- None
+- `tests/test_artifact_handler_ops.sh` does not appear to test the new `render_prompt` lazy-load path (i.e., calling `_merge_artifact_group` when `prompts.sh` has not been sourced). A test case that stubs `prompts.sh` absent would confirm the guard fires correctly.
 
 ## Drift Observations
-- None
-
----
-
-**Review summary:**
-
-The fix is minimal and correct. `CLAUDE_STANDARD_MODEL` is now assigned its default on line 22 before any derived model variable references it — resolving the `set -euo pipefail` unbound-variable crash in express mode. All downstream bare `${CLAUDE_STANDARD_MODEL}` references (lines 82, 221, 238, 261, 372, 375, 378, 387) appear after the assignment and are safe. The cleanup of redundant `:-claude-sonnet-4-6` fallback suffixes on lines 24–27, 238, and 261 is consistent and complete — no stale fallbacks remain. No shellcheck issues, no ordering edge cases.
+None

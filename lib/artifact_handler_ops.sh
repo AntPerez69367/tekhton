@@ -94,12 +94,20 @@ _merge_artifact_group() {
         return 0
     fi
 
+    local _ops_dir="${BASH_SOURCE[0]%/*}"
+
     # Ensure _call_planning_batch is available — it lives in plan.sh which is
     # only sourced during --plan, not during --init.  Lazy-load it here.
     if ! type _call_planning_batch &>/dev/null; then
-        local _ops_dir="${BASH_SOURCE[0]%/*}"
         # shellcheck source=lib/plan.sh
         source "${_ops_dir}/plan.sh"
+    fi
+
+    # Ensure render_prompt is available — it lives in prompts.sh which is
+    # only sourced during the execution pipeline, not during --init.
+    if ! type render_prompt &>/dev/null; then
+        # shellcheck source=lib/prompts.sh
+        source "${_ops_dir}/prompts.sh"
     fi
 
     # Set variables for prompt rendering
