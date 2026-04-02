@@ -35,9 +35,16 @@ PIPELINE_ORDER=test_first
 # Output file for the preflight test spec
 TDD_PREFLIGHT_FILE=TESTER_PREFLIGHT.md
 
+# Turn limit for the preflight (write-failing) tester
+TESTER_WRITE_FAILING_MAX_TURNS=15
+
 # Coder turn multiplier in test_first mode (tests add context)
 CODER_TDD_TURN_MULTIPLIER=1.2
 ```
+
+The `TESTER_WRITE_FAILING_MAX_TURNS` controls the turn budget for the preflight
+tester that writes failing tests. It defaults to 15, which is lower than a full
+tester run since the preflight only writes specs without running validation.
 
 The `CODER_TDD_TURN_MULTIPLIER` gives the coder slightly more turns in TDD mode,
 since it needs to read and satisfy the test spec in addition to the task itself.

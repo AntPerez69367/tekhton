@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-01
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-04-01 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/progress.sh:192-209` — `_get_timing_breakdown` injects stage names directly as JSON keys without escaping. Stage names are controlled pipeline constants so this is safe in practice, but a stage name containing `"` or `` would produce invalid JSON. Pre-existing concern not introduced by this change.

@@ -1,22 +1,19 @@
-# Reviewer Report — M51 V3 Documentation & README Finalization (Cycle 2)
+# Reviewer Report
 
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `docs/guides/tdd-mode.md` — Configuration section lists `TDD_PREFLIGHT_FILE` and `CODER_TDD_TURN_MULTIPLIER` but omits `TESTER_WRITE_FAILING_MAX_TURNS` (present in `config_defaults.sh:291`). Not wrong, just incomplete for a user trying to tune the preflight tester's turn budget.
+- `docs/guides/tdd-mode.md:62` — Limitations section says "The tester preflight runs with the same turn budget as a normal tester stage" but the Configuration section now correctly documents `TESTER_WRITE_FAILING_MAX_TURNS=15` (explicitly lower). These two sentences contradict each other; the Limitations text should be updated to reflect the dedicated turn limit.
 
 ## Coverage Gaps
-- None
-
-## ACP Verdicts
 None
 
 ## Drift Observations
-- None
+None
