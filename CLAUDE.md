@@ -230,7 +230,7 @@ agent roles.
 
 1. **Project-agnostic.** Tekhton must never contain project-specific logic.
    All project configuration is in `pipeline.conf` and agent role files.
-2. **Bash 4+.** All scripts use `set -euo pipefail`. No bashisms beyond bash 4.
+2. **Bash 4.3+.** All scripts use `set -euo pipefail`. No bashisms beyond bash 4.3.
 3. **Shellcheck clean.** All `.sh` files pass `shellcheck` with zero warnings.
 4. **Deterministic.** Given the same config.conf and task, pipeline behavior is identical.
 5. **Resumable.** Pipeline state is saved on interruption. Re-running resumes.

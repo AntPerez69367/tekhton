@@ -1,54 +1,47 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 6 test functions
-Verdict: PASS
+Tests audited: 1 file, 10 test blocks
+Verdict: CONCERNS
+
+---
 
 ### Findings
 
-#### SCOPE: CODER_SUMMARY.md absent; audit context misstates implementation changes
-- File: tests/test_config_defaults_claude_standard_model.sh (general)
-- Issue: The audit context lists "Implementation Files Changed: none", but `lib/config_defaults.sh` is modified per `git status` and confirmed by REVIEWER_REPORT.md. CODER_SUMMARY.md does not exist in the repo. The tests reference specific implementation line numbers in comments (lines 24–27, 47, 82) and the grep-based Test 4 exercises the real file — so tests are verifiably aligned with the actual fix. The gap is in documentation, not test quality.
+#### COVERAGE: Core implementation fix is untested
+- File: tests/test_drift_resolution_verification.sh (all test blocks)
+- Issue: Observation 1 was resolved by updating `CLAUDE.md` line 233 from "Bash 4+" to "Bash 4.3+". This is the only code-level change made (per JR_CODER_SUMMARY.md). No assertion in the suite verifies that `CLAUDE.md` now contains "Bash 4.3+". All 10 test blocks check `DRIFT_LOG.md` only — they verify the paper trail of resolution, not that the underlying issue was actually fixed. A passing test suite would not catch a revert of the CLAUDE.md change.
+- Severity: HIGH
+- Action: Add an assertion: `assert_file_contains "CLAUDE.md documents bash 4.3+ requirement" "${PROJECT_DIR}/CLAUDE.md" "Bash 4\.3+"`. This directly tests the implementation fix documented in JR_CODER_SUMMARY.md.
+
+#### EXERCISE: lib/drift.sh is sourced but never called
+- File: tests/test_drift_resolution_verification.sh:11-12
+- Issue: The test sources both `lib/common.sh` and `lib/drift.sh` at startup, but no function from either library is invoked anywhere in the file. All assertions are direct `grep`/`sed` invocations on `DRIFT_LOG.md`. The `lib/drift.sh` import is dead weight — it adds startup overhead, possible side effects from library initialization, and fragility if `drift.sh` has a syntax error unrelated to the task under test, while contributing zero coverage of library behavior.
+- Severity: MEDIUM
+- Action: Remove `source "${TEKHTON_HOME}/lib/drift.sh"` (and `lib/common.sh` if none of its exports are used). If drift library functions are intended for future expansion, add a comment; otherwise remove to keep the test self-contained.
+
+#### INTEGRITY: Hardcoded resolution date makes count assertion imprecise
+- File: tests/test_drift_resolution_verification.sh:115-116
+- Issue: Test 6 counts occurrences of the literal string `[RESOLVED 2026-04-02]` and asserts exactly 2. If either of the two specific resolved entries were silently replaced with two different entries resolved on the same date, this assertion still passes — it verifies count and date but not the specific content of each resolved observation. The individual content checks in Tests 4 and 5 partly compensate, but only if all three tests are run together; Test 6 in isolation is insufficient.
+- Severity: MEDIUM
+- Action: No structural change required if Tests 4, 5, and 6 always run together. Add an inline comment making this dependency explicit: `# Relies on Tests 4 and 5 to verify content; this test verifies count only.`
+
+#### COVERAGE: Stale "Bash 4+" reference in CLAUDE.md not verified
+- File: tests/test_drift_resolution_verification.sh (gap — no test block)
+- Issue: `CLAUDE.md` line 569 still reads "Bash 4+" ("Bash 4+ for all .sh files." in the V3 constraints section). The coder updated only line 233. The test suite does not check for remaining stale references, so this inconsistency is invisible to automation. Whether line 569 is an intentional separate constraint or an oversight is undocumented.
 - Severity: LOW
-- Action: No test changes needed. Ensure CODER_SUMMARY.md is produced by the coder agent on future tasks so the audit context is accurate.
+- Action: Either add an assertion verifying no bare "Bash 4" (without ".3") remains in version-constraint contexts in `CLAUDE.md`, or add a comment in the test acknowledging line 569 is a distinct, intentionally looser scope.
 
-#### COVERAGE: Test 4 comment enumerates fewer fix sites than the reviewer identified
-- File: tests/test_config_defaults_claude_standard_model.sh:115-121
-- Issue: The comment lists lines 24, 25, 26, 27, 47, 82 as the fixed lines, but REVIEWER_REPORT.md also identifies lines 238 (CLAUDE_INTAKE_MODEL) and 261 (ARTIFACT_MERGE_MODEL) as having had redundant fallbacks removed. The comment is informational only — Test 4's `grep -E 'CLAUDE_.*MODEL.*:-.*claude-'` scans the entire file and would catch stale fallbacks on any line, including 238 and 261. The structural coverage is complete; the inline comment documentation is incomplete.
+#### COVERAGE: Test 10 (markdown structure) is near-trivially true
+- File: tests/test_drift_resolution_verification.sh:152-156
+- Issue: Test 10 passes whenever `DRIFT_LOG.md` contains at least one `##` heading. Any non-empty markdown file satisfies this condition. It provides no protection against the specific structural regressions that matter (e.g., merged sections, missing `## Unresolved Observations`, missing `## Resolved`). Those specific checks are already performed by Test 2's four `assert_file_contains` calls, making Test 10 redundant.
 - Severity: LOW
-- Action: Update the comment in Test 4 to note that the grep covers all CLAUDE_*_MODEL lines, or add the two additional line numbers (238, 261) to the existing list.
+- Action: Remove Test 10 (structural coverage already provided by Test 2), or replace it with an exact section-count assertion: `assert_eq "drift log has exactly 3 sections" "3" "$(grep -c '^##' DRIFT_LOG.md)"`.
 
-#### EXERCISE: _clamp_config_value and _clamp_config_float are no-op stubs
-- File: tests/test_config_defaults_claude_standard_model.sh:30-38
-- Issue: Both clamp helpers are stubbed as no-ops, so the clamping block at lines 393–479 of config_defaults.sh is not exercised. This is a conscious and correct trade-off: the task under test is initialization order for CLAUDE_STANDARD_MODEL, not clamping behavior. Existing tests in the broader suite cover clamping. The stubs are required to source config_defaults.sh in isolation without depending on common.sh internals.
-- Severity: LOW
-- Action: No change needed. Adding a comment explaining why the stubs exist (isolation of init-order concern, not clamping) would improve future maintainability.
+---
 
-### Detailed Pass Notes
+### Scope Alignment Notes
 
-**Assertion Honesty — GOOD.** All asserted values are traceable to the implementation:
-- `"claude-sonnet-4-6"` (Test 2, line 71): matches `config_defaults.sh:22` exactly.
-- Non-empty derived model checks (Test 3): sourced from real `:=` assignments at lines 24–27, 47, 82.
-- Grep absence check (Test 4): structurally verifies the fix removed hardcoded `:-claude-` fallbacks; the absence is directly observable in the current file state.
-- No hard-coded magic values unmoored from implementation logic.
-
-**Implementation Exercise — GOOD.** All six tests source `lib/config_defaults.sh` directly inside
-subshells. No implementation functions are mocked. Only the two `_clamp_*` helpers are stubbed,
-which is necessary for isolation and does not compromise coverage of the bug being tested.
-
-**Edge Case Coverage — GOOD.** The suite covers:
-- Happy path: variable defined and correct default (Tests 1, 2)
-- Derived variable chain: all downstream model vars non-empty (Test 3)
-- Static structural check: no stale fallback patterns remain (Test 4)
-- Bug reproduction case: strict mode + clean environment → no crash (Test 5)
-- Idempotency: preset values from pipeline.conf not overwritten by defaults (Test 6)
-
-**Test Weakening — N/A.** This is a new test file; no existing tests were modified.
-
-**Naming — GOOD.** Function names encode both the scenario and expected outcome:
-`test_no_unbound_crash_in_strict_mode`, `test_preset_values_respected`,
-`test_no_redundant_fallbacks`, `test_derived_models_safe`. All are self-documenting.
-
-**Scope Alignment — GOOD.** Tests directly exercise `lib/config_defaults.sh` and verify the
-exact failure mode described in the task (unbound variable crash in express mode). The file
-exists, is sourced correctly, and all assertions reflect the current state of the implementation.
+- The audit context states "Implementation files changed: none" but `JR_CODER_SUMMARY.md` documents that `CLAUDE.md` was modified at line 233, and `DRIFT_LOG.md` was directly edited. The COVERAGE finding above addresses this discrepancy.
+- No orphaned test references detected. No functions, modules, or behaviors were deleted by the coder.
+- `lib/drift.sh` is sourced but not called — this is a dead import, not a stale reference to a removed function.

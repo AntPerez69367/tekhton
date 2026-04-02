@@ -59,6 +59,57 @@ MANIFEST_EOF
 }
 
 # --- Merge ---
+# _run_merge_batch — Lazy-loads dependencies and runs the merge agent.
+# Args: $1 = tool name, $2 = collected content, $3 = project dir,
+#        $4 = merge context file
+_run_merge_batch() {
+    local tool_name="$1" collected_content="$2"
+    local project_dir="$3" merge_context_file="$4"
+    local _ops_dir="${BASH_SOURCE[0]%/*}"
+
+    # Lazy-load plan.sh (_call_planning_batch) and prompts.sh (render_prompt)
+    # — neither is sourced during --init.
+    if ! type _call_planning_batch &>/dev/null; then
+        # shellcheck source=lib/plan.sh
+        source "${_ops_dir}/plan.sh"
+    fi
+    if ! type render_prompt &>/dev/null; then
+        # shellcheck source=lib/prompts.sh
+        source "${_ops_dir}/prompts.sh"
+    fi
+
+    export MERGE_ARTIFACT_CONTENT="$collected_content"
+    export MERGE_TOOL_NAME="$tool_name"
+
+    local model="${ARTIFACT_MERGE_MODEL:-${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+    local max_turns="${ARTIFACT_MERGE_MAX_TURNS:-10}"
+    local log_dir="${project_dir}/.claude/logs"
+    mkdir -p "$log_dir"
+    local log_file
+    log_file="${log_dir}/$(date +"%Y%m%d_%H%M%S")_artifact-merge.log"
+
+    local prompt
+    prompt=$(render_prompt "artifact_merge")
+
+    printf '=== Tekhton Artifact Merge (%s) ===\nDate: %s\nModel: %s\n=== Session Start ===\n' \
+        "$tool_name" "$(date)" "$model" > "$log_file"
+
+    local merge_output="" batch_exit=0
+    merge_output=$(_call_planning_batch \
+        "$model" "$max_turns" "$prompt" "$log_file") || batch_exit=$?
+
+    printf '=== Session End ===\nExit code: %s\n' "$batch_exit" >> "$log_file"
+
+    if [[ -n "$merge_output" ]]; then
+        [[ -f "$merge_context_file" ]] && printf '\n\n---\n\n' >> "$merge_context_file"
+        printf '%s\n' "$merge_output" >> "$merge_context_file"
+        success "Merged ${tool_name} config → MERGE_CONTEXT.md"
+    else
+        warn "Merge agent produced no output for ${tool_name}."
+    fi
+
+    unset MERGE_ARTIFACT_CONTENT MERGE_TOOL_NAME
+}
 # _merge_artifact_group — Invokes merge agent to extract useful content.
 # Args: $1 = project dir, $2 = tool name, $3 = group artifacts
 _merge_artifact_group() {
@@ -94,59 +145,8 @@ _merge_artifact_group() {
         return 0
     fi
 
-    # Ensure _call_planning_batch is available — it lives in plan.sh which is
-    # only sourced during --plan, not during --init.  Lazy-load it here.
-    if ! type _call_planning_batch &>/dev/null; then
-        local _ops_dir="${BASH_SOURCE[0]%/*}"
-        # shellcheck source=lib/plan.sh
-        source "${_ops_dir}/plan.sh"
-    fi
-
-    # Set variables for prompt rendering
-    export MERGE_ARTIFACT_CONTENT="$collected_content"
-    export MERGE_TOOL_NAME="$tool_name"
-
-    local model="${ARTIFACT_MERGE_MODEL:-${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
-    local max_turns="${ARTIFACT_MERGE_MAX_TURNS:-10}"
-    local log_dir="${project_dir}/.claude/logs"
-    local timestamp
-    timestamp=$(date +"%Y%m%d_%H%M%S")
-    local log_file="${log_dir}/${timestamp}_artifact-merge.log"
-
-    mkdir -p "$log_dir"
-
-    local prompt
-    prompt=$(render_prompt "artifact_merge")
-
-    {
-        echo "=== Tekhton Artifact Merge (${tool_name}) ==="
-        echo "Date: $(date)"
-        echo "Model: ${model}"
-        echo "=== Session Start ==="
-    } > "$log_file"
-
-    local merge_output=""
-    local batch_exit=0
-    merge_output=$(_call_planning_batch \
-        "$model" "$max_turns" "$prompt" "$log_file") || batch_exit=$?
-
-    {
-        echo "=== Session End ==="
-        echo "Exit code: ${batch_exit}"
-    } >> "$log_file"
-
-    if [[ -n "$merge_output" ]]; then
-        # Append to existing MERGE_CONTEXT.md (multiple tools can merge)
-        if [[ -f "$merge_context_file" ]]; then
-            printf '\n\n---\n\n' >> "$merge_context_file"
-        fi
-        printf '%s\n' "$merge_output" >> "$merge_context_file"
-        success "Merged ${tool_name} config → MERGE_CONTEXT.md"
-    else
-        warn "Merge agent produced no output for ${tool_name}."
-    fi
-
-    unset MERGE_ARTIFACT_CONTENT MERGE_TOOL_NAME
+    _run_merge_batch "$tool_name" "$collected_content" \
+        "$project_dir" "$merge_context_file"
 }
 
 # _collect_dir_content — Collects .md/.json/.yaml content from a directory.
