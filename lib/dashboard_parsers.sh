@@ -368,6 +368,13 @@ print(json.dumps(results))
         fi
         result="${result}${json_content}"
         count=$(( count + 1 ))
+    # Note: Divergent depth-counting semantics from Python path. The Python branch above
+    # uses lines[-depth:] to select the last depth JSONL lines, then filters zero-turn
+    # records — so zero-turn records consume the depth budget. This bash fallback reads
+    # tail -n "$depth" lines but increments count only for non-zero-turn records (the
+    # continue guard skips them). Result: the bash path can return fewer records than
+    # the Python path when many consecutive crash/noise records are present and depth
+    # is the binding constraint. This divergence is benign for normal usage patterns.
     done < <(tail -n "$depth" "$metrics_file" 2>/dev/null | tac 2>/dev/null || tail -n "$depth" "$metrics_file")
 
     result="${result}]"
@@ -385,6 +392,10 @@ _parse_run_summaries_from_files() {
     local first=true
     local count=0
 
+    # Note: No zero-turn filter is required here. RUN_SUMMARY_*.json files are written
+    # only on successful pipeline completion by _hook_finalize. Unlike metrics.jsonl,
+    # which accumulates noise records from error traps and crash paths, these JSON files
+    # are never produced by failure modes — every record represents a completed run.
     while IFS= read -r summary_file; do
         [[ "$count" -ge "$depth" ]] && break
         [[ ! -f "$summary_file" ]] && continue
