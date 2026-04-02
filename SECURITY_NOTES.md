@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-03-25 17:59:10
+Generated: 2026-04-02 07:35:29
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A05] [lib/init_config.sh:202] fixable:yes — `_merge_preserved_values()` creates a predictable tmpfile (`${conf_file}.merge.$$`) with no cleanup trap. If the process is killed mid-rewrite (SIGINT, SIGTERM, or `set -e` exit), the stale `.merge.<PID>` file is left in the project directory alongside the original config. Add `trap 'rm -f "$tmpfile"' EXIT INT TERM` immediately after `local tmpfile=...` to guarantee cleanup on abnormal exit.
+- [LOW] [category:A03] [lib/dashboard_parsers_runs_files.sh:75] fixable:yes — SECURITY_NOTES.md cites line 84 as the location of the `_json_escape` fix in the sed fallback path, but the JSON construction where the fix applies is at line 75. Line 84 is `result="${result}${json_content}"`. The fix is present and correct; only the reference line number in the notes is off by ~9 lines. Informational only — no security risk.

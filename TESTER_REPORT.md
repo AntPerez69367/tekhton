@@ -1,30 +1,19 @@
 ## Planned Tests
-- [x] Drift Observation Verification — confirmed all 3 resolved observations properly documented
+No new tests required — Reviewer report shows **Coverage Gaps: None**
 
 ## Test Run Results
 Passed: 1  Failed: 0
+
+**Verification Summary:**
+- Syntax check: `bash -n` passes for all refactored files ✓
+- Sourcing chain: `dashboard_parsers_runs.sh` → `dashboard_parsers_runs_files.sh` works correctly ✓
+- Function availability: Both `_parse_run_summaries` and `_parse_run_summaries_from_files` available after sourcing ✓
+- Existing test: `tests/test_nonblocking_log_structure.sh` PASS (2/2) — confirms proper NON_BLOCKING_LOG.md layout ✓
+- DRIFT_LOG.md: No unresolved observations ✓
+- NON_BLOCKING_LOG.md: Both items resolved and moved to Resolved section ✓
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] TESTER_REPORT.md (verified resolution of all drift observations)
-
-## Summary
-
-This milestone's task was to "resolve all 1 unresolved architectural drift observations in DRIFT_LOG.md."
-
-**Status:** COMPLETE. All observations were already resolved by the Coder stage:
-
-1. **`_try_preflight_fix()` grep false-positive counts** (lib/orchestrate_helpers.sh:86-89)
-   - Explanatory comment added documenting that the grep pattern may over-count but is accepted because the heuristic uses exit codes for correctness.
-
-2. **Regression abort threshold `+2`** (lib/orchestrate_helpers.sh:139-142)
-   - Explanatory comment added documenting that the +2 accommodates measurement noise in grep counts across runs.
-
-3. **`lib/progress.sh:192-209` JSON key escaping** (lib/progress.sh:202)
-   - Safe-code comment added noting that `_stg` keys come exclusively from pipeline constants, never from user input.
-
-**Reviewer Assessment:** APPROVED with no coverage gaps or blockers.
-
-All drift observations are now properly documented and resolved. No additional test coverage is required.
+No new test files required (reviewer identified no coverage gaps)
