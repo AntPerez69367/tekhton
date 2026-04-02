@@ -1,68 +1,47 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 2 new test functions (plus 12 pre-existing functions unchanged)
+Tests audited: 1 file, 10 test blocks
 Verdict: CONCERNS
+
+---
 
 ### Findings
 
-#### INTEGRITY: Unconditional pass() in empty-artifact test
-- File: tests/test_artifact_handler_ops.sh:527
-- Issue: `pass "_merge_artifact_group skips merge gracefully for empty artifact"` fires
-  unconditionally after calling `_merge_artifact_group`. The stated intent is that
-  MERGE_CONTEXT.md was NOT created (because no readable files exist in the empty
-  `.cursor/` directory), but that state is never asserted. Any execution that does not
-  crash — including one that silently wrote content to MERGE_CONTEXT.md — records a
-  pass. This is equivalent to `assertTrue(True)`.
+#### COVERAGE: Core implementation fix is untested
+- File: tests/test_drift_resolution_verification.sh (all test blocks)
+- Issue: Observation 1 was resolved by updating `CLAUDE.md` line 233 from "Bash 4+" to "Bash 4.3+". This is the only code-level change made (per JR_CODER_SUMMARY.md). No assertion in the suite verifies that `CLAUDE.md` now contains "Bash 4.3+". All 10 test blocks check `DRIFT_LOG.md` only — they verify the paper trail of resolution, not that the underlying issue was actually fixed. A passing test suite would not catch a revert of the CLAUDE.md change.
 - Severity: HIGH
-- Action: Replace the unconditional pass() with an explicit assertion:
-  ```bash
-  if [[ ! -f "${MERGE_EMPTY_PROJ}/MERGE_CONTEXT.md" ]]; then
-      pass "_merge_artifact_group skips merge gracefully for empty artifact"
-  else
-      fail "_merge_artifact_group should NOT create MERGE_CONTEXT.md for empty artifact"
-  fi
-  ```
+- Action: Add an assertion: `assert_file_contains "CLAUDE.md documents bash 4.3+ requirement" "${PROJECT_DIR}/CLAUDE.md" "Bash 4\.3+"`. This directly tests the implementation fix documented in JR_CODER_SUMMARY.md.
 
-#### EXERCISE: Lazy-load guard test depends on real prompts.sh and template file
-- File: tests/test_artifact_handler_ops.sh:460-507
-- Issue: The guard test correctly mocks `_call_planning_batch` but relies on the real
-  `prompts.sh` being sourced via the guard at `artifact_handler_ops.sh:108-111`, and
-  on `prompts/artifact_merge.prompt.md` existing and being renderable. If either is
-  missing or has unmet transitive dependencies, the test fails for a reason unrelated
-  to the guard itself. The mock at lines 470-481 gates its output on `$_prompt` being
-  non-empty, which requires `render_prompt "artifact_merge"` to succeed end-to-end.
+#### EXERCISE: lib/drift.sh is sourced but never called
+- File: tests/test_drift_resolution_verification.sh:11-12
+- Issue: The test sources both `lib/common.sh` and `lib/drift.sh` at startup, but no function from either library is invoked anywhere in the file. All assertions are direct `grep`/`sed` invocations on `DRIFT_LOG.md`. The `lib/drift.sh` import is dead weight — it adds startup overhead, possible side effects from library initialization, and fragility if `drift.sh` has a syntax error unrelated to the task under test, while contributing zero coverage of library behavior.
 - Severity: MEDIUM
-- Action: Add a `render_prompt` stub before `_call_planning_batch` to isolate the guard
-  test from template loading concerns:
-  ```bash
-  render_prompt() { echo "STUBBED_PROMPT_FOR_$1"; }
-  ```
-  Undefine it with `unset -f render_prompt` after the test group. This decouples
-  "guard loads prompts.sh when needed" from "render_prompt works end-to-end."
+- Action: Remove `source "${TEKHTON_HOME}/lib/drift.sh"` (and `lib/common.sh` if none of its exports are used). If drift library functions are intended for future expansion, add a comment; otherwise remove to keep the test self-contained.
 
-#### COVERAGE: Guard precondition is assumed but not verified
-- File: tests/test_artifact_handler_ops.sh:484
-- Issue: The comment at line 484 states "WITHOUT having sourced prompts.sh beforehand"
-  but the test never asserts this precondition. If an earlier test or a transitively
-  sourced library defined `render_prompt`, the guard would not fire and the test would
-  still pass — proving only that `_merge_artifact_group` works with `render_prompt`
-  already available, not that the guard itself loaded it.
-- Severity: LOW
-- Action: Add an explicit precondition check at the start of the test group:
-  ```bash
-  if type render_prompt &>/dev/null; then
-      fail "Precondition: render_prompt already defined before lazy-load guard test"
-  fi
-  ```
+#### INTEGRITY: Hardcoded resolution date makes count assertion imprecise
+- File: tests/test_drift_resolution_verification.sh:115-116
+- Issue: Test 6 counts occurrences of the literal string `[RESOLVED 2026-04-02]` and asserts exactly 2. If either of the two specific resolved entries were silently replaced with two different entries resolved on the same date, this assertion still passes — it verifies count and date but not the specific content of each resolved observation. The individual content checks in Tests 4 and 5 partly compensate, but only if all three tests are run together; Test 6 in isolation is insufficient.
+- Severity: MEDIUM
+- Action: No structural change required if Tests 4, 5, and 6 always run together. Add an inline comment making this dependency explicit: `# Relies on Tests 4 and 5 to verify content; this test verifies count only.`
 
-#### COVERAGE: No test for guard failure path (prompts.sh unreachable)
-- File: tests/test_artifact_handler_ops.sh (new test block)
-- Issue: There is no test covering the case where the `source "${_ops_dir}/prompts.sh"`
-  call in the guard fails (e.g., prompts.sh not found in a non-standard install layout).
-  Under `set -euo pipefail` in the implementation, a failed source aborts the function
-  with an error. This failure mode exists and is untested.
+#### COVERAGE: Stale "Bash 4+" reference in CLAUDE.md not verified
+- File: tests/test_drift_resolution_verification.sh (gap — no test block)
+- Issue: `CLAUDE.md` line 569 still reads "Bash 4+" ("Bash 4+ for all .sh files." in the V3 constraints section). The coder updated only line 233. The test suite does not check for remaining stale references, so this inconsistency is invisible to automation. Whether line 569 is an intentional separate constraint or an oversight is undocumented.
 - Severity: LOW
-- Action: Consider a negative test that mocks or redirects `_ops_dir` to a path without
-  prompts.sh, then verifies `_merge_artifact_group` exits non-zero and writes no partial
-  output to MERGE_CONTEXT.md.
+- Action: Either add an assertion verifying no bare "Bash 4" (without ".3") remains in version-constraint contexts in `CLAUDE.md`, or add a comment in the test acknowledging line 569 is a distinct, intentionally looser scope.
+
+#### COVERAGE: Test 10 (markdown structure) is near-trivially true
+- File: tests/test_drift_resolution_verification.sh:152-156
+- Issue: Test 10 passes whenever `DRIFT_LOG.md` contains at least one `##` heading. Any non-empty markdown file satisfies this condition. It provides no protection against the specific structural regressions that matter (e.g., merged sections, missing `## Unresolved Observations`, missing `## Resolved`). Those specific checks are already performed by Test 2's four `assert_file_contains` calls, making Test 10 redundant.
+- Severity: LOW
+- Action: Remove Test 10 (structural coverage already provided by Test 2), or replace it with an exact section-count assertion: `assert_eq "drift log has exactly 3 sections" "3" "$(grep -c '^##' DRIFT_LOG.md)"`.
+
+---
+
+### Scope Alignment Notes
+
+- The audit context states "Implementation files changed: none" but `JR_CODER_SUMMARY.md` documents that `CLAUDE.md` was modified at line 233, and `DRIFT_LOG.md` was directly edited. The COVERAGE finding above addresses this discrepancy.
+- No orphaned test references detected. No functions, modules, or behaviors were deleted by the coder.
+- `lib/drift.sh` is sourced but not called — this is a dead import, not a stale reference to a removed function.
