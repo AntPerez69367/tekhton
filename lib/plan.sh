@@ -549,8 +549,12 @@ _print_next_steps() {
     echo
     log "Next steps:"
     log "  1. Review the generated files and make any manual edits"
-    log "  2. Run: tekhton --init    (scaffold pipeline config)"
-    log "  3. Run: tekhton \"Implement Milestone 1: <title>\""
+    if [[ -f "${PROJECT_DIR}/.claude/pipeline.conf" ]]; then
+        log "  2. Run: tekhton \"Implement Milestone 1: <title>\""
+    else
+        log "  2. Run: tekhton --init    (generate pipeline config & agent roles)"
+        log "  3. Run: tekhton \"Implement Milestone 1: <title>\""
+    fi
     echo
 }
 
