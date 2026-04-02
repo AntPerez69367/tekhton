@@ -136,7 +136,9 @@ tekhton/
 │   ├── milestone_archival_helpers.sh # [3.0] Archival helper functions
 │   ├── metrics_dashboard.sh # [3.0] Metrics dashboard formatting
 │   ├── drift_prune.sh      # [3.0] Drift log pruning
-│   └── quota.sh            # [3.0] API quota management
+│   ├── quota.sh            # [3.0] API quota management
+│   ├── error_patterns.sh   # [3.0] Error pattern registry + classification engine
+│   └── preflight.sh        # [3.0] Pre-flight environment validation
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # [3.0] Task intake / PM gate
@@ -389,6 +391,9 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PIPELINE_ORDER` | Stage order: standard or test_first (default: standard) |
 | `DRY_RUN_CACHE_TTL` | Dry-run cache validity in seconds (default: 3600) |
 | `RUN_MEMORY_MAX_ENTRIES` | Max entries in structured run memory (default: 50) |
+| `PREFLIGHT_ENABLED` | Toggle pre-flight environment checks (default: true) |
+| `PREFLIGHT_AUTO_FIX` | Allow auto-remediation of safe issues in pre-flight (default: true) |
+| `PREFLIGHT_FAIL_ON_WARN` | Treat pre-flight warnings as failures (default: false) |
 
 ## Testing
 
@@ -614,100 +619,45 @@ Pipeline Stage Flow (v3):
 
 ### Milestone Plan
 
-<!-- Milestones are managed as individual files in /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/.
+<!-- Milestones are managed as individual files in .claude/milestones/.
      See MANIFEST.cfg for ordering and dependencies. -->
 
-# Tekhton Milestone Manifest v1
-# id|title|status|depends_on|file|parallel_group
-m01|DAG Infrastructure|pending||m01-dag-infra.md|foundation
-m02|Sliding Window|pending|m01|m02-sliding-window.md|foundation
-```
+## Active Initiative: Environment Intelligence (Milestones 53–56)
 
-Acceptance criteria:
-- `has_milestone_manifest()` returns 0 when MANIFEST.cfg exists, 1 otherwise
-- `load_manifest()` correctly parses a multi-line manifest into parallel arrays
-- `dag_deps_satisfied()` returns 0 only when all deps have status=done
-- `dag_get_frontier()` returns only milestones whose deps are all done
-- `validate_manifest()` detects: missing dep references, circular deps, missing files
-- `dag_set_status()` + `save_manifest()` roundtrips correctly (read-modify-write)
-- `migrate_inline_milestones()` extracts all milestones from a CLAUDE.md, creates
-  individual files, generates a valid MANIFEST.cfg
-- `parse_milestones_auto()` returns data from manifest in the same format as inline
-- When no manifest exists, all functions fall back to existing v2 behavior unchanged
-- `find_next_milestone()` respects DAG edges when manifest is present
-- `mark_milestone_done()` updates manifest status when manifest is present
-- `archive_completed_milestone()` and `split_milestone()` work with file-based milestones
-- All existing tests pass (`bash tests/run_tests.sh`)
-- `bash -n lib/milestone_dag.sh lib/milestone_dag_migrate.sh` passes
-- `shellcheck lib/milestone_dag.sh lib/milestone_dag_migrate.sh` passes
-- New test file `tests/test_milestone_dag.sh` covers: manifest parsing, DAG queries,
-  frontier detection, cycle detection, migration, status updates
+Tekhton has been self-hosting (building itself — a pure shell project). Real-world
+projects introduce failure modes the pipeline was never designed for: missing browser
+binaries, stale `node_modules`, databases not running, generated code out of date,
+port conflicts, wrong runtime versions. These are **not code bugs** but the build gate
+treats them identically — dumping raw output and hoping the build-fix agent figures
+it out. The agent cannot: it has no shell context, no environment awareness, and no
+guidance to distinguish `npx playwright install` from a TypeScript compilation error.
 
-Watch For:
-- `_DAG_IDX` associative array requires `declare -A` (bash 4+ — already enforced).
-- Milestone IDs in the manifest (`m01`) differ from display numbers (`1`) used in
-  task strings and commit messages. The `dag_id_to_number()`/`dag_number_to_id()`
-  conversion must handle both formats seamlessly.
-- Manifest writes must be atomic (tmpfile+mv) — same pattern as milestone_archival.
-- `_extract_milestone_block()` in `milestone_archival_helpers.sh` is reused by
-  migration. The migration function must use the same helper for consistent block
-  boundary detection.
-- Circular dependency detection: DFS with visited set. Report cycle path in error.
-- `.claude/milestones/` directory must be created by migration or plan generation,
-  NOT eagerly at startup if no milestones exist.
+The Environment Intelligence initiative adds three layers of defense:
 
-Seeds Forward:
-- Milestone 2 consumes the manifest and milestone files to build the sliding window
-- The `parallel_group` field and dependency edges enable future parallel execution
-- `dag_get_frontier()` is directly reusable by future parallel execution logic
+1. **Error Pattern Registry (M53)** — Declarative pattern→category mapping that
+   classifies build/test output into six categories (env_setup, service_dep,
+   toolchain, resource, test_infra, code). Only code errors reach the build-fix agent.
+2. **Auto-Remediation Engine (M54)** — Safe, registry-driven fixes executed
+   automatically in the build gate before any agent retry.
+3. **Pre-flight Validation (M55)** — Lightweight checks BEFORE agent stages that
+   catch environment issues before burning turns. Uses detection engine output.
+4. **Service Readiness Probing (M56)** — Port-level service detection with
+   actionable startup instructions for databases, caches, and queues.
 
-## src/models/user.py
-  class User
-    def __init__(self, name, email)
-    def validate(self) -> bool
-    def to_dict(self) -> dict
+### Key Constraints
 
-## src/api/routes.py
-  def register_routes(app)
-  def handle_user_create(request) -> Response
-  def handle_user_get(user_id) -> Response
-
-## src/db/connection.py
-  class DatabasePool
-    def get_connection(self) -> Connection
-    def release(self, conn)
-```
-
-Acceptance criteria:
-- `repo_map.py --root . --task "add user auth" --budget 2048` produces a
-  ranked markdown repo map that fits within the token budget
-- Files matching task keywords rank higher than unrelated files
-- Tag cache eliminates re-parsing unchanged files (mtime-based)
-- Unsupported file types are silently skipped (no error, no output)
-- `.gitignore` patterns are respected (no `node_modules/`, `.venv/`, etc.)
-- Output contains only signatures — no function bodies, no comments
-- Exit code 1 (partial) still produces a usable map from parseable files
-- `python3 -m pytest tools/` passes (unit tests for tag extraction, graph
-  building, ranking, budget enforcement, cache hit/miss)
-- All existing bash tests pass
-
-Watch For:
-- tree-sitter grammar API changed significantly between 0.20 and 0.21+. Pin to
-  >=0.21 and use the new API. The `tree-sitter-languages` package bundles
-  grammars conveniently but may lag behind — support both bundled and individual
-  grammar packages.
-- PageRank personalization vector must handle the case where task keywords match
-  zero files — fall back to uniform personalization (standard PageRank).
-- Token budget enforcement must count tokens in the OUTPUT, not the input files.
-  Use `len(text) / 4` as the token estimate (matching v2's CHARS_PER_TOKEN).
-- `.gitignore` parsing is non-trivial. Use `pathspec` library or shell out to
-  `git ls-files` for git repos. For non-git projects, skip `.gitignore` handling.
-- Large monorepos (10k+ files) must complete in under 30 seconds on first run
-  and under 5 seconds on cached runs. Profile early.
-
-Seeds Forward:
-- Milestone 5 consumes `REPO_MAP.md` in pipeline stages
-- Milestone 7 extends the cache with cross-run task→file associations
-- The tag extraction format is reused by Milestone 6's Serena integration
-  for cache warming
+- **No new runtime dependencies.** Pattern registry and pre-flight use only bash
+  builtins and standard Unix tools (ss, nc, lsof as available).
+- **Safe auto-remediation only.** Only commands rated `safe` execute automatically.
+  Blocklist enforced: no `rm -rf`, `drop`, `reset --hard`, `force`, `destroy`.
+- **Pre-flight must be fast.** Under 5 seconds total, no network calls, no agent
+  invocations, no test execution. Pure filesystem and process checks.
+- **Detection engine reuse.** Pre-flight leverages `detect_languages()`,
+  `detect_frameworks()`, `detect_test_frameworks()`, `detect_services()` which are
+  already sourced at runtime (tekhton.sh line 752+).
+- **Backward compatible.** All features default-on but skippable via config keys
+  (`PREFLIGHT_ENABLED`, `PREFLIGHT_AUTO_FIX`). Existing pipelines see improved
+  behavior, never degraded behavior.
+- **All existing tests must pass** at every milestone.
+- **All new `.sh` files must pass `bash -n` and `shellcheck`.**
 
