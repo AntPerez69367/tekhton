@@ -291,11 +291,11 @@ _STAGE_DURATION["reviewer"]=0
 
 result=$(_get_timing_breakdown)
 
-# All stages are zero → all skipped → output should be {"total":0}
-if [[ "$result" = '{"total":0}' ]]; then
-    pass "_get_timing_breakdown all-zero → '{\"total\":0}'"
+# All stages are zero → all skipped → output should be {}
+if [[ "$result" = '{}' ]]; then
+    pass "_get_timing_breakdown all-zero → '{}'"
 else
-    fail "_get_timing_breakdown all-zero expected '{\"total\":0}', got '${result}'"
+    fail "_get_timing_breakdown all-zero expected '{}', got '${result}'"
 fi
 
 # =============================================================================

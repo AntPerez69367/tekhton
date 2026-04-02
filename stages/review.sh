@@ -2,6 +2,8 @@
 # stages/review.sh — Stage 2: Review loop (review → rework → build gate)
 # Sourced by tekhton.sh. Sets: VERDICT (global).
 
+set -euo pipefail
+
 # run_stage_review — Review loop: invoke reviewer, parse verdict, route rework,
 # build gate, repeat up to MAX_REVIEW_CYCLES. Exits on max-cycle exhaustion.
 run_stage_review() {
@@ -161,9 +163,7 @@ REVIEW_EOF
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 
         # Log routing decision based on verdict
-        if [[ "$VERDICT" = "CHANGES_REQUIRED" ]]; then
-            log_decision "Reviewer requires changes" "${HAS_COMPLEX:-0} complex, ${HAS_SIMPLE:-0} simple blockers (cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES})" ""
-        elif [[ "$VERDICT" = "APPROVED" ]] || [[ "$VERDICT" = "APPROVED_WITH_NOTES" ]]; then
+        if [[ "$VERDICT" = "APPROVED" ]] || [[ "$VERDICT" = "APPROVED_WITH_NOTES" ]]; then
             log_decision "Reviewer approved" "verdict ${VERDICT}" ""
         fi
 
@@ -208,6 +208,7 @@ REVIEW_EOF
             HAS_SIMPLE=$(echo "$HAS_SIMPLE" | tr -d '[:space:]')
             rm -rf "$TMPDIR_BLOCKS"
 
+            log_decision "Reviewer requires changes" "${HAS_COMPLEX} complex, ${HAS_SIMPLE} simple blockers (cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES})" ""
             log "Complex blockers: ${HAS_COMPLEX}, Simple blockers: ${HAS_SIMPLE}"
             if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
                 if [ "$HAS_COMPLEX" -gt 0 ]; then

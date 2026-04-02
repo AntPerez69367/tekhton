@@ -6,6 +6,8 @@
 # Expects all pipeline globals to be set (TASK, LOG_FILE, START_AT, etc.)
 # =============================================================================
 
+set -euo pipefail
+
 # run_stage_tester — Runs the tester stage:
 #   1. Select prompt (fresh vs resume)
 #   2. Invoke tester agent

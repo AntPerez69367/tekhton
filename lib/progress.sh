@@ -181,7 +181,7 @@ progress_outcome() {
 # Returns per-stage timing as a JSON object from _STAGE_DURATION array.
 _get_timing_breakdown() {
     # Guard: _STAGE_DURATION may not exist in all contexts
-    if ! declare -p _STAGE_DURATION &>/dev/null 2>&1; then
+    if ! declare -p _STAGE_DURATION &>/dev/null; then
         echo "{}"
         return
     fi
@@ -202,9 +202,9 @@ _get_timing_breakdown() {
         json="${json}\"${_stg}\":${dur}"
     done
     if [[ "$first" = true ]]; then
-        json="${json}\"total\":${total}}"
-    else
-        json="${json},\"total\":${total}}"
+        echo "{}"
+        return
     fi
+    json="${json},\"total\":${total}}"
     echo "$json"
 }
