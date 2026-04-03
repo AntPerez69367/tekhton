@@ -178,16 +178,6 @@ _route_to_human_action() {
         return 0
     fi
 
-    local desc="**Category:** ${category}\n**Diagnosis:** ${diagnosis}"
-    if [[ -n "$remediation" ]]; then
-        desc="${desc}\n**Suggested fix:** \`${remediation}\`"
-    fi
-    if [[ "$safety" == "prompt" ]]; then
-        desc="${desc}\n**Note:** This fix is automatable if opted in (future: config flag)"
-    fi
-    desc="${desc}\n**Pipeline impact:** Build gate will continue to fail until resolved."
-
-    # append_human_action expects a single-line description
     local oneline
     oneline="Environment issue (${category}): ${diagnosis}"
     if [[ -n "$remediation" ]]; then

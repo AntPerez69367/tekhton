@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-03
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-04-03 | "M54"] `_gate_write_compile_errors` (gates_phases.sh:127–141) guards its classification block with `command -v annotate_build_errors`, but the body calls `classify_build_errors_all`. Both functions live in error_patterns.sh so the guard works, but the checked name and the called name differ — a reader would expect the guard to match the called function.
