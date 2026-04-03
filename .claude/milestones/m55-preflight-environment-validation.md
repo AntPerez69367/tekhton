@@ -1,7 +1,7 @@
 # Milestone 55: Pre-flight Environment Validation
 <!-- milestone-meta
 id: "55"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

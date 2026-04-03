@@ -90,8 +90,9 @@ run_build_gate() {
     local gate_start
     gate_start=$(date +%s)
 
-    # Guarantee a clean slate — remove stale BUILD_RAW_ERRORS.txt from previous runs
+    # Guarantee a clean slate — remove stale artifacts from previous runs
     rm -f BUILD_RAW_ERRORS.txt
+    rm -f BUILD_ERRORS.md
 
     # Reset remediation state for this gate invocation (M54)
     if command -v reset_remediation_state &>/dev/null; then

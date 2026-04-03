@@ -124,7 +124,7 @@ _gate_write_compile_errors() {
         } >> BUILD_ERRORS.md
     fi
     {
-        if command -v annotate_build_errors &>/dev/null; then
+        if command -v classify_build_errors_all &>/dev/null; then
             echo ""
             echo "## Error Classification (compile)"
             classify_build_errors_all "$compile_errors" | while IFS='|' read -r _cat _saf _rem _diag; do

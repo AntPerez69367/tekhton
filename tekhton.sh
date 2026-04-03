@@ -724,6 +724,7 @@ source "${TEKHTON_HOME}/lib/quota.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/error_patterns.sh"
 source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+source "${TEKHTON_HOME}/lib/preflight.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/gates_phases.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
@@ -2361,6 +2362,15 @@ if [[ "$DRY_RUN_MODE" != true ]] && [[ "$CONTINUE_PREVIEW" != true ]]; then
         log "Proceeding with cached dry-run results."
     fi
 fi
+
+# --- Pre-flight environment validation (Milestone 55) -------------------------
+# Runs fast, deterministic checks BEFORE any agent invocation. Catches stale
+# deps, missing tools, env var gaps, version mismatches. Only during task runs.
+run_preflight_checks || {
+    write_pipeline_state "preflight" "env_failure" "" "$TASK" \
+        "Pre-flight environment validation failed. See PREFLIGHT_REPORT.md."
+    exit 1
+}
 
 # --- Pipeline execution (mode dispatch) --------------------------------------
 

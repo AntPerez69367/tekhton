@@ -309,6 +309,11 @@ set -euo pipefail
 # --- Run memory defaults (Milestone 49: structured run-end memory) ---
 : "${RUN_MEMORY_MAX_ENTRIES:=50}"
 
+# --- Pre-flight environment validation defaults (Milestone 55) ---
+: "${PREFLIGHT_ENABLED:=true}"                  # Toggle pre-flight environment checks
+: "${PREFLIGHT_AUTO_FIX:=true}"                 # Allow auto-remediation of safe issues
+: "${PREFLIGHT_FAIL_ON_WARN:=false}"            # Treat warnings as failures
+
 # --- Pre-finalization fix defaults (cheap Jr Coder fix before full retry) ---
 : "${PREFLIGHT_FIX_ENABLED:=true}"                          # Try Jr Coder fix before full pipeline retry
 : "${PREFLIGHT_FIX_MAX_ATTEMPTS:=2}"                        # Max fix attempts before falling through
