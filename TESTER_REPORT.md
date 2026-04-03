@@ -1,16 +1,11 @@
-# Tester Report
-
 ## Planned Tests
-- [x] `tests/test_init_report_stub_detection.sh` — Verify relaxed grep pattern correctly detects stub CLAUDE.md files with milestone placeholders
+- [x] `tests/test_m52_circular_onboarding.sh` — add file_count>50 branch test, strengthen test7 assertion, remove unused run_test() helper
 
 ## Test Run Results
-Passed: 1  Failed: 0
-
-### Test Details
-- `test_init_report_stub_detection.sh`: 6 assertions, all passed
+Passed: 250  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_init_report_stub_detection.sh`
+- [x] `tests/test_m52_circular_onboarding.sh`

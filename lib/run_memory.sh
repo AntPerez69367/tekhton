@@ -120,9 +120,10 @@ _rm_extract_test_outcomes() {
     local p=0 f=0 s=0
 
     if [[ -f "$tester_file" ]]; then
-        p=$(grep -ciE '^\s*-\s*\[x\]' "$tester_file" 2>/dev/null || echo "0")
-        f=$(grep -ciE '^\s*-\s*\[ \]' "$tester_file" 2>/dev/null || echo "0")
-        s=$(grep -ciE 'skip' "$tester_file" 2>/dev/null || echo "0")
+        p=$(grep -ciE '^\s*-\s*\[x\]' "$tester_file" 2>/dev/null || true)
+        f=$(grep -ciE '^\s*-\s*\[ \]' "$tester_file" 2>/dev/null || true)
+        s=$(grep -ciE 'skip' "$tester_file" 2>/dev/null || true)
+        p="${p:-0}"; f="${f:-0}"; s="${s:-0}"
     fi
     printf '{"passed":%d,"failed":%d,"skipped":%d}' "$p" "$f" "$s"
 }

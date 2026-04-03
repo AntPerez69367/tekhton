@@ -73,6 +73,9 @@ run_build_gate() {
     local gate_start
     gate_start=$(date +%s)
 
+    # Guarantee a clean slate — remove stale BUILD_RAW_ERRORS.txt from previous runs
+    rm -f BUILD_RAW_ERRORS.txt
+
     log "Running build gate (${stage_label})..."
     _phase_start "build_gate"
 
@@ -102,22 +105,29 @@ run_build_gate() {
         warn "Build gate FAILED (${stage_label}) — analyze errors found:"
         echo "$ANALYZE_ERRORS"
 
-        # Write errors to a file so the coder can read them directly
-        cat > BUILD_ERRORS.md << EOF
-# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')
-## Stage
-${stage_label}
+        # Write raw errors for classification (M53 — coder.sh reads this)
+        printf '%s\n' "$ANALYZE_ERRORS" > BUILD_RAW_ERRORS.txt
 
-## Analyze Errors
-\`\`\`
-${ANALYZE_ERRORS}
-\`\`\`
-
-## Full Analyze Output
-\`\`\`
-${ANALYZE_OUTPUT}
-\`\`\`
-EOF
+        # Write errors with classification annotations (M53)
+        {
+            if command -v annotate_build_errors &>/dev/null; then
+                annotate_build_errors "$ANALYZE_ERRORS" "$stage_label"
+            else
+                echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
+                echo "## Stage"
+                echo "${stage_label}"
+            fi
+            echo ""
+            echo "## Analyze Errors"
+            echo '```'
+            echo "${ANALYZE_ERRORS}"
+            echo '```'
+            echo ""
+            echo "## Full Analyze Output"
+            echo '```'
+            echo "${ANALYZE_OUTPUT}"
+            echo '```'
+        } > BUILD_ERRORS.md
         log "Build errors written to BUILD_ERRORS.md"
         _phase_end "build_gate_analyze"
         _phase_end "build_gate"
@@ -151,13 +161,25 @@ EOF
             warn "Build gate FAILED (${stage_label}) — compile errors found:"
             echo "$COMPILE_ERRORS"
 
-            cat >> BUILD_ERRORS.md << EOF
+            # Append raw compile errors for classification (M53)
+            printf '%s\n' "$COMPILE_ERRORS" >> BUILD_RAW_ERRORS.txt
 
-## Compile Errors
-\`\`\`
-${COMPILE_ERRORS}
-\`\`\`
-EOF
+            # Annotate compile errors with classification (M53)
+            {
+                if command -v annotate_build_errors &>/dev/null; then
+                    echo ""
+                    echo "## Error Classification (compile)"
+                    classify_build_errors_all "$COMPILE_ERRORS" | while IFS='|' read -r _cat _saf _rem _diag; do
+                        [[ -z "$_cat" ]] && continue
+                        echo "- **${_cat}** (${_saf}): ${_diag}"
+                    done
+                fi
+                echo ""
+                echo "## Compile Errors"
+                echo '```'
+                echo "${COMPILE_ERRORS}"
+                echo '```'
+            } >> BUILD_ERRORS.md
             _phase_end "build_gate_compile"
             _phase_end "build_gate"
             return 1
@@ -243,39 +265,32 @@ EOF
             local _ui_timeout="${UI_TEST_TIMEOUT:-120}"
             _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
 
-            # --- Environment auto-remediation for known setup errors ---
-            # Some test frameworks require one-time setup (e.g., browser downloads).
-            # Detect these and attempt auto-fix before wasting a build-fix retry.
-            if [[ "$_ui_exit" -ne 0 ]]; then
+            # --- Registry-based environment auto-remediation (M53) ---
+            # Classify UI test errors via pattern registry. If a safe env_setup
+            # remediation exists, attempt it before wasting a build-fix retry.
+            if [[ "$_ui_exit" -ne 0 ]] && command -v classify_build_error &>/dev/null; then
                 local _remediated=false
+                local _classification
+                # Use classify_build_error (first-match) deliberately: env_setup patterns appear early in output,
+                # and a single actionable remediation command is sufficient for auto-remediation in this context.
+                _classification=$(classify_build_error "$_ui_output")
+                local _class_cat _class_safety _class_remed
+                _class_cat=$(echo "$_classification" | cut -d'|' -f1)
+                _class_safety=$(echo "$_classification" | cut -d'|' -f2)
+                _class_remed=$(echo "$_classification" | cut -d'|' -f3)
 
-                # Playwright: "npx playwright install" needed for browser binaries
-                if echo "$_ui_output" | grep -q "npx playwright install"; then
-                    log "Detected missing Playwright browsers. Running auto-remediation: npx playwright install"
-                    local _pw_exit=0
-                    timeout 120 npx playwright install 2>&1 || _pw_exit=$?
-                    if [[ "$_pw_exit" -eq 0 ]]; then
-                        log "Playwright browsers installed successfully. Re-running UI tests."
+                if [[ "$_class_cat" == "env_setup" ]] && [[ "$_class_safety" == "safe" ]] \
+                    && [[ -n "$_class_remed" ]]; then
+                    log "Detected env_setup issue. Running auto-remediation: ${_class_remed}"
+                    local _remed_exit=0
+                    timeout 120 bash -c "$_class_remed" 2>&1 || _remed_exit=$?
+                    if [[ "$_remed_exit" -eq 0 ]]; then
+                        log "Auto-remediation succeeded. Re-running UI tests."
                         _remediated=true
                         _ui_exit=0
                         _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
                     else
-                        warn "Playwright browser installation failed (exit ${_pw_exit}). Continuing with failure."
-                    fi
-                fi
-
-                # Cypress: "npx cypress install" needed for binary
-                if [[ "$_remediated" == "false" ]] && echo "$_ui_output" | grep -q "npx cypress install"; then
-                    log "Detected missing Cypress binary. Running auto-remediation: npx cypress install"
-                    local _cy_exit=0
-                    timeout 120 npx cypress install 2>&1 || _cy_exit=$?
-                    if [[ "$_cy_exit" -eq 0 ]]; then
-                        log "Cypress binary installed successfully. Re-running UI tests."
-                        _remediated=true
-                        _ui_exit=0
-                        _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
-                    else
-                        warn "Cypress binary installation failed (exit ${_cy_exit}). Continuing with failure."
+                        warn "Auto-remediation failed (exit ${_remed_exit}). Continuing with failure."
                     fi
                 fi
             fi
@@ -290,6 +305,10 @@ EOF
             if [[ "$_ui_exit" -ne 0 ]]; then
                 warn "Build gate FAILED (${stage_label}) — UI tests failed:"
                 echo "$_ui_output" | tail -30
+
+                # Write raw output so coder.sh bypass logic reads unadorned text
+                # (BUILD_RAW_ERRORS.txt was deleted at gate entry; Phases 1-3 passed)
+                printf '%s\n' "$_ui_output" > BUILD_RAW_ERRORS.txt
 
                 cat > UI_TEST_ERRORS.md << UIEOF
 # UI Test Errors — $(date '+%Y-%m-%d %H:%M:%S')
@@ -311,21 +330,31 @@ UIEOF
 
                 # Also append UI test errors to BUILD_ERRORS.md so the
                 # build-fix agent has full visibility (it only reads BUILD_ERRORS.md).
-                {
-                    if [[ ! -f BUILD_ERRORS.md ]]; then
+                if [[ ! -f BUILD_ERRORS.md ]]; then
+                    {
                         echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
                         echo "## Stage"
                         echo "${stage_label}"
                         echo ""
-                    fi
-                    echo "## UI Test Failures"
-                    echo "Command: \`${UI_TEST_CMD}\`"
-                    echo "Exit code: ${_ui_exit}"
-                    echo ""
-                    echo "\`\`\`"
-                    echo "$_ui_output" | tail -100
-                    echo "\`\`\`"
-                } >> BUILD_ERRORS.md
+                        echo "## UI Test Failures"
+                        echo "Command: \`${UI_TEST_CMD}\`"
+                        echo "Exit code: ${_ui_exit}"
+                        echo ""
+                        echo "\`\`\`"
+                        echo "$_ui_output" | tail -100
+                        echo "\`\`\`"
+                    } >> BUILD_ERRORS.md
+                else
+                    {
+                        echo "## UI Test Failures"
+                        echo "Command: \`${UI_TEST_CMD}\`"
+                        echo "Exit code: ${_ui_exit}"
+                        echo ""
+                        echo "\`\`\`"
+                        echo "$_ui_output" | tail -100
+                        echo "\`\`\`"
+                    } >> BUILD_ERRORS.md
+                fi
                 log "UI test errors also appended to BUILD_ERRORS.md"
 
                 _phase_end "build_gate_ui_test"

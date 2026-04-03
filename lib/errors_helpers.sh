@@ -66,6 +66,22 @@ suggest_recovery() {
         ENVIRONMENT/env_unknown)
             echo "Unexpected environment error. Check system logs for details."
             ;;
+        # M53: Pattern registry subcategories
+        ENVIRONMENT/env_setup)
+            echo "Missing tool or binary. Install the required dependency (check BUILD_ERRORS.md for the exact command)."
+            ;;
+        ENVIRONMENT/service_dep)
+            echo "A required service is not running (database, cache, or queue). Start it and re-run."
+            ;;
+        ENVIRONMENT/toolchain)
+            echo "Build toolchain issue (stale deps, missing codegen). Run the suggested install/generate command."
+            ;;
+        ENVIRONMENT/resource)
+            echo "Machine resource constraint (port in use, OOM, disk full, permissions). Resolve the resource conflict and re-run."
+            ;;
+        ENVIRONMENT/test_infra)
+            echo "Test infrastructure issue (stale snapshots, missing fixtures, timeout). Update test infrastructure and re-run."
+            ;;
         AGENT_SCOPE/null_run)
             echo "Agent died before doing meaningful work. The prompt may be too large or the task too ambiguous. Try splitting the milestone or simplifying the task."
             ;;
