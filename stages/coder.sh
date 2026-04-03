@@ -1050,9 +1050,45 @@ ${GIT_DIFF_STAT}
     if ! run_build_gate "post-coder"; then
         if [ "$BUILD_GATE_RETRY" -lt 1 ]; then
             BUILD_GATE_RETRY=1
+
+            # --- M53: Classify errors and route appropriately ---
+            # Read raw error lines (not the annotated markdown) for classification
+            local _raw_errors=""
+            if [[ -f BUILD_RAW_ERRORS.txt ]]; then
+                _raw_errors=$(_safe_read_file BUILD_RAW_ERRORS.txt "BUILD_RAW_ERRORS")
+            else
+                _raw_errors=$(_safe_read_file BUILD_ERRORS.md "BUILD_ERRORS")
+            fi
+
+            # Check if ALL errors are non-code (env/service/toolchain/resource/test_infra)
+            if command -v has_only_noncode_errors &>/dev/null \
+                && has_only_noncode_errors "$_raw_errors"; then
+                warn "All build errors are non-code (environment/setup). Skipping build-fix agent."
+                warn "These errors require environment remediation, not code changes."
+                # Log non-code errors to HUMAN_ACTION_REQUIRED.md if available
+                if command -v append_human_action &>/dev/null; then
+                    append_human_action "build_gate" \
+                        "Non-code build errors detected. See BUILD_ERRORS.md for details."
+                fi
+                write_pipeline_state \
+                    "coder" \
+                    "env_failure" \
+                    "$(_build_resume_flag coder)" \
+                    "$TASK" \
+                    "Build failed with environment errors (not code bugs). See BUILD_ERRORS.md."
+                error "State saved. Fix environment issues in BUILD_ERRORS.md then re-run."
+                exit 1
+            fi
+
+            # Filter to code-only errors for the build-fix agent (M53)
             warn "Invoking coder to fix build errors (1 retry allowed)..."
             export BUILD_ERRORS_CONTENT
-            BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" "$(_safe_read_file BUILD_ERRORS.md "BUILD_ERRORS")")
+            if command -v filter_code_errors &>/dev/null; then
+                BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" \
+                    "$(filter_code_errors "$_raw_errors")")
+            else
+                BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" "$_raw_errors")
+            fi
             BUILD_FIX_PROMPT=$(render_prompt "build_fix")
 
             run_agent \

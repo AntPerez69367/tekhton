@@ -21,7 +21,9 @@ source "${TEKHTON_HOME:?}/lib/errors_helpers.sh"
 #   UPSTREAM       — API provider failures (all transient): api_500, api_rate_limit,
 #                    api_overloaded, api_auth, api_timeout, api_unknown
 #   ENVIRONMENT    — Local system issues: disk_full, network, missing_dep,
-#                    permissions, oom, env_unknown
+#                    permissions, oom, env_unknown,
+#                    env_setup (M53), service_dep (M53), toolchain (M53),
+#                    resource (M53), test_infra (M53)
 #   AGENT_SCOPE    — Expected agent failures (all permanent): null_run, max_turns,
 #                    activity_timeout, no_summary, scope_unknown
 #   PIPELINE       — Tekhton internal errors (all permanent): state_corrupt,
@@ -280,6 +282,10 @@ is_transient() {
             case "$subcategory" in
                 network|oom)
                     return 0
+                    ;;
+                # M53 subcategories — all permanent (require human/auto-remediation)
+                env_setup|service_dep|toolchain|resource|test_infra)
+                    return 1
                     ;;
                 *)
                     return 1
