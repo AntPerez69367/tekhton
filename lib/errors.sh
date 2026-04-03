@@ -259,45 +259,4 @@ classify_error() {
     return 0
 }
 
-# --- is_transient -----------------------------------------------------------
-# Returns 0 if the error category/subcategory is transient (retryable).
-# Returns 1 if permanent (requires human action or scope change).
-#
-# Usage: is_transient CATEGORY SUBCATEGORY
-
-is_transient() {
-    local category="${1:?is_transient requires category}"
-    local subcategory="${2:-}"
-
-    case "$category" in
-        UPSTREAM)
-            # Most upstream errors are transient — except auth failures,
-            # which won't self-resolve on retry and need human action.
-            if [[ "$subcategory" == "api_auth" ]]; then
-                return 1
-            fi
-            return 0
-            ;;
-        ENVIRONMENT)
-            case "$subcategory" in
-                network|oom)
-                    return 0
-                    ;;
-                # M53 subcategories — all permanent (require human/auto-remediation)
-                env_setup|service_dep|toolchain|resource|test_infra)
-                    return 1
-                    ;;
-                *)
-                    return 1
-                    ;;
-            esac
-            ;;
-        AGENT_SCOPE|PIPELINE)
-            return 1
-            ;;
-        *)
-            # Unknown category — assume permanent
-            return 1
-            ;;
-    esac
-}
+# --- is_transient() lives in errors_helpers.sh ---

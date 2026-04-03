@@ -20,6 +20,7 @@ source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/error_patterns.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 TMPDIR_TEST=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_TEST"' EXIT

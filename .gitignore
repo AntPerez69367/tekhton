@@ -55,6 +55,10 @@ service-account*.json
 # Test artifacts
 /tmp/
 
+# Python
+__pycache__/
+*.pyc
+
 # Logs
 *.log
 
