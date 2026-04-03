@@ -19,7 +19,10 @@ source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/error_patterns.sh"
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_phases.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 TMPDIR_TEST=$(mktemp -d)

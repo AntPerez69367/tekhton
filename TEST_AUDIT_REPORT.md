@@ -1,93 +1,55 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 9 test functions
-Verdict: CONCERNS
-
----
+Tests audited: 1 file (tests/test_error_patterns.sh), ~85 test assertions (section-style)
+Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: test_build_errors_phase2_header.sh — committed test that always fails
-- File: tests/test_build_errors_phase2_header.sh:51
-- Issue: The test asserts `grep -q "^# Build Errors" BUILD_ERRORS.md`, expecting the
-  canonical header to be written when Phase 2 fails after Phase 1 passes. The coder's
-  changes for this milestone touched only `lib/error_patterns.sh` (added a doc comment)
-  and `DRIFT_LOG.md` — `lib/gates.sh` was not modified. The bug at gates.sh:170 is real
-  and unfixed: the `if [[ ! -f BUILD_ERRORS.md ]]` guard lives inside a
-  `{ ... } >> BUILD_ERRORS.md` redirect block. Bash opens the output file for appending
-  *before* executing the block body, so the file already exists when the condition runs,
-  it is always false, and the header is never written. The test's own comment (lines 6-8)
-  and failure message (line 54) both acknowledge this: "Bug confirmed: the header is NOT
-  written." The TESTER_REPORT confirms this test is the 1 failing test in the run. A
-  committed test that reliably fails on an unfixed bug poisons CI signal — every run shows
-  a red test, operators lose confidence in the suite, and real regressions become invisible.
-- Severity: HIGH
-- Action: Do NOT change gates.sh to satisfy the test — tests follow code, not the reverse.
-  Two acceptable resolutions:
-  (a) Invert the assertion to document current (buggy) behaviour — verify the header is
-      *absent* and add a `# TODO(gates.sh:170): header bug` comment. This preserves the
-      test as a regression canary without CI breakage.
-  (b) Remove the test file until the gates.sh bug is fixed in a future milestone and
-      re-add it then.
-  Option (a) is preferred. Either resolution must land before the milestone is closed.
-
-#### COVERAGE: test_classify_errors_dedup.sh — matched-line dedup never exercised
-- File: tests/test_classify_errors_dedup.sh:23
-- Issue: "Test 2: Mixed matched and unmatched lines" (line 23) only calls
-  `load_error_patterns()` + `get_pattern_count()` to confirm the registry loaded.
-  It never feeds two lines that both match the *same* registered pattern to
-  `classify_build_errors_all` to verify they collapse to a single output entry. The
-  dedup path for matched lines (error_patterns.sh:122-128 — `_seen[$key]` keyed on
-  `category|diagnosis`) is entirely untested. Only unmatched-line dedup
-  (error_patterns.sh:131-138) is covered by Tests 1 and 3.
-- Severity: MEDIUM
-- Action: Replace Test 2 with an assertion that feeds two lines both matching the same
-  registered pattern and verifies `classify_build_errors_all` returns exactly one output
-  line. Keep a separate, clearly named block for the registry-load sanity check.
-
-#### NAMING: test_classify_errors_dedup.sh — Test 2 label misrepresents what it checks
-- File: tests/test_classify_errors_dedup.sh:23
-- Issue: The comment "Test 2: Mixed matched and unmatched lines" promises a classification
-  test of mixed input but the body is only a registry-load guard. A reader debugging
-  coverage gaps will be misled.
+#### COVERAGE: `attempt_remediation` empty-input path not tested
+- File: tests/test_error_patterns.sh (no existing test for this path)
+- Issue: `lib/error_patterns_remediation.sh:209` has an explicit guard `[[ -z "$classifications" ]] && return 1`. No test calls `attempt_remediation ""` to verify this returns 1 without side effects.
 - Severity: LOW
-- Action: Rename the comment to "Prerequisite: pattern registry is non-empty" or replace
-  the body with the matched-dedup test described above.
+- Action: Add one assertion: `attempt_remediation "" "test_phase"` should return non-zero.
 
-#### EXERCISE: test_classify_errors_dedup.sh — wc -l empty-output check is platform-fragile
-- File: tests/test_classify_errors_dedup.sh:40
-- Issue: Test 4 captures `classify_build_errors_all "" | wc -l` and compares against the
-  string `"0"`. On some platforms `wc -l` emits leading spaces (e.g., `"       0"`),
-  making `[[ "$output" != "0" ]]` true even when the function correctly produces no
-  output, causing a spurious failure.
+#### COVERAGE: `_emit_remediation_event` unavailable-function path not covered
+- File: tests/test_error_patterns.sh
+- Issue: `lib/error_patterns_remediation.sh:162` guards event emission with `command -v emit_event &>/dev/null`. The test always stubs `emit_event`, so the branch where the causal log is absent is never exercised. The no-op path is low risk but untested.
 - Severity: LOW
-- Action: Use arithmetic comparison `[[ "$output" -eq 0 ]]` (ignores leading/trailing
-  whitespace) or trim first: `output=$(... | wc -l | tr -d ' ')`.
+- Action: Consider one test that temporarily unsets `emit_event` (`unset -f emit_event`) before an `attempt_remediation` call to confirm no crash when causal logging is unavailable.
+
+#### NAMING: Terse inline label strings in classification tests
+- File: tests/test_error_patterns.sh:73–165
+- Issue: `check_field` labels such as `"playwright cat"`, `"npm_module cat"`, `"go_sum cat"` encode the fixture but not the expected outcome. CI failure output is less self-explanatory than labels like `"playwright input → env_setup"`.
+- Severity: LOW
+- Action: No required change; consistent with existing project test convention. Consider expanding labels in future additions.
 
 ---
 
-### Rubric Assessment (per-file summary)
+**Detailed pass notes (for completeness):**
 
-**test_build_errors_phase2_header.sh**
-- Assertion honesty: the `# Build Errors` string IS present in gates.sh:171 — the assertion
-  is logically grounded, but the implementation bug prevents it from being reachable.
-- The mock of `classify_build_errors_all` (lines 28-31) uses the correct fallback format
-  (`code|code||Unclassified build error`) matching error_patterns.sh:97/137. No mock
-  integrity issues beyond the failing-test problem above.
+1. **Assertion Honesty**: All assertions invoke real functions. Specific string assertions
+   (`"npx playwright install"`, `"PostgreSQL not running (port 5432)"`, `"npm install"`,
+   `"Unclassified build error"`, `"Empty error input"`) match constants in the implementation
+   at `lib/error_patterns.sh:85,97,137` and the pattern registry. No invented or hard-coded
+   values disconnected from implementation logic.
 
-**test_classify_errors_dedup.sh**
-- Tests 1, 3, and 5 call the real `classify_build_errors_all` implementation with no mocking.
-- Expected values (`code|code||Unclassified build error`) are grounded in implementation
-  constants at error_patterns.sh:97 and :137. No assertion honesty issues.
-- Test 5's format check (pipe-delimited output) is a valid structural assertion.
+2. **Edge Case Coverage**: Tests cover empty input (classify_build_error, classify_build_errors_all,
+   filter_code_errors, has_only_noncode_errors, get_remediation_log), unknown/unrecognized input
+   defaulting to `code`, deduplication of repeated patterns, max-attempt cap enforcement (3 safe
+   commands → only 2 executed), duplicate-command dedup (same command twice → 1 execution),
+   blocklist rejection, manual/prompt/code safety levels skipping execution, timeout enforcement
+   (1s timeout against `sleep 10`), and causal event emission for both success and human-action
+   paths.
 
-**test_file_size_ceilings.sh**
-- Sourcing assertions verified against live files: `tekhton.sh:727` sources
-  `gates_completion.sh`; `error_patterns.sh:20` sources `error_patterns_registry.sh`. Both
-  grep patterns match.
-- Skipping the gates.sh ceiling assertion (lines 15-17) is explicitly documented in the test
-  comment and aligns with the reviewer's note that 411 lines is an acknowledged deferral.
-- File-existence checks for `gates_completion.sh`, `error_patterns_registry.sh`, and
-  `errors_helpers.sh` all reference files present in the working tree. No orphaned references.
-- No scope, integrity, or naming issues. This file passes all rubric points.
+3. **Implementation Exercise**: Both `lib/error_patterns.sh` and `lib/error_patterns_remediation.sh`
+   are sourced and exercised directly. Stubs are limited to `log`, `warn`, `append_human_action`,
+   and `emit_event` — all are side-effect sinks with no logic under test. Core classification and
+   remediation paths run real code throughout.
+
+4. **Test Weakening**: M53 tests (lines 46–527) are fully intact with no assertions removed,
+   broadened, or replaced with weaker variants. M54 tests (lines 525–838) are purely additive.
+
+5. **Scope Alignment**: Both sourced files exist (`lib/error_patterns.sh`, `lib/error_patterns_remediation.sh`).
+   No stale imports or references to removed functions. Direct access to `_REMEDIATION_ATTEMPT_COUNT`
+   internal state is appropriate for shell white-box testing given the global-variable architecture.

@@ -522,6 +522,323 @@ else
 fi
 
 # =============================================================================
+# M54: Auto-Remediation Engine tests
+# =============================================================================
+
+# Source remediation engine
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+
+# Stub log/warn for remediation output
+log() { :; }
+warn() { :; }
+
+# Stub append_human_action to capture calls
+_HUMAN_ACTION_CALLS=()
+append_human_action() {
+    _HUMAN_ACTION_CALLS+=("$1|$2")
+}
+
+# Stub emit_event to capture calls
+_EMIT_EVENT_CALLS=()
+emit_event() {
+    _EMIT_EVENT_CALLS+=("$1|$2|$3")
+    echo "evt-${#_EMIT_EVENT_CALLS[@]}"
+}
+
+# Set PROJECT_DIR to a temp dir for safe command execution
+_TEST_TMPDIR=$(mktemp -d)
+PROJECT_DIR="$_TEST_TMPDIR"
+
+echo "=== attempt_remediation: safe command executes ==="
+
+reset_remediation_state
+
+# Create a classifications string with a safe remediation (touch a file)
+classifications="env_setup|safe|touch ${_TEST_TMPDIR}/remed_test_marker|Test env fix"
+
+if attempt_remediation "$classifications" "test_phase"; then
+    pass
+else
+    fail "attempt_remediation should return 0 on successful safe command"
+fi
+
+# Verify the command actually ran
+if [[ -f "${_TEST_TMPDIR}/remed_test_marker" ]]; then
+    pass
+else
+    fail "Safe remediation command did not execute (marker file missing)"
+fi
+
+# Verify remediation log has an entry
+remed_log=$(get_remediation_log)
+if echo "$remed_log" | grep -q '"action":"attempted"'; then
+    pass
+else
+    fail "Remediation log missing 'attempted' entry: ${remed_log}"
+fi
+
+if echo "$remed_log" | grep -q '"exit_code":0'; then
+    pass
+else
+    fail "Remediation log should show exit_code 0: ${remed_log}"
+fi
+
+echo "=== attempt_remediation: manual command NOT executed ==="
+
+reset_remediation_state
+_HUMAN_ACTION_CALLS=()
+
+classifications="service_dep|manual||PostgreSQL not running"
+
+if ! attempt_remediation "$classifications" "test_phase"; then
+    pass
+else
+    fail "attempt_remediation should return 1 when no safe commands exist"
+fi
+
+# Verify human action was routed
+if [[ ${#_HUMAN_ACTION_CALLS[@]} -gt 0 ]]; then
+    pass
+else
+    fail "Manual error should route to human action"
+fi
+
+# Verify human action content mentions the diagnosis
+if echo "${_HUMAN_ACTION_CALLS[0]}" | grep -q "PostgreSQL"; then
+    pass
+else
+    fail "Human action should contain diagnosis: ${_HUMAN_ACTION_CALLS[0]}"
+fi
+
+echo "=== attempt_remediation: prompt command routed to human action ==="
+
+reset_remediation_state
+_HUMAN_ACTION_CALLS=()
+
+classifications="test_infra|prompt|npm test -- -u|Snapshots obsolete"
+
+if ! attempt_remediation "$classifications" "test_phase"; then
+    pass
+else
+    fail "attempt_remediation should return 1 for prompt-only (no safe execution)"
+fi
+
+if [[ ${#_HUMAN_ACTION_CALLS[@]} -gt 0 ]]; then
+    pass
+else
+    fail "Prompt error should route to human action"
+fi
+
+echo "=== attempt_remediation: blocklisted command rejected ==="
+
+reset_remediation_state
+
+classifications="env_setup|safe|rm -rf /tmp/badstuff|Dangerous cleanup"
+
+if ! attempt_remediation "$classifications" "test_phase"; then
+    pass
+else
+    fail "attempt_remediation should return 1 when command is blocklisted"
+fi
+
+# Verify log shows blocked
+remed_log=$(get_remediation_log)
+if echo "$remed_log" | grep -q '"action":"blocked"'; then
+    pass
+else
+    fail "Remediation log should show 'blocked' for blocklisted command: ${remed_log}"
+fi
+
+echo "=== attempt_remediation: max 2 attempts enforced ==="
+
+reset_remediation_state
+
+# Three safe commands — only first 2 should execute
+classifications="env_setup|safe|touch ${_TEST_TMPDIR}/remed_a|Fix A
+env_setup|safe|touch ${_TEST_TMPDIR}/remed_b|Fix B
+env_setup|safe|touch ${_TEST_TMPDIR}/remed_c|Fix C"
+
+attempt_remediation "$classifications" "test_phase" || true
+
+if [[ -f "${_TEST_TMPDIR}/remed_a" ]]; then
+    pass
+else
+    fail "First remediation should execute"
+fi
+
+if [[ -f "${_TEST_TMPDIR}/remed_b" ]]; then
+    pass
+else
+    fail "Second remediation should execute"
+fi
+
+if [[ ! -f "${_TEST_TMPDIR}/remed_c" ]]; then
+    pass
+else
+    fail "Third remediation should NOT execute (max 2 attempts)"
+fi
+
+# Verify skipped entry in log
+remed_log=$(get_remediation_log)
+if echo "$remed_log" | grep -q '"action":"skipped"'; then
+    pass
+else
+    fail "Remediation log should show 'skipped' for third command: ${remed_log}"
+fi
+
+echo "=== attempt_remediation: duplicate command not re-run ==="
+
+reset_remediation_state
+
+# Same command twice — should only execute once
+classifications="env_setup|safe|touch ${_TEST_TMPDIR}/remed_dup|Fix dup
+env_setup|safe|touch ${_TEST_TMPDIR}/remed_dup|Fix dup again"
+
+attempt_remediation "$classifications" "test_phase" || true
+
+# Should have only 1 attempt (not 2)
+if [[ "$_REMEDIATION_ATTEMPT_COUNT" -eq 1 ]]; then
+    pass
+else
+    fail "Duplicate command should not be re-run, got ${_REMEDIATION_ATTEMPT_COUNT} attempts"
+fi
+
+echo "=== attempt_remediation: code errors skipped ==="
+
+reset_remediation_state
+
+classifications="code|code||TypeScript error"
+
+if ! attempt_remediation "$classifications" "test_phase"; then
+    pass
+else
+    fail "Code errors should not trigger remediation"
+fi
+
+echo "=== _is_blocklisted_command ==="
+
+if _is_blocklisted_command "rm -rf /tmp/foo"; then
+    pass
+else
+    fail "rm -rf should be blocklisted"
+fi
+
+if _is_blocklisted_command "git reset --hard HEAD"; then
+    pass
+else
+    fail "reset --hard should be blocklisted"
+fi
+
+if _is_blocklisted_command "npm install --force"; then
+    pass
+else
+    fail "--force should be blocklisted"
+fi
+
+if ! _is_blocklisted_command "npm install"; then
+    pass
+else
+    fail "npm install should NOT be blocklisted"
+fi
+
+if ! _is_blocklisted_command "npx playwright install"; then
+    pass
+else
+    fail "npx playwright install should NOT be blocklisted"
+fi
+
+echo "=== _run_safe_remediation: timeout enforcement ==="
+
+# Override timeout to 1s for testing
+_REMEDIATION_TIMEOUT=1
+output=$(_run_safe_remediation "sleep 10" 2>&1) || exit_code=$?
+_REMEDIATION_TIMEOUT=60
+
+if echo "$output" | grep -q "TIMEOUT"; then
+    pass
+else
+    fail "Timed-out command should report TIMEOUT: ${output}"
+fi
+
+echo "=== causal event emission ==="
+
+reset_remediation_state
+_EMIT_EVENT_CALLS=()
+
+classifications="env_setup|safe|touch ${_TEST_TMPDIR}/remed_evt|Env fix"
+attempt_remediation "$classifications" "test_phase" || true
+
+# Check that remediation_attempted event was emitted
+local_found=false
+for call in "${_EMIT_EVENT_CALLS[@]}"; do
+    if echo "$call" | grep -q "remediation_attempted"; then
+        local_found=true
+        break
+    fi
+done
+if [[ "$local_found" = true ]]; then
+    pass
+else
+    fail "remediation_attempted event should be emitted"
+fi
+
+# Check manual error emits human_action_required
+_EMIT_EVENT_CALLS=()
+reset_remediation_state
+classifications="service_dep|manual||DB down"
+attempt_remediation "$classifications" "test_phase" || true
+
+local_found=false
+for call in "${_EMIT_EVENT_CALLS[@]}"; do
+    if echo "$call" | grep -q "human_action_required"; then
+        local_found=true
+        break
+    fi
+done
+if [[ "$local_found" = true ]]; then
+    pass
+else
+    fail "human_action_required event should be emitted for manual errors"
+fi
+
+echo "=== get_remediation_log: empty state ==="
+
+reset_remediation_state
+remed_log=$(get_remediation_log)
+if [[ "$remed_log" == "[]" ]]; then
+    pass
+else
+    fail "Empty remediation log should return []: ${remed_log}"
+fi
+
+echo "=== get_remediation_log: JSON structure ==="
+
+reset_remediation_state
+classifications="env_setup|safe|touch ${_TEST_TMPDIR}/remed_json|JSON test"
+attempt_remediation "$classifications" "test_phase" || true
+remed_log=$(get_remediation_log)
+
+# Must start with [ and end with ]
+if [[ "$remed_log" == "["* ]] && [[ "$remed_log" == *"]" ]]; then
+    pass
+else
+    fail "Remediation log should be a JSON array: ${remed_log}"
+fi
+
+# Must contain required fields
+for field in action category command exit_code duration_s diagnosis; do
+    if echo "$remed_log" | grep -q "\"${field}\""; then
+        pass
+    else
+        fail "Remediation log entry missing '${field}' field: ${remed_log}"
+    fi
+done
+
+# Cleanup temp dir
+rm -rf "$_TEST_TMPDIR"
+
+# =============================================================================
 # Summary
 # =============================================================================
 

@@ -138,3 +138,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-28
 - **Rationale**: - ACP: New `lib/inbox.sh` Library — **ACCEPT** — Correctly scoped single-entry-point library. Source order in `tekhton.sh` is correct (`notes_cli.sh` at line 699, `inbox.sh` at line 749), so `add_
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-28: Extract build gate phases to separate file (Task: "M54")
+- **Date**: 2026-04-03
+- **Rationale**: gates.sh was approaching the 300-line ceiling; per-phase re-runability is a direct M54 requirement; backward-compatible (run_build_gate() behavior unchanged).
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-29: New remediation engine file (Task: "M54")
+- **Date**: 2026-04-03
+- **Rationale**: remediation logic (~250 lines) would have pushed error_patterns.sh over the ceiling; clean separation of classification (error_patterns.sh) from execution (error_patterns_remediation.sh); sourcing ord
+- **Source**: Accepted ACP from pipeline run

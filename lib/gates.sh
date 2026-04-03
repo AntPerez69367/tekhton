@@ -62,6 +62,23 @@ EOF
     return 0
 }
 
+# --- _gate_try_remediation ERRORS PHASE_LABEL --------------------------------
+# Attempts auto-remediation on classified errors. Returns 0 if any remediation
+# succeeded (caller should re-run the failed phase), 1 otherwise.
+_gate_try_remediation() {
+    local raw_errors="$1"
+    local phase_label="$2"
+
+    # Skip if remediation functions not available
+    command -v attempt_remediation &>/dev/null || return 1
+
+    local classifications
+    classifications=$(classify_build_errors_all "$raw_errors")
+    [[ -z "$classifications" ]] && return 1
+
+    attempt_remediation "$classifications" "$phase_label"
+}
+
 # BUILD GATE — runs after coder, before reviewer
 # Catches broken builds before wasting reviewer/tester turns on bad code
 #
@@ -76,124 +93,29 @@ run_build_gate() {
     # Guarantee a clean slate — remove stale BUILD_RAW_ERRORS.txt from previous runs
     rm -f BUILD_RAW_ERRORS.txt
 
+    # Reset remediation state for this gate invocation (M54)
+    if command -v reset_remediation_state &>/dev/null; then
+        reset_remediation_state
+    fi
+
     log "Running build gate (${stage_label})..."
     _phase_start "build_gate"
 
     # --- Phase 1: Static analysis (ANALYZE_CMD) ---
-    _phase_start "build_gate_analyze"
-    local analyze_timeout="${BUILD_GATE_ANALYZE_TIMEOUT:-300}"
-    local effective_timeout
-    effective_timeout=$(_gate_effective_timeout "$analyze_timeout" "$gate_start" "$gate_timeout") || {
-        _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout"
-        return 1
-    }
-
-    local analyze_exit=0
-    # Capture analyze errors only (warnings are ok, errors are not)
-    # Wrapped in a configurable timeout to prevent runaway static analysis
-    ANALYZE_OUTPUT=$(timeout "$effective_timeout" bash -c "${ANALYZE_CMD}" 2>&1) || analyze_exit=$?
-
-    if [[ "$analyze_exit" -eq 124 ]]; then
-        warn "ANALYZE_CMD timed out after ${effective_timeout}s (${stage_label}). Treating as pass."
-        warn "Increase BUILD_GATE_ANALYZE_TIMEOUT if this is expected."
-        ANALYZE_OUTPUT=""
-    fi
-
-    ANALYZE_ERRORS=$(echo "$ANALYZE_OUTPUT" | grep -E "${ANALYZE_ERROR_PATTERN}" || true)
-
-    if [ -n "$ANALYZE_ERRORS" ]; then
-        warn "Build gate FAILED (${stage_label}) — analyze errors found:"
-        echo "$ANALYZE_ERRORS"
-
-        # Write raw errors for classification (M53 — coder.sh reads this)
-        printf '%s\n' "$ANALYZE_ERRORS" > BUILD_RAW_ERRORS.txt
-
-        # Write errors with classification annotations (M53)
-        {
-            if command -v annotate_build_errors &>/dev/null; then
-                annotate_build_errors "$ANALYZE_ERRORS" "$stage_label"
-            else
-                echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
-                echo "## Stage"
-                echo "${stage_label}"
-            fi
-            echo ""
-            echo "## Analyze Errors"
-            echo '```'
-            echo "${ANALYZE_ERRORS}"
-            echo '```'
-            echo ""
-            echo "## Full Analyze Output"
-            echo '```'
-            echo "${ANALYZE_OUTPUT}"
-            echo '```'
-        } > BUILD_ERRORS.md
-        log "Build errors written to BUILD_ERRORS.md"
-        _phase_end "build_gate_analyze"
+    if ! _gate_phase_analyze "$stage_label" "$gate_start" "$gate_timeout"; then
         _phase_end "build_gate"
         return 1
     fi
-
-    _phase_end "build_gate_analyze"
 
     # Check overall gate timeout before next phase
     _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || { _phase_end "build_gate"; return 1; }
 
     # --- Phase 2: Compile check (BUILD_CHECK_CMD) ---
     if [ -n "${BUILD_CHECK_CMD}" ]; then
-        _phase_start "build_gate_compile"
-        local compile_timeout="${BUILD_GATE_COMPILE_TIMEOUT:-120}"
-        effective_timeout=$(_gate_effective_timeout "$compile_timeout" "$gate_start" "$gate_timeout") || {
-            _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout"
-            return 1
-        }
-
-        local compile_exit=0
-        # Use bash -c instead of eval to avoid arbitrary code execution
-        COMPILE_OUTPUT=$(timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
-
-        if [[ "$compile_exit" -eq 124 ]]; then
-            warn "BUILD_CHECK_CMD timed out after ${effective_timeout}s (${stage_label}). Treating as pass."
-            COMPILE_OUTPUT=""
-        fi
-        if echo "$COMPILE_OUTPUT" | grep -q "${BUILD_ERROR_PATTERN}"; then
-            COMPILE_ERRORS=$(echo "$COMPILE_OUTPUT" | grep "${BUILD_ERROR_PATTERN}" | head -20)
-            warn "Build gate FAILED (${stage_label}) — compile errors found:"
-            echo "$COMPILE_ERRORS"
-
-            # Append raw compile errors for classification (M53)
-            printf '%s\n' "$COMPILE_ERRORS" >> BUILD_RAW_ERRORS.txt
-
-            # Annotate compile errors with classification (M53)
-            # Ensure canonical header when Phase 1 passed (BUILD_ERRORS.md absent)
-            if [[ ! -f BUILD_ERRORS.md ]]; then
-                {
-                    echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
-                    echo "## Stage"
-                    echo "${stage_label}"
-                    echo ""
-                } >> BUILD_ERRORS.md
-            fi
-            {
-                if command -v annotate_build_errors &>/dev/null; then
-                    echo ""
-                    echo "## Error Classification (compile)"
-                    classify_build_errors_all "$COMPILE_ERRORS" | while IFS='|' read -r _cat _saf _rem _diag; do
-                        [[ -z "$_cat" ]] && continue
-                        echo "- **${_cat}** (${_saf}): ${_diag}"
-                    done
-                fi
-                echo ""
-                echo "## Compile Errors"
-                echo '```'
-                echo "${COMPILE_ERRORS}"
-                echo '```'
-            } >> BUILD_ERRORS.md
-            _phase_end "build_gate_compile"
+        if ! _gate_phase_compile "$stage_label" "$gate_start" "$gate_timeout"; then
             _phase_end "build_gate"
             return 1
         fi
-        _phase_end "build_gate_compile"
     fi  # end BUILD_CHECK_CMD guard
 
     # Check overall gate timeout before next phase

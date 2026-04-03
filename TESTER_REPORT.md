@@ -1,6 +1,5 @@
 ## Planned Tests
-- [x] `tests/test_gates_extraction.sh` — Verify UI test phase extraction into gates_ui.sh
-- [x] `tests/test_nonblocking_log_structure.sh` — Verify NON_BLOCKING_LOG.md has proper markers
+- [x] `tests/test_error_patterns.sh` — M54 remediation engine: safe exec, blocklist, max-attempts, dedup, code-skip, timeout, causal events, JSON log structure
 
 ## Test Run Results
 Passed: 254  Failed: 0
@@ -9,5 +8,4 @@ Passed: 254  Failed: 0
 None
 
 ## Files Modified
-- [x] `tests/test_gates_extraction.sh`
-- [x] `NON_BLOCKING_LOG.md`
+- [x] `tests/test_error_patterns.sh`

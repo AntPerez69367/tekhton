@@ -43,29 +43,13 @@ _run_ui_test_phase() {
     local _ui_timeout="${UI_TEST_TIMEOUT:-120}"
     _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
 
-    # --- Registry-based environment auto-remediation (M53) ---
-    # Classify UI test errors via pattern registry. If a safe env_setup
-    # remediation exists, attempt it before wasting a build-fix retry.
-    if [[ "$_ui_exit" -ne 0 ]] && command -v classify_build_error &>/dev/null; then
-        local _classification
-        _classification=$(classify_build_error "$_ui_output")
-        local _class_cat _class_safety _class_remed
-        _class_cat=$(echo "$_classification" | cut -d'|' -f1)
-        _class_safety=$(echo "$_classification" | cut -d'|' -f2)
-        _class_remed=$(echo "$_classification" | cut -d'|' -f3)
-
-        if [[ "$_class_cat" == "env_setup" ]] && [[ "$_class_safety" == "safe" ]] \
-            && [[ -n "$_class_remed" ]]; then
-            log "Detected env_setup issue. Running auto-remediation: ${_class_remed}"
-            local _remed_exit=0
-            timeout 120 bash -c "$_class_remed" 2>&1 || _remed_exit=$?
-            if [[ "$_remed_exit" -eq 0 ]]; then
-                log "Auto-remediation succeeded. Re-running UI tests."
-                _ui_exit=0
-                _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
-            else
-                warn "Auto-remediation failed (exit ${_remed_exit}). Continuing with failure."
-            fi
+    # --- Registry-based auto-remediation (M54) ---
+    # Use centralized attempt_remediation() for classified errors.
+    if [[ "$_ui_exit" -ne 0 ]] && command -v _gate_try_remediation &>/dev/null; then
+        if _gate_try_remediation "$_ui_output" "build_gate_ui_test"; then
+            log "Re-running UI tests after remediation..."
+            _ui_exit=0
+            _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
         fi
     fi
 
