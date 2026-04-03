@@ -165,6 +165,15 @@ run_build_gate() {
             printf '%s\n' "$COMPILE_ERRORS" >> BUILD_RAW_ERRORS.txt
 
             # Annotate compile errors with classification (M53)
+            # Ensure canonical header when Phase 1 passed (BUILD_ERRORS.md absent)
+            if [[ ! -f BUILD_ERRORS.md ]]; then
+                {
+                    echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
+                    echo "## Stage"
+                    echo "${stage_label}"
+                    echo ""
+                } >> BUILD_ERRORS.md
+            fi
             {
                 if command -v annotate_build_errors &>/dev/null; then
                     echo ""
@@ -401,76 +410,4 @@ UIEOF
     return 0
 }
 
-# --- Summary accuracy check ---------------------------------------------------
-# Cross-checks CODER_SUMMARY.md "Files Modified" section against actual git diff.
-# Logs a warning when the summary underreports changes. Non-blocking — informational only.
-_warn_summary_drift() {
-    [[ -f "CODER_SUMMARY.md" ]] || return 0
-
-    # Count files actually changed (tracked modifications + staged)
-    local actual_count=0
-    if command -v git &>/dev/null; then
-        actual_count=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]')
-        actual_count="${actual_count:-0}"
-    fi
-    [[ "$actual_count" -gt 0 ]] || return 0
-
-    # Check if summary mentions files or claims none modified
-    local files_section=""
-    files_section=$(sed -n '/^## Files Modified/,/^## /p' CODER_SUMMARY.md 2>/dev/null \
-        | head -20 || true)
-
-    if [[ -z "$files_section" ]] || echo "$files_section" | grep -qi "no files\|none\|N/A"; then
-        warn "CODER_SUMMARY.md reports no files modified but git shows ${actual_count} changed file(s)."
-        warn "Summary accuracy drift detected — auto-appending actual file list."
-        # Auto-append the actual git diff file list to CODER_SUMMARY.md
-        local _actual_files
-        _actual_files=$(git diff --name-only HEAD 2>/dev/null | head -30)
-        if [[ -n "$_actual_files" ]]; then
-            {
-                echo ""
-                echo "## Files Modified (auto-detected)"
-                echo "$_actual_files" | while IFS= read -r f; do echo "- \`${f}\`"; done
-            } >> CODER_SUMMARY.md
-        fi
-    fi
-}
-
-# COMPLETION GATE — runs after coder, before build gate
-# Blocks pipeline progression if coder did not self-report completion
-#
-# Usage:  run_completion_gate
-# Returns: 0 if CODER_SUMMARY.md shows COMPLETE, 1 otherwise
-run_completion_gate() {
-    # Handle both "## Status: VALUE" (single-line) and "## Status\nVALUE" (next-line) formats.
-    CODER_STATUS=$(awk '/^## Status/{
-        sub(/^## Status:?[[:space:]]*/, "")
-        if (length($0) > 0) { print; exit }
-        getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit
-    }' CODER_SUMMARY.md 2>/dev/null || echo "")
-    export CODER_REMAINING
-    CODER_REMAINING=$(grep "^## Remaining Work" -A5 CODER_SUMMARY.md 2>/dev/null || echo "")
-
-    if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
-        warn "Completion gate FAILED — coder self-reported IN PROGRESS."
-        return 1
-    fi
-
-    if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
-        log "Completion gate PASSED — coder self-reported COMPLETE."
-        _warn_summary_drift
-        return 0
-    fi
-
-    # Status is missing or ambiguous — check if substantive work exists.
-    # If files were modified, treat as IN PROGRESS rather than hard-failing.
-    if command -v is_substantive_work &>/dev/null && is_substantive_work; then
-        warn "Completion gate — Status field missing but substantive work detected."
-        warn "Treating as IN PROGRESS. Reviewer will assess actual changes."
-        return 1
-    fi
-
-    warn "Completion gate FAILED — CODER_SUMMARY.md has no clear Status field."
-    warn "Expected '## Status' line with COMPLETE or IN PROGRESS."
-    return 1
-}
+# --- Completion gate and summary drift check live in gates_completion.sh ---
