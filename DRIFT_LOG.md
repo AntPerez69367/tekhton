@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-03
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-04-03 | "Address all 5 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/gates.sh:170` — The Phase 2 header guard checks `[[ ! -f BUILD_ERRORS.md ]]` at write time inside the redirect block. A stale BUILD_ERRORS.md from a prior failed run (not cleaned at gate entry) would suppress the header and cause new compile errors to be appended to old content. This is a pre-existing issue (not introduced by this PR) but worth noting for a future audit pass.

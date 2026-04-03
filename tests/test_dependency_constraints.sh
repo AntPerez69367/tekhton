@@ -21,6 +21,7 @@ BUILD_ERROR_PATTERN="ERROR"
 DEPENDENCY_CONSTRAINTS_FILE=""
 
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 FAIL=0
 

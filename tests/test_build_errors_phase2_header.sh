@@ -34,6 +34,7 @@ cd "$PROJECT_DIR"
 
 # Source gates.sh after setup
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 # Test: Run build gate with Phase 1 passing and Phase 2 failing
 if run_build_gate "test-phase2" 2>/dev/null; then

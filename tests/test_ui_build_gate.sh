@@ -40,6 +40,7 @@ UI_VALIDATION_ENABLED="true"
 UI_TEST_TIMEOUT="10"
 
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 FAIL=0
 
