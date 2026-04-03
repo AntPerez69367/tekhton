@@ -39,7 +39,12 @@ UI_TEST_CMD=""
 UI_VALIDATION_ENABLED="true"
 UI_TEST_TIMEOUT="10"
 
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/error_patterns.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_phases.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 FAIL=0

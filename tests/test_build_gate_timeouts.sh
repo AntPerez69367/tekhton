@@ -47,7 +47,12 @@ fail() {
 run_ui_validation() { return 0; }
 export -f run_ui_validation 2>/dev/null || true
 
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/error_patterns.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_phases.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 # --- Source ui_validate.sh ---

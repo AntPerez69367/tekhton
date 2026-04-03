@@ -224,8 +224,14 @@ _hook_emit_run_summary() {
         timing_json=$(_get_timing_breakdown)
     fi
 
+    # --- Remediation log (M54) ---
+    local remediations_json="[]"
+    if command -v get_remediation_log &>/dev/null; then
+        remediations_json=$(get_remediation_log)
+    fi
+
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "team": "%s",\n  "parallel_group": "%s",\n  "concurrent_teams": %d,\n  "decisions": %s,\n  "timing_breakdown": %s,\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "team": "%s",\n  "parallel_group": "%s",\n  "concurrent_teams": %d,\n  "decisions": %s,\n  "timing_breakdown": %s,\n  "remediations": %s,\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
@@ -256,6 +262,7 @@ _hook_emit_run_summary() {
         "$concurrent_teams" \
         "$decisions_json" \
         "$timing_json" \
+        "$remediations_json" \
         "$timestamp_iso" \
         > "$summary_file"
 
