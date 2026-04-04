@@ -40,11 +40,13 @@ _pf_infer_from_compose() {
         fi
         [[ "$in_services" -ne 1 ]] && continue
 
-        # Service name (2-space indent)
+        # Service name (2-space indent) — continue after match so the service
+        # name line is never re-evaluated by port/image checks below.
         if [[ "$line" =~ ^[[:space:]][[:space:]][a-zA-Z_][a-zA-Z0-9_-]*: ]]; then
             _pf_emit_compose_service "$current_service" "$current_image" "$current_host_port"
             current_service=$(echo "$line" | sed 's/^[[:space:]]*//' | cut -d: -f1)
             current_image=""; current_host_port=""; in_ports=0
+            continue
         fi
 
         # Image line

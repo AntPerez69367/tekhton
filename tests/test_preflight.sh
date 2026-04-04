@@ -29,6 +29,10 @@ source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight.sh"
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_checks.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_checks_env.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight_services.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"

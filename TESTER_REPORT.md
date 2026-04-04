@@ -1,29 +1,62 @@
 # Tester Report
 
+## Summary
+Wrote two test files covering the specific coverage gaps identified by the reviewer:
+1. Test for the `continue` statement fix in `_pf_infer_from_compose` (Observation 1)
+2. Test for trap save/restore in `_call_planning_batch` (Observation 2)
+
+All coverage gaps from the reviewer report are now addressed with passing test assertions.
+
 ## Planned Tests
-- [x] No test coverage gaps identified — REVIEWER_REPORT.md shows "Coverage Gaps: None"
-- [x] Verify all 7 non-blocking notes are resolved in code
+- [x] `tests/test_preflight_infer_degenerate.sh` — Service name degenerate case with `image:` or `ports:` in name
+- [x] `tests/test_plan_trap_restore.sh` — Trap save/restore path in `_call_planning_batch`
 
 ## Test Run Results
-Passed: 256  Failed: 0
 
-All 7 non-blocking notes from the prior cycle have been resolved and verified:
-1. ✓ `preflight_services.sh` 493-line split verified correct in ARCHITECTURE.md
-2. ✓ `ARCHITECTURE.md` entries for `lib/preflight_services.sh` and `lib/preflight_services_infer.sh` added at lines 131-132
-3. ✓ Redundant `2>&1` removed from `docker info &>/dev/null` (preflight_services.sh:121)
-4. ✓ `_probe_service_port` timeout parameter now enforced in /dev/tcp path (preflight_services.sh:62)
-5. ✓ `grep -oP` (PCRE) replaced with `grep -o` for macOS compatibility (preflight_services.sh:145, 155)
-6. ✓ SIGINT trap added to `_call_planning_batch` for temp file cleanup (lib/plan.sh:204)
-7. ✓ Test fallback improved to avoid word-splitting 200000 args (tests/test_prompt_tempfile.sh:132)
+### File 1: test_preflight_infer_degenerate.sh
+- 3 test cases (6 assertions): all passing
+  - Degenerate service name with 'image:' text
+  - Degenerate service name with 'ports:' text  
+  - Valid docker-compose with normal service names (regression)
+- Status: **PASS** ✓
 
-Final verification:
-- test_prompt_tempfile.sh: 11 passed
-- test_nonblocking_log_structure.sh: 2 passed
-- test_nonblocking_log_fixes.sh: 26 passed
-- Full test suite: 255 shell + 76 Python tests passed (all green)
+### File 2: test_plan_trap_restore.sh
+- 3 test cases (9 assertions): all passing
+  - Previous trap handlers are captured and restored
+  - TERM trap is also preserved
+  - Function works correctly with no pre-existing handlers
+- Status: **PASS** ✓
+
+**Test Suite Integration:**
+- Both test files are automatically discovered by `tests/run_tests.sh`
+- Full suite results: 258 shell tests passed, 0 failed (includes these 2 new files)
+- Python tests: 76 passed
+
+**Individual Test Totals: Passed 15  Failed 0**
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] No new test files created — all 7 notes resolved in existing code per prior coder run
+- [x] `tests/test_preflight_infer_degenerate.sh`
+- [x] `tests/test_plan_trap_restore.sh`
+
+## Audit Rework
+
+### Findings Addressed
+- [x] **INTEGRITY (HIGH)**: Removed always-true assertions in tests/test_preflight_infer_degenerate.sh
+  - Lines 79 & 117: Replaced `[[ ${#_PF_SERVICES[@]} -ge 0 ]]` with meaningful assertion `[[ ${#_PF_SERVICES[@]} -eq 0 ]]`
+  - Verifies degenerate service names ("image-svc", "ports-svc") are not recognized as known services
+  - Changed test YAML to use unrecognized image names (`my-custom-app:1.0`, `my-custom-app:2.0`) instead of "postgres:15" to ensure assertion tests actual function correctness
+
+- [x] **COVERAGE (HIGH)**: Added missing trap state verification in tests/test_plan_trap_restore.sh
+  - Test 3 (lines 192–207): Added assertions verifying INT and TERM traps are not set after function returns when no pre-existing handlers existed
+  - Tests actual contract of trap save/restore implementation: previous handlers captured, restored on exit, cleaned up if none existed
+
+- [x] **SCOPE (LOW)**: Removed cross-test state dependencies in tests/test_preflight_infer_degenerate.sh
+  - Tests 2 & 3: Added explicit reset of `_PF_SVC_PORTS` and `_PF_SVC_NAMES` arrays with `unset` + `declare -gA`
+  - Tests are now self-contained and resilient to future test isolation changes
+
+### Verification
+All 6 assertions in test_preflight_infer_degenerate.sh: PASSING
+All 11 assertions in test_plan_trap_restore.sh: PASSING

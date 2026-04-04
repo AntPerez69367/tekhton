@@ -200,6 +200,13 @@ _call_planning_batch() {
     local _prompt_file="${TMPDIR:-/tmp}/tekhton_prompt_$$.txt"
     printf '%s' "$prompt" > "$_prompt_file"
 
+    # Save existing traps so we can restore them after cleanup instead of
+    # clearing globally with `trap - INT TERM` (which could mask signals
+    # received during spinner teardown).
+    local _prev_trap_int _prev_trap_term
+    _prev_trap_int=$(trap -p INT 2>/dev/null || true)
+    _prev_trap_term=$(trap -p TERM 2>/dev/null || true)
+
     # Clean up temp file on interrupt (matches the abort trap on the FIFO path)
     trap 'rm -f "$_prompt_file"; [[ -n "${spinner_pid:-}" ]] && kill "$spinner_pid" 2>/dev/null; exit 130' INT TERM
 
@@ -215,7 +222,18 @@ _call_planning_batch() {
     set -o pipefail
 
     rm -f "$_prompt_file"
-    trap - INT TERM  # Restore default signal handling
+
+    # Restore previous signal handlers (not `trap - INT TERM` which clears globally)
+    if [[ -n "$_prev_trap_int" ]]; then
+        eval "$_prev_trap_int"
+    else
+        trap - INT
+    fi
+    if [[ -n "$_prev_trap_term" ]]; then
+        eval "$_prev_trap_term"
+    else
+        trap - TERM
+    fi
 
     # Stop spinner and clear the line
     if [[ -n "$spinner_pid" ]]; then
