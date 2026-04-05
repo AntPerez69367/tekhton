@@ -1,3 +1,5 @@
+# Reviewer Report
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,11 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `templates/watchtower/app.js:783` — The "Run Count" toggle button label is a misnomer. The mode computes `avgT = stageTotals[sn].turns / cnt` (average turns per stage) and the tooltip confirms this with "N turns avg". It is not a count of how many runs included that stage (`stageTurnCount[sn]` fills that role). "Avg Turns" or "Turn Budget" would be more accurate and avoids re-introducing the same conceptual confusion the task was meant to fix.
-- `templates/watchtower/style.css:302` — The `.dist-btn` elements have no `aria-pressed` attribute. The visual active state is present via `.active`, but screen readers cannot infer which toggle is selected. Adding `aria-pressed="true/false"` (set during event listener handling) would satisfy WCAG 4.1.2.
+- Four decorative tag/chip classes (`.run-team-tag`, `.scout-sub-badge`, `.dep-chip-enabledby`, `.dep-chip-enables`) remain at 0.7rem = 10.5px at the new 15px base. This is still technically sub-WCAG for body text, but acceptable for small badge/tag elements where text is 1–4 characters and context makes meaning clear. Worth revisiting if contrast complaints arise.
 
 ## Coverage Gaps
-- No automated test coverage for the localStorage persistence of `tk_dist_mode` or for the toggle re-render behavior. Given this is a static template file tested manually via the dashboard, this is expected — noting for completeness.
+- None
 
 ## Drift Observations
 - None

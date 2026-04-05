@@ -5,9 +5,9 @@ PASS
 78
 
 ## Reasoning
-- Scope is well-defined: Distribution section on the Trends page of Watchtower needs clarification about what metric it displays
-- Problem statement is specific: Scout stage (least time) shows as highest distribution, indicating the metric is invocation count or call frequency rather than time — this mismatch confuses users
-- A competent developer can reasonably infer the fix: add a clarifying label, subtitle, or description to the Distribution section explaining what is being measured (e.g., "by invocation count"), making the chart self-explanatory
-- Historical pattern shows similar Watchtower UI polish tasks passing cleanly in a single cycle
-- No migration impact — UI-only change to an internal dashboard
-- No UI test infrastructure is referenced for this project, so no UI testability gap to flag
+- Scope is clear: improve text sizes and spacing in the Watchtower dashboard for readability
+- The problem is concrete and observable ("Milestone" column in recent runs view is called out explicitly as nearly impossible to read)
+- WCAG provides a well-known standard reference that any competent developer can apply (minimum 14px/0.875rem for body text, 1.5 line-height, adequate contrast)
+- No new config keys, files, or format changes — no migration impact needed
+- Historical Watchtower polish runs (e.g. the recent Trends screen backslash fix) have passed cleanly in similar scope
+- A developer can audit all Watchtower text elements, bump sizes to WCAG AA baseline, and verify the specific recent-runs "Milestone" column is legible without further clarification
