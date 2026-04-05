@@ -57,6 +57,13 @@ duplicate the security agent's work — focus on code quality and correctness.
 {{SECURITY_FINDINGS_BLOCK}}
 {{ENDIF:SECURITY_FINDINGS_BLOCK}}
 
+{{IF:UI_FINDINGS_BLOCK}}
+## UI/UX Findings (from UI Specialist)
+The following UI/UX findings were identified by the UI specialist reviewer.
+Do not duplicate the UI specialist's work — focus on code quality and correctness.
+{{UI_FINDINGS_BLOCK}}
+{{ENDIF:UI_FINDINGS_BLOCK}}
+
 ## Required Reading (read in this order, no more)
 1. `{{REVIEWER_ROLE_FILE}}` — your role and checklist
 2. `CODER_SUMMARY.md` — what was built and what files were touched
