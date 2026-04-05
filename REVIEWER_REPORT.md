@@ -10,8 +10,7 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_platform_fragments.sh:86-94` — Test 27 writes the mock `coder_guidance.prompt.md` to `${TEKHTON_HOME}/platforms/web/` (inside the repo tree) rather than a temp dir. A file-level `trap` would prevent leaving stale mock files if the process is killed between the write and the `rm -f` cleanup line.
-- `tests/test_watchtower_distribution_toggle.sh:160` — Comment still reads "Verify Run Count button" after the label was renamed to "Avg Turns". Stale comment only; test assertions are correct.
+- `tests/test_platform_web_detection.sh` is 330 lines, still 30 lines over the 300-line ceiling. The split reduces the original 381-line file to 330+48, which is better but doesn't fully clear the ceiling. A further split (e.g., extracting component-dir and token-detection tests into a third file) would resolve this.
 
 ## Coverage Gaps
 - None

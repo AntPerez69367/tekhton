@@ -66,7 +66,7 @@ run_stage_tester() {
         # --- Context compiler (task-scoped filtering) ------------------------
         build_context_packet "tester" "$TASK" "$CLAUDE_TESTER_MODEL"
 
-        # --- UI test guidance (Milestone 28) ----------------------------------
+        # --- UI test guidance (Milestone 28, M58 platform adapter override) ---
         export TESTER_UI_GUIDANCE=""
         if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]]; then
             # Set framework-specific conditional flags for the sub-template
@@ -83,7 +83,16 @@ run_stage_tester() {
                 detox)            UI_FRAMEWORK_IS_DETOX="true" ;;
                 *)                UI_FRAMEWORK_IS_GENERIC="true" ;;
             esac
-            TESTER_UI_GUIDANCE=$(render_prompt "tester_ui_guidance" 2>/dev/null || true)
+
+            # If platform adapter provided tester patterns (M58), skip legacy file.
+            # UI_TESTER_PATTERNS is already injected via {{UI_TESTER_PATTERNS}}
+            # in tester.prompt.md — only render legacy when adapter is absent.
+            if [[ -n "${UI_TESTER_PATTERNS:-}" ]]; then
+                TESTER_UI_GUIDANCE=""
+            else
+                # Fall back to legacy monolithic file
+                TESTER_UI_GUIDANCE=$(render_prompt "tester_ui_guidance" 2>/dev/null || true)
+            fi
         fi
 
         # --- Context budget reporting ----------------------------------------
