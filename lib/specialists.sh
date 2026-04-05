@@ -35,6 +35,19 @@ run_specialist_reviews() {
         specialists+=("api")
     fi
 
+    # UI specialist: auto-enable when UI project detected
+    local ui_enabled="${SPECIALIST_UI_ENABLED:-auto}"
+    if [[ "$ui_enabled" == "auto" ]]; then
+        if [[ "${UI_PROJECT_DETECTED:-}" == "true" ]]; then
+            ui_enabled="true"
+        else
+            ui_enabled="false"
+        fi
+    fi
+    if [[ "$ui_enabled" == "true" ]]; then
+        specialists+=("ui")
+    fi
+
     # Collect custom specialists (SPECIALIST_CUSTOM_*_ENABLED=true)
     _collect_custom_specialists specialists
 
@@ -92,6 +105,12 @@ EOF
         # Append notes to NON_BLOCKING_LOG.md
         _append_specialist_notes "$spec_name"
     done
+
+    # Populate UI_FINDINGS_BLOCK for downstream reviewer prompt injection
+    export UI_FINDINGS_BLOCK=""
+    if [[ -f "SPECIALIST_UI_FINDINGS.md" ]]; then
+        UI_FINDINGS_BLOCK=$(cat "SPECIALIST_UI_FINDINGS.md")
+    fi
 
     if [ "$has_blockers" = true ]; then
         warn "Specialist review(s) found blocker(s). Routing to rework."
@@ -319,6 +338,14 @@ _specialist_diff_relevant() {
                       request|response|api|rest|rpc|service|
                       serializ|deserializ|dto|payload|contract|
                       version|v1|v2|v3"
+            ;;
+        ui)
+            # File extension + directory pattern matching for UI-related files
+            local relevance_patterns='\.tsx$|\.jsx$|\.vue$|\.svelte$|\.css$|\.scss$|\.sass$|\.less$|\.html$|\.dart$|\.swift$|\.kt$|\.kts$|/components/|/pages/|/views/|/screens/|/widgets/|/scenes/|/ui/|/styles/|/theme/|\.storyboard$|\.xib$'
+            if echo "$diff_files" | grep -qE "$relevance_patterns"; then
+                return 0
+            fi
+            return 1
             ;;
         *)
             # Custom specialists: no keyword list, always relevant
