@@ -1,37 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_platform_web.sh — Unit tests for platforms/web/ (Milestone 58)
+# test_platform_web_detection.sh — Design system detection + edge cases
+#                                   tests for platforms/web/ (Milestone 58)
 #
-# Tests:
-#   1.  Tailwind detected from tailwind.config.ts
-#   2.  Tailwind detected from tailwind.config.js
-#   3.  Tailwind detected from tailwind.config.cjs
-#   4.  Tailwind detected from tailwind.config.mjs
-#   5.  Tailwind detected from tailwindcss in package.json deps
-#   6.  Tailwind config path is set to config file
-#   7.  MUI detected from @mui/material in deps
-#   8.  MUI overrides Tailwind when both present
-#   9.  shadcn detected from components.json
-#  10.  Chakra detected from @chakra-ui/react
-#  11.  Ant Design detected from antd
-#  12.  Radix detected from @radix-ui/react-*
-#  13.  Headless UI detected from @headlessui/react
-#  14.  Headless UI detected from @headlessui/vue
-#  15.  Bootstrap detected from bootstrap in deps
-#  16.  Bulma detected from bulma in deps
-#  17.  UnoCSS detected from unocss in deps
-#  18.  UnoCSS config path set when uno.config.ts exists
-#  19.  Vuetify detected from vuetify in deps
-#  20.  Element Plus detected from element-plus in deps
-#  21.  Component directory detection finds src/components/ui/
-#  22.  Component directory detection finds src/components/common/
-#  23.  Component directory detection finds app/components/ui/
-#  24.  CSS custom property file detection (variables.css in src/)
-#  25.  CSS custom property file detection (tokens.scss in root)
-#  26.  Design tokens not overridden when config already set
-#  27.  Empty project produces no design system
-#  28.  Fragment files are syntactically valid markdown
-#  29.  detect.sh passes bash -n
+# Split from test_platform_web.sh. Tests 1-20 + 27: design system detection
+# and edge cases. Component/token detection moved to test_platform_web_component_tokens.sh.
 # =============================================================================
 set -euo pipefail
 
@@ -73,7 +46,7 @@ run_web_detect() {
     source "${TEKHTON_HOME}/platforms/web/detect.sh"
 }
 
-echo "=== test_platform_web.sh ==="
+echo "=== test_platform_web_detection.sh ==="
 
 # --- Tailwind CSS detection ---------------------------------------------------
 
@@ -300,78 +273,12 @@ EOF
 run_web_detect
 [[ "$DESIGN_SYSTEM" == "element-plus" ]] && pass "20: Element Plus from deps" || fail "20: Element Plus from deps (got: $DESIGN_SYSTEM)"
 
-# --- Component directory detection --------------------------------------------
-
-# Test 21: src/components/ui/
-reset_and_make "comp_ui"
-mkdir -p "$PROJECT_DIR/src/components/ui"
-run_web_detect
-[[ "$COMPONENT_LIBRARY_DIR" == "${PROJECT_DIR}/src/components/ui" ]] && pass "21: Component dir src/components/ui/" || fail "21: Component dir (got: $COMPONENT_LIBRARY_DIR)"
-
-# Test 22: src/components/common/
-reset_and_make "comp_common"
-mkdir -p "$PROJECT_DIR/src/components/common"
-run_web_detect
-[[ "$COMPONENT_LIBRARY_DIR" == "${PROJECT_DIR}/src/components/common" ]] && pass "22: Component dir src/components/common/" || fail "22: Component dir (got: $COMPONENT_LIBRARY_DIR)"
-
-# Test 23: app/components/ui/
-reset_and_make "comp_app"
-mkdir -p "$PROJECT_DIR/app/components/ui"
-run_web_detect
-[[ "$COMPONENT_LIBRARY_DIR" == "${PROJECT_DIR}/app/components/ui" ]] && pass "23: Component dir app/components/ui/" || fail "23: Component dir (got: $COMPONENT_LIBRARY_DIR)"
-
-# --- CSS custom property / design token detection -----------------------------
-
-# Test 24: variables.css in src/
-reset_and_make "tokens_src"
-mkdir -p "$PROJECT_DIR/src"
-touch "$PROJECT_DIR/src/variables.css"
-run_web_detect
-[[ "$DESIGN_SYSTEM_CONFIG" == "${PROJECT_DIR}/src/variables.css" ]] && pass "24: CSS tokens in src/" || fail "24: CSS tokens in src/ (got: $DESIGN_SYSTEM_CONFIG)"
-
-# Test 25: tokens.scss in root
-reset_and_make "tokens_root"
-touch "$PROJECT_DIR/tokens.scss"
-run_web_detect
-[[ "$DESIGN_SYSTEM_CONFIG" == "${PROJECT_DIR}/tokens.scss" ]] && pass "25: CSS tokens in root" || fail "25: CSS tokens in root (got: $DESIGN_SYSTEM_CONFIG)"
-
-# Test 26: Design tokens not overridden when config already set (e.g., Tailwind)
-reset_and_make "tokens_no_override"
-touch "$PROJECT_DIR/tailwind.config.js"
-mkdir -p "$PROJECT_DIR/src"
-touch "$PROJECT_DIR/src/variables.css"
-run_web_detect
-[[ "$DESIGN_SYSTEM_CONFIG" == "${PROJECT_DIR}/tailwind.config.js" ]] && pass "26: Tokens don't override existing config" || fail "26: Tokens don't override existing config (got: $DESIGN_SYSTEM_CONFIG)"
-
 # --- Edge cases ---------------------------------------------------------------
 
 # Test 27: Empty project produces no design system
 reset_and_make "empty"
 run_web_detect
 [[ -z "$DESIGN_SYSTEM" ]] && pass "27: Empty project → no design system" || fail "27: Empty project → no design system (got: $DESIGN_SYSTEM)"
-
-# --- Fragment file validation -------------------------------------------------
-
-# Test 28: Fragment files exist and are non-empty
-local_fail=0
-for frag in coder_guidance.prompt.md specialist_checklist.prompt.md tester_patterns.prompt.md; do
-    fpath="${TEKHTON_HOME}/platforms/web/${frag}"
-    if [[ ! -f "$fpath" ]]; then
-        fail "28: Missing fragment: ${frag}"
-        local_fail=1
-    elif [[ ! -s "$fpath" ]]; then
-        fail "28: Empty fragment: ${frag}"
-        local_fail=1
-    fi
-done
-[[ "$local_fail" -eq 0 ]] && pass "28: All fragment files exist and are non-empty"
-
-# Test 29: detect.sh passes bash -n
-if bash -n "${TEKHTON_HOME}/platforms/web/detect.sh" 2>/dev/null; then
-    pass "29: detect.sh passes bash -n"
-else
-    fail "29: detect.sh fails bash -n"
-fi
 
 # --- Summary ------------------------------------------------------------------
 

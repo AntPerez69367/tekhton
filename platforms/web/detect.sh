@@ -10,6 +10,7 @@
 # Depends on: detect.sh (_extract_json_keys, _check_dep) already loaded
 # =============================================================================
 # shellcheck disable=SC2034  # Variables used by caller via export
+set -euo pipefail
 
 # --- Design system detection --------------------------------------------------
 

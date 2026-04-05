@@ -1,78 +1,59 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 36 test functions
-Verdict: PASS
+Tests audited: 2 files, 27 test functions
+Verdict: CONCERNS
 
 ### Findings
 
-#### COVERAGE: UI_TESTER_PATTERNS never asserted in fragment tests
-- File: tests/test_platform_fragments.sh (tests 25–31)
-- Issue: `load_platform_fragments()` assembles three output variables:
-  `UI_CODER_GUIDANCE`, `UI_SPECIALIST_CHECKLIST`, and `UI_TESTER_PATTERNS`.
-  Every test in this file sets `UI_PLATFORM="web"` and calls
-  `load_platform_fragments()`, but no test ever asserts on `UI_TESTER_PATTERNS`.
-  The web tester patterns file exists and is non-empty (verified by
-  `test_platform_web.sh:358–367`), but the loading path at `_base.sh:223`
-  (step 5 of `load_platform_fragments`) is never exercised by the fragment
-  test suite. A regression silently breaking tester pattern assembly would
-  not be caught.
-- Severity: MEDIUM
-- Action: Add a test asserting `[[ "$UI_TESTER_PATTERNS" == *"UI Testing Guidance"* ]]`
-  after `load_platform_fragments` with `UI_PLATFORM="web"`. The string
-  "UI Testing Guidance" is the first heading in
-  `platforms/web/tester_patterns.prompt.md:2`.
+#### SCOPE: Pre-verified orphan list is a false positive
+- File: tests/test_platform_web_component_tokens.sh:31,46 / tests/test_platform_web_detection.sh:31,46
+- Issue: The shell-detected orphan list asserts both files "import deleted module
+  'tests/test_platform_web.sh'". Reading the actual source of both files reveals
+  no such import. `test_platform_web_component_tokens.sh` sources only
+  `lib/detect.sh` (line 31) and `platforms/web/detect.sh` (line 46).
+  `test_platform_web_detection.sh` sources the same two files at the same lines.
+  Neither file contains any reference to `tests/test_platform_web.sh`. The orphan
+  detector appears to have produced a false positive — likely via filename-prefix
+  matching rather than inspecting `source` statements. Acting on this list would
+  remove valid, correctly-exercising tests without cause.
+- Severity: HIGH
+- Action: Disregard the pre-verified orphan list for these two files. Both are
+  correctly scoped to the current codebase. No removal is warranted.
 
-#### COVERAGE: Web-specific specialist checklist content not verified
-- File: tests/test_platform_fragments.sh:79
-- Issue: Test 26 checks only for universal content ("Component Structure") in
-  `UI_SPECIALIST_CHECKLIST`. The `load_platform_fragments()` function also
-  appends `platforms/web/specialist_checklist.prompt.md` (step 4 at
-  `_base.sh:212–218`), which contains "Web-Specific Review Checklist". No test
-  verifies this platform-specific append fires. A regression breaking the
-  platform-specific specialist checklist path would not be caught.
-- Severity: MEDIUM
-- Action: Add an assertion checking
-  `[[ "$UI_SPECIALIST_CHECKLIST" == *"Web-Specific Review Checklist"* ]]`
-  alongside the existing universal content check. Test 27's pattern (verifying
-  both universal and platform content in `UI_CODER_GUIDANCE`) is the right
-  model to follow for `UI_SPECIALIST_CHECKLIST`.
-
-#### COVERAGE: Design system precedence chain undertested
-- File: tests/test_platform_web.sh:143–155
-- Issue: Test 8 verifies MUI overrides Tailwind when both are present. The
-  implementation at `platforms/web/detect.sh:28–121` defines a 13-step
-  precedence chain. Only one override pairing is tested. If the ordering is
-  changed — e.g., Chakra moved above MUI — no test would catch it.
+#### COVERAGE: Component directory detection tests cover only 3 of 6 candidates
+- File: tests/test_platform_web_component_tokens.sh:53-69
+- Issue: `platforms/web/detect.sh:156-172` defines 6 candidate paths checked in
+  order by `_detect_web_component_dir`: `src/components/ui`, `src/components/common`,
+  `src/ui`, `components/ui`, `components/common`, `app/components/ui`. Tests 21-23
+  cover only candidates 1, 2, and 6. Paths `src/ui` (candidate 3), `components/ui`
+  (candidate 4), and `components/common` (candidate 5) are untested. A regression
+  removing or reordering any of the three uncovered candidates would not be caught.
 - Severity: LOW
-- Action: Add one additional precedence test, e.g., Chakra overrides Bootstrap
-  when both are in dependencies, to catch ordering regressions at a second
-  point in the chain.
+- Action: Add three tests following the same pattern as tests 21-23, one for each
+  uncovered candidate path.
 
-#### NAMING: Test labels in test_platform_fragments.sh are offset from file scope
-- File: tests/test_platform_fragments.sh:8–15 (comment header)
-- Issue: Inline labels in `pass`/`fail` calls are numbered 25–31, matching a
-  former combined-file numbering scheme. `test_platform_web.sh` independently
-  uses label "29" for its `detect.sh` syntax check. In combined test output,
-  two distinct tests both print "PASS: 29: ..." — making triage ambiguous.
+#### NAMING: TESTER_REPORT.md omits test_platform_web_detection.sh from planned tests
+- File: TESTER_REPORT.md:4-5
+- Issue: The "Planned Tests" checklist lists only `test_platform_web_component_tokens.sh`,
+  but "Files Modified" (lines 14-15) correctly includes both files. The omission is
+  a reporting gap only — it does not indicate the tests themselves are wrong.
 - Severity: LOW
-- Action: Renumber inline labels in `test_platform_fragments.sh` to 1–7 and
-  update the comment header to match, or prefix labels with "F" (e.g., "F25")
-  to disambiguate from `test_platform_web.sh` labels.
+- Action: Add `tests/test_platform_web_detection.sh` to the Planned Tests checklist
+  in TESTER_REPORT.md for accuracy.
 
-#### None: No integrity violations found
-All assertions verify outputs derived from real implementation calls. String
-literals used in fragment content assertions ("State Presentation",
-"Web-Specific Coder Guidance", "Component Structure", "Design System: Tailwind CSS")
-are all present in the actual source files and match the implementation's
-format string at `_base.sh:253–255`. No assertion always passes unconditionally
-regardless of implementation behavior.
+#### None: No assertion honesty issues
+All assertions exercise real behavior. Tests create genuine filesystem fixtures via
+`mkdir`/`touch`/`cat`, source the actual `platforms/web/detect.sh` implementation,
+and assert against the resulting global variable values (`$DESIGN_SYSTEM`,
+`$DESIGN_SYSTEM_CONFIG`, `$COMPONENT_LIBRARY_DIR`). No hard-coded values appear
+that are disconnected from implementation logic.
 
-#### None: No weakening of existing tests found
-No existing test functions were modified. Both files are net-new additions for M58.
+#### None: No test weakening detected
+The split from `test_platform_web.sh` into three successor files preserves all
+previously tested behaviors. No assertions were broadened or removed.
 
-#### None: No scope misalignment found
-All imports and function calls reference code paths that exist in the current
-implementation. `source "${TEKHTON_HOME}/lib/detect.sh"` (test_platform_web.sh:58)
-and `source "${TEKHTON_HOME}/platforms/_base.sh"` (test_platform_fragments.sh:41)
-are both valid paths to files in the current codebase.
+#### None: No implementation exercise issues
+Tests call the real `_detect_web_design_system`, `_detect_web_design_tokens`, and
+`_detect_web_component_dir` functions by sourcing `platforms/web/detect.sh` directly.
+No mocking of the implementation under test occurs.
