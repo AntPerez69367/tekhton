@@ -2,15 +2,12 @@
 PASS
 
 ## Confidence
-88
+78
 
 ## Reasoning
-- Scope is precisely defined: directory structure, all files to create/modify, and exact function signatures are specified
-- Acceptance criteria are concrete and testable (shellcheck pass, function mapping correctness, override append behavior, empty-variable guarantee for non-UI projects)
-- Resolution table provides unambiguous framework→platform mappings with no overlap
-- Fragment assembly order (universal → platform → user override) is explicitly sequenced
-- Backward compatibility is addressed: tester.prompt.md falls back to existing `tester_ui_guidance.prompt.md` when no platform adapter is resolved
-- New config keys (`UI_PLATFORM`, `SPECIALIST_UI_*`) all have safe defaults that produce no behavior change for non-UI projects
-- Historical signal: prior M57 run was PASS — no rework patterns to flag
-- No Migration Impact section is present for new config keys, but since all defaults are backward-compatible no-ops, this is not a blocking gap
-- This milestone is infrastructure only (no UI components produced), so UI testability criteria are not applicable
+- Scope is well-defined: Distribution section on the Trends page of Watchtower needs clarification about what metric it displays
+- Problem statement is specific: Scout stage (least time) shows as highest distribution, indicating the metric is invocation count or call frequency rather than time — this mismatch confuses users
+- A competent developer can reasonably infer the fix: add a clarifying label, subtitle, or description to the Distribution section explaining what is being measured (e.g., "by invocation count"), making the chart self-explanatory
+- Historical pattern shows similar Watchtower UI polish tasks passing cleanly in a single cycle
+- No migration impact — UI-only change to an internal dashboard
+- No UI test infrastructure is referenced for this project, so no UI testability gap to flag

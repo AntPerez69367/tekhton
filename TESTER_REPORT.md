@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_platform_base.sh` — 31 unit tests for platform adapter framework (M57)
+- [x] `tests/test_watchtower_distribution_toggle.sh` — Distribution mode toggle, localStorage persistence, time vs turn-based bars
 
 ## Test Run Results
-Passed: 259  Failed: 0
+Passed: 44  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_platform_base.sh`
+- [x] `tests/test_watchtower_distribution_toggle.sh`

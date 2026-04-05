@@ -1,5 +1,3 @@
-# Reviewer Report — M57: UI Platform Adapter Framework (Re-review Cycle 2)
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,14 +8,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_platform_base.sh` is 342 lines, 42 over the 300-line soft ceiling. Code works; defer to cleanup pass.
-- `detox` is mapped to `mobile_flutter` in `platforms/_base.sh` — Detox is a React Native testing framework, not Flutter. Once M60 populates `mobile_flutter/` with platform-specific content, React Native projects will receive incorrect Flutter guidance. Consider removing this mapping or revisiting when M60 scopes React Native support.
-
-## Prior Blocker Verification
-- **FIXED**: `prompts/tester.prompt.md` now contains `{{IF:UI_TESTER_PATTERNS}}{{UI_TESTER_PATTERNS}}{{ENDIF:UI_TESTER_PATTERNS}}` on line 108, immediately before `{{TESTER_UI_GUIDANCE}}` on line 109, both inside the `{{IF:UI_PROJECT_DETECTED}}` guard. Platform-specific tester patterns will now take precedence when resolved, falling back to the existing guidance otherwise. Exactly as specified.
+- `templates/watchtower/app.js:783` — The "Run Count" toggle button label is a misnomer. The mode computes `avgT = stageTotals[sn].turns / cnt` (average turns per stage) and the tooltip confirms this with "N turns avg". It is not a count of how many runs included that stage (`stageTurnCount[sn]` fills that role). "Avg Turns" or "Turn Budget" would be more accurate and avoids re-introducing the same conceptual confusion the task was meant to fix.
+- `templates/watchtower/style.css:302` — The `.dist-btn` elements have no `aria-pressed` attribute. The visual active state is present via `.active`, but screen readers cannot infer which toggle is selected. Adding `aria-pressed="true/false"` (set during event listener handling) would satisfy WCAG 4.1.2.
 
 ## Coverage Gaps
-- None
+- No automated test coverage for the localStorage persistence of `tk_dist_mode` or for the toggle re-render behavior. Given this is a static template file tested manually via the dashboard, this is expected — noting for completeness.
 
 ## Drift Observations
 - None

@@ -1,74 +1,38 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 31 test functions (numbered pass/fail blocks)
-Verdict: PASS
+Tests audited: 1 file, 44 test assertions across 14 test groups
+Verdict: CONCERNS
 
 ### Findings
 
-#### EXERCISE: Test 27 mutates a file inside TEKHTON_HOME
-- File: tests/test_platform_base.sh:284-294
-- Issue: Test 27 creates `${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md`
-  inside the live Tekhton source tree, then removes it with `rm -f` afterward. If
-  the test process is killed between the write and the cleanup line, a sentinel file
-  is left in the real platform directory where it would be picked up by production
-  pipeline runs. All other file fixtures in this suite use `TEST_TMPDIR`.
-- Severity: MEDIUM
-- Action: Redirect the mock platform file into a temp clone of `TEKHTON_HOME`. Save
-  and restore `TEKHTON_HOME` around the test, or trap the cleanup so it runs even
-  on unexpected exit. Example pattern:
-  ```bash
-  SAVED_TEKHTON_HOME="$TEKHTON_HOME"
-  TEKHTON_HOME="$TEST_TMPDIR/tekhton_home"
-  mkdir -p "${TEKHTON_HOME}/platforms/web" "${TEKHTON_HOME}/platforms/_universal"
-  cp -r "$SAVED_TEKHTON_HOME/platforms/_universal/." "${TEKHTON_HOME}/platforms/_universal/"
-  echo "### Web-specific guidance" > "${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md"
-  # ... run test ...
-  TEKHTON_HOME="$SAVED_TEKHTON_HOME"
-  ```
+#### INTEGRITY: Assertion always evaluates true — `grep -q | head -1` swallows grep exit code
+- File: tests/test_watchtower_distribution_toggle.sh:277-281
+- Issue: The assertion `if echo "$BREAKDOWN_FUNC" | grep -q "else {" | head -1; then` always passes. `grep -q` suppresses stdout; `head -1` therefore receives no input and exits 0 unconditionally. Even with `set -euo pipefail`, the exit status of an `if` condition is the last command in the pipe (`head -1`), which is always 0. The test labeled "Else block for turns mode exists" cannot fail regardless of what the implementation contains.
+- Severity: HIGH
+- Action: Remove `| head -1` — it is meaningless combined with `-q`. Change to `if echo "$BREAKDOWN_FUNC" | grep -q "else {"; then`. Consider a more specific pattern such as `"} else {"` to avoid false-positive matches on inline comments or unrelated blocks.
 
-#### COVERAGE: UI_TESTER_PATTERNS assembly path is never exercised
-- File: tests/test_platform_base.sh (no test covers this path)
-- Issue: `load_platform_fragments()` assembles three output variables:
-  `UI_CODER_GUIDANCE`, `UI_SPECIALIST_CHECKLIST`, and `UI_TESTER_PATTERNS`.
-  Tests 25–31 cover the first two thoroughly. The `UI_TESTER_PATTERNS` assembly
-  path (`_base.sh:225` — platform-specific `tester_patterns.prompt.md`, and
-  `_base.sh:245` — user override `tester_patterns.prompt.md`) has zero coverage.
-  This is the output variable that feeds the new `{{UI_TESTER_PATTERNS}}` injection
-  added to `tester.prompt.md` by the JR coder fix — the stated purpose of M57.
-- Severity: LOW
-- Action: Add a test that creates a mock `tester_patterns.prompt.md` in a temp
-  platform directory, calls `load_platform_fragments`, and asserts
-  `UI_TESTER_PATTERNS` contains the expected content. Also add a variant for the
-  user-override path.
+#### INTEGRITY: `renderTrends()` pattern matches function definition, not only click-handler call
+- File: tests/test_watchtower_distribution_toggle.sh:326-330
+- Issue: `$RENDER_TRENDS` is extracted by `sed -n '/function renderTrends()/,/^  }/p'`, so it starts with the declaration line `function renderTrends() {`. The assertion `grep -q "renderTrends()"` matches that declaration and would pass even if the toggle click handler never called `renderTrends()`. The intent is to verify that clicking a toggle triggers a re-render; the assertion does not verify this.
+- Severity: HIGH
+- Action: Anchor the check to the click-handler closure. The implementation co-locates the call with `setDistMode(m)`, so an assertion like `echo "$RENDER_TRENDS" | grep -A 2 "setDistMode(m)" | grep -q "renderTrends()"` validates the causal chain instead of matching the declaration.
 
-#### COVERAGE: source_platform_detect() has no test coverage
-- File: tests/test_platform_base.sh (no test covers this function)
-- Issue: `_base.sh` exports three public functions. Tests cover `detect_ui_platform`
-  and `load_platform_fragments` but not `source_platform_detect()` (`_base.sh:149`),
-  which sources platform-specific `detect.sh` scripts that set `DESIGN_SYSTEM`,
-  `DESIGN_SYSTEM_CONFIG`, and `COMPONENT_LIBRARY_DIR`. Tests 30–31 pre-assign these
-  globals directly rather than exercising the function that sets them in production.
+#### COVERAGE: No negative-path or data-absent tests; broad division-zero pattern
+- File: tests/test_watchtower_distribution_toggle.sh (entire file)
+- Issue: All 44 assertions are positive source-code pattern checks. There are no assertions verifying behavior when stage data is absent (Test 11 checks the message string exists in source but not that it is returned at the right time). Test 12 checks division-zero guards for `maxAvgTime` correctly, but the `maxAvgTurns` division guard (line 366-370) only uses `grep -q "maxAvgTurns"` — a trivially broad pattern that passes if the variable name appears anywhere in the extracted function, not specifically as a division guard.
 - Severity: LOW
-- Action: Add a test that writes a temp `detect.sh` containing known assignments and
-  verifies `source_platform_detect()` exports those values. Lower priority than the
-  tester_patterns gap.
+- Action: Tighten Test 12b to `grep -q "avgT / maxAvgTurns"` to at least verify the division operation references the right variable in the right expression.
+
+#### NAMING: Test group label misleads due to always-true assertion
+- File: tests/test_watchtower_distribution_toggle.sh:278
+- Issue: The `pass` message "Else block for turns mode exists" implies the assertion verified structural code. Because the assertion always passes (see INTEGRITY finding above), this label is misleading in test output. A green result does not indicate the else block is present.
+- Severity: LOW
+- Action: Fix the underlying assertion (INTEGRITY finding). Once the grep exit code is correctly propagated, the label is accurate.
 
 ### Notes on Findings Not Raised
 
-- **Assertion Honesty**: All assertions derive from real implementation behavior.
-  `"State Presentation"` matches `platforms/_universal/coder_guidance.prompt.md:1`;
-  `"Component Structure"` matches `platforms/_universal/specialist_checklist.prompt.md:6`.
-  Framework-to-platform mappings mirror the `case` statement at `_base.sh:103-130`.
-  No fabricated constants.
-- **Implementation Exercise**: Tests source and directly call the real `_base.sh`
-  functions. Stubs are limited to logging helpers (`log`, `warn`, `error`, `success`,
-  `header`) that have no logic bearing.
-- **Test Weakening**: No prior tests were modified; this is a net-new test file.
-- **Scope Alignment**: `JR_CODER_SUMMARY.md` reports only `prompts/tester.prompt.md`
-  was changed by the JR coder. The tests target `platforms/_base.sh`, which is the
-  primary M57 implementation (visible as `?? platforms/` in git status, written by
-  the main coder stage). No orphaned, stale, or misaligned tests found.
-- **Test 18 (detox → mobile_flutter)**: Detox is a React Native E2E framework, not
-  Flutter. The mapping is implementation-defined; the test accurately reflects the
-  current `case` branch. Flag to the design author if the mapping is intentional.
+- **Assertion Honesty (general)**: All other 43 assertions derive from real implementation patterns. Strings checked (e.g., `'tk_dist_mode') || 'time'`, `stageTotals\[stageOrder\[i\]\] = { turns: 0, time: 0 }`, `avgTimeRaw / maxAvgTime`, `fmtDuration`, `turns avg`, CSS class names) appear verbatim in `app.js:753-816` and `style.css:299-305`. No fabricated constants.
+- **Implementation Exercise**: Tests directly grep the live implementation files (`APP_JS` and `STYLE_CSS`), not mocks or stubs. Every assertion exercises real production code paths.
+- **Test Weakening**: TESTER_REPORT.md lists this file as modified, but the suite is new for this feature (no prior distribution-toggle tests existed). No weakening of existing assertions detected.
+- **Scope Alignment**: Tests reference `templates/watchtower/app.js` and `templates/watchtower/style.css`, both modified per `git status`. No orphaned imports or references to deleted modules. The deleted `JR_CODER_SUMMARY.md` is not referenced by any test.
