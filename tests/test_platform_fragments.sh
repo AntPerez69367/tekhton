@@ -24,7 +24,7 @@ pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 TEST_TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TEST_TMPDIR"; rm -f "${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md"' EXIT
+trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
 # Stub logging functions
 log()     { :; }
@@ -78,20 +78,15 @@ UI_PLATFORM="web"
 load_platform_fragments
 [[ "$UI_SPECIALIST_CHECKLIST" == *"Component Structure"* ]] && pass "26: universal specialist checklist loaded" || fail "26: universal specialist checklist not found"
 
-# Test 27: appends platform-specific content
+# Test 27: appends platform-specific content (M58 provides real web/coder_guidance.prompt.md)
 reset_ui_globals
 make_proj
-# Create a mock platform-specific coder guidance
-mkdir -p "${TEKHTON_HOME}/platforms/web"
-echo "### Web-specific guidance" > "${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md"
 UI_PLATFORM="web"
 load_platform_fragments
-# Should have both universal and platform content
-[[ "$UI_CODER_GUIDANCE" == *"State Presentation"* ]] && [[ "$UI_CODER_GUIDANCE" == *"Web-specific guidance"* ]] \
+# Should have both universal and platform content (M58 file contains "Web-Specific Coder Guidance")
+[[ "$UI_CODER_GUIDANCE" == *"State Presentation"* ]] && [[ "$UI_CODER_GUIDANCE" == *"Web-Specific Coder Guidance"* ]] \
     && pass "27: platform-specific content appended" \
     || fail "27: platform-specific content not appended"
-# Clean up the mock file
-rm -f "${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md"
 
 # Test 28: appends user override content
 reset_ui_globals

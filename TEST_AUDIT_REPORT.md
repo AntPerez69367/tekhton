@@ -1,38 +1,78 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 60 test functions (7 in test_platform_fragments.sh, 44 in test_watchtower_distribution_toggle.sh, 3 in test_nonblocking_log_structure.sh, 6 in test_watchtower_css_sync.sh)
-Verdict: CONCERNS
-
----
+Tests audited: 2 files, 36 test functions
+Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: Broken pipe makes Test 9 always pass
-- File: tests/test_watchtower_distribution_toggle.sh:277
-- Issue: The assertion uses `echo "$BREAKDOWN_FUNC" | grep -q "else {" | head -1`. The `-q` flag on `grep` suppresses all output; the pipe to `head -1` receives zero bytes. On Linux, `head -1` with empty input exits 0. The `if` statement tests `head -1`'s exit code — not `grep`'s — so this assertion always passes unconditionally, regardless of whether `"else {"` exists in the function body. The actual implementation does contain `} else {` at app.js:808, so the current verdict is accidentally correct, but the assertion provides zero protection against regressions that remove the else branch.
-- Severity: HIGH
-- Action: Remove the spurious `| head -1`. Correct form: `if echo "$BREAKDOWN_FUNC" | grep -q "else {"; then`
-
-#### SCOPE: Dead assertions for non-existent "Test Audit Concerns" blocks
-- File: tests/test_nonblocking_log_structure.sh:46-63
-- Issue: Tests 3a and 3b scan `NON_BLOCKING_LOG.md` for `### Test Audit Concerns (2026-03-28)` and `### Test Audit Concerns (2026-03-29)` blocks. Neither block exists in the file. When `grep -c` returns 0, neither the `> 1` nor the `== 1` branch fires — no pass is recorded and no fail is recorded. The TESTER_REPORT reports "2 passed, 0 failed", consistent with only Tests 1 and 2 counting. These assertions are dead code that silently contribute nothing to the pass/fail totals.
+#### COVERAGE: UI_TESTER_PATTERNS never asserted in fragment tests
+- File: tests/test_platform_fragments.sh (tests 25–31)
+- Issue: `load_platform_fragments()` assembles three output variables:
+  `UI_CODER_GUIDANCE`, `UI_SPECIALIST_CHECKLIST`, and `UI_TESTER_PATTERNS`.
+  Every test in this file sets `UI_PLATFORM="web"` and calls
+  `load_platform_fragments()`, but no test ever asserts on `UI_TESTER_PATTERNS`.
+  The web tester patterns file exists and is non-empty (verified by
+  `test_platform_web.sh:358–367`), but the loading path at `_base.sh:223`
+  (step 5 of `load_platform_fragments`) is never exercised by the fragment
+  test suite. A regression silently breaking tester pattern assembly would
+  not be caught.
 - Severity: MEDIUM
-- Action: Remove the dead Test 3a/3b blocks. If duplicate-block detection is valuable, replace with a check meaningful against the current file structure (e.g., assert the Resolved section has at least one `- [x]` item).
+- Action: Add a test asserting `[[ "$UI_TESTER_PATTERNS" == *"UI Testing Guidance"* ]]`
+  after `load_platform_fragments` with `UI_PLATFORM="web"`. The string
+  "UI Testing Guidance" is the first heading in
+  `platforms/web/tester_patterns.prompt.md:2`.
 
-#### EXERCISE: Test 27 writes mock file to production platform directory
-- File: tests/test_platform_fragments.sh:86-94
-- Issue: Test 27 creates `${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md` — inside the live `platforms/web/` adapter directory — rather than writing under `TEST_TMPDIR`. The file is cleaned up inline (line 94) and by the EXIT trap (line 27). Today `platforms/web/` contains only `.gitkeep`, so there is no immediate collision. However, when M58 populates `platforms/web/coder_guidance.prompt.md`, the trap will delete the production file unconditionally on any test exit, corrupting the web platform adapter.
+#### COVERAGE: Web-specific specialist checklist content not verified
+- File: tests/test_platform_fragments.sh:79
+- Issue: Test 26 checks only for universal content ("Component Structure") in
+  `UI_SPECIALIST_CHECKLIST`. The `load_platform_fragments()` function also
+  appends `platforms/web/specialist_checklist.prompt.md` (step 4 at
+  `_base.sh:212–218`), which contains "Web-Specific Review Checklist". No test
+  verifies this platform-specific append fires. A regression breaking the
+  platform-specific specialist checklist path would not be caught.
 - Severity: MEDIUM
-- Action: Write the mock file to a temp path under `$TEST_TMPDIR`, then temporarily override the platform lookup (e.g., stub `_read_platform_file` for the test's scope, or set `TEKHTON_HOME` to a temp directory with a pre-populated `platforms/web/` subtree). Remove the production path from the EXIT trap.
+- Action: Add an assertion checking
+  `[[ "$UI_SPECIALIST_CHECKLIST" == *"Web-Specific Review Checklist"* ]]`
+  alongside the existing universal content check. Test 27's pattern (verifying
+  both universal and platform content in `UI_CODER_GUIDANCE`) is the right
+  model to follow for `UI_SPECIALIST_CHECKLIST`.
 
-#### WEAKENING: NON_BLOCKING_LOG.md open items removed without per-item verification in TESTER_REPORT
-- File: NON_BLOCKING_LOG.md (pre-verifier: net loss of 2 assertions; diff shows 4 `- [ ]` items removed, `(none)` added)
-- Issue: All four open items were removed and replaced with `(none)`. Three are verifiably addressed: "Avg Turns" rename confirmed at app.js:784, `aria-pressed` confirmed at app.js:783, `detox` mapping confirmed absent from platforms/_base.sh. The fourth (test_platform_base.sh over 300-line ceiling) is addressed by the split into test_platform_fragments.sh. The resolution is correct. However, the TESTER_REPORT lists only 2 of the 4 resolved items in its "Files Modified" section — the test split and detox mapping removal are not explicitly verified, leaving the mechanical weakening flag without full written justification.
+#### COVERAGE: Design system precedence chain undertested
+- File: tests/test_platform_web.sh:143–155
+- Issue: Test 8 verifies MUI overrides Tailwind when both are present. The
+  implementation at `platforms/web/detect.sh:28–121` defines a 13-step
+  precedence chain. Only one override pairing is tested. If the ordering is
+  changed — e.g., Chakra moved above MUI — no test would catch it.
 - Severity: LOW
-- Action: No code change needed. The TESTER_REPORT should enumerate all 4 resolved items with a one-line verification note for each. Accept as-is; flag for process improvement.
+- Action: Add one additional precedence test, e.g., Chakra overrides Bootstrap
+  when both are in dependencies, to catch ordering regressions at a second
+  point in the chain.
 
----
+#### NAMING: Test labels in test_platform_fragments.sh are offset from file scope
+- File: tests/test_platform_fragments.sh:8–15 (comment header)
+- Issue: Inline labels in `pass`/`fail` calls are numbered 25–31, matching a
+  former combined-file numbering scheme. `test_platform_web.sh` independently
+  uses label "29" for its `detect.sh` syntax check. In combined test output,
+  two distinct tests both print "PASS: 29: ..." — making triage ambiguous.
+- Severity: LOW
+- Action: Renumber inline labels in `test_platform_fragments.sh` to 1–7 and
+  update the comment header to match, or prefix labels with "F" (e.g., "F25")
+  to disambiguate from `test_platform_web.sh` labels.
 
-### Scope Alignment Note
-`INTAKE_REPORT.md` was deleted by the coder. No test file in the audit context imports or references `INTAKE_REPORT.md` — no orphaned tests.
+#### None: No integrity violations found
+All assertions verify outputs derived from real implementation calls. String
+literals used in fragment content assertions ("State Presentation",
+"Web-Specific Coder Guidance", "Component Structure", "Design System: Tailwind CSS")
+are all present in the actual source files and match the implementation's
+format string at `_base.sh:253–255`. No assertion always passes unconditionally
+regardless of implementation behavior.
+
+#### None: No weakening of existing tests found
+No existing test functions were modified. Both files are net-new additions for M58.
+
+#### None: No scope misalignment found
+All imports and function calls reference code paths that exist in the current
+implementation. `source "${TEKHTON_HOME}/lib/detect.sh"` (test_platform_web.sh:58)
+and `source "${TEKHTON_HOME}/platforms/_base.sh"` (test_platform_fragments.sh:41)
+are both valid paths to files in the current codebase.

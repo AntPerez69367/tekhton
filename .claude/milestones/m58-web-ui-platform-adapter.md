@@ -1,7 +1,7 @@
 # Milestone 58: Web UI Platform Adapter
 <!-- milestone-meta
 id: "58"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

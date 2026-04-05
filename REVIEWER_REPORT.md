@@ -1,4 +1,4 @@
-# Reviewer Report
+# Reviewer Report — M58 Web UI Platform Adapter
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,11 +10,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_platform_fragments.sh:86-94` — Test 27 writes the mock `coder_guidance.prompt.md` to `${TEKHTON_HOME}/platforms/web/` (inside the repo tree) rather than a temp dir. A file-level `trap` would prevent leaving stale mock files if the process is killed between the write and the `rm -f` cleanup line.
-- `tests/test_watchtower_distribution_toggle.sh:160` — Comment still reads "Verify Run Count button" after the label was renamed to "Avg Turns". Stale comment only; test assertions are correct.
+- `platforms/web/detect.sh` has no `set -euo pipefail` header. Project convention applies to all `.sh` files. Since this file is always sourced (never executed directly), it inherits the caller's flags and is functionally correct, but the omission deviates from the project standard. Add as the first executable line after the comment block.
+- `tests/test_platform_web.sh` is 381 lines, over the 300-line ceiling. The test structure is clean and all 29 tests are well-scoped — the length comes from fixture setup verbosity. Candidate for split into `test_platform_web_detection.sh` and `test_platform_web_fragments.sh` in a future cleanup pass.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- None
+- `stages/tester.sh` is 503 lines — the M58 change (lines 69–95, ~26 lines) didn't create this; the file was already well over the 300-line ceiling before this milestone. Worth tracking for a future extract (e.g., `_run_tester_ui_guidance.sh`) in the next audit cycle.
