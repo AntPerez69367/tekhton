@@ -26,6 +26,8 @@ export PROJECT_DIR LOG_DIR TEKHTON_HOME
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/metrics.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/metrics_extended.sh"
 
 # Stub _json_escape for parser tests
 _json_escape() {
@@ -357,18 +359,12 @@ fi
 echo ""
 
 # =============================================================================
-# Test 8: test_audit_duration_s and analyze_cleanup_duration_s absence
+# Test 8: test_audit_duration_s and analyze_cleanup_duration_s emitted
 #
-# Regression guard for the known M66 omission documented in NON_BLOCKING_LOG.md:
-# record_run_metrics() records turns for test_audit and analyze_cleanup (when
-# non-zero) but does NOT read _STAGE_DURATION for these sub-steps, so
-# test_audit_duration_s and analyze_cleanup_duration_s are never emitted.
-#
-# This test verifies the current behavior is intentional and internally
-# consistent. If the omission is later fixed, these assertions will fail,
-# prompting the fixer to also update the dashboard parser and this test.
+# record_run_metrics() now reads _STAGE_DURATION for test_audit and
+# analyze_cleanup sub-steps and emits their durations alongside turns.
 # =============================================================================
-echo "[Test 8] test_audit_duration_s and analyze_cleanup_duration_s absent from JSONL"
+echo "[Test 8] test_audit_duration_s and analyze_cleanup_duration_s emitted to JSONL"
 
 _METRICS_FILE=""
 rm -f "${LOG_DIR}/metrics.jsonl"
@@ -384,7 +380,7 @@ record_run_metrics
 
 line=$(cat "${LOG_DIR}/metrics.jsonl")
 
-# Positive: turns ARE recorded (implementation correctly captures sub-step turns)
+# Positive: turns ARE recorded
 if echo "$line" | grep -q '"test_audit_turns":5'; then
     pass "8.1 test_audit_turns emitted when test_audit ran"
 else
@@ -397,18 +393,17 @@ else
     fail "8.2 analyze_cleanup_turns not found: ${line}"
 fi
 
-# Negative: durations are NOT recorded (known omission — _STAGE_DURATION sub-step
-# keys are set by stages but record_run_metrics() only reads the parent keys).
-if ! echo "$line" | grep -q '"test_audit_duration_s"'; then
-    pass "8.3 test_audit_duration_s absent from JSONL (known omission — regression guard)"
+# Positive: durations ARE now recorded from _STAGE_DURATION
+if echo "$line" | grep -q '"test_audit_duration_s":30'; then
+    pass "8.3 test_audit_duration_s emitted with correct value"
 else
-    fail "8.3 test_audit_duration_s unexpectedly present — omission was fixed; update parser and this test: ${line}"
+    fail "8.3 test_audit_duration_s not found or wrong value: ${line}"
 fi
 
-if ! echo "$line" | grep -q '"analyze_cleanup_duration_s"'; then
-    pass "8.4 analyze_cleanup_duration_s absent from JSONL (known omission — regression guard)"
+if echo "$line" | grep -q '"analyze_cleanup_duration_s":20'; then
+    pass "8.4 analyze_cleanup_duration_s emitted with correct value"
 else
-    fail "8.4 analyze_cleanup_duration_s unexpectedly present — omission was fixed; update parser and this test: ${line}"
+    fail "8.4 analyze_cleanup_duration_s not found or wrong value: ${line}"
 fi
 
 echo ""

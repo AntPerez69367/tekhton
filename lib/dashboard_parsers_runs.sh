@@ -195,9 +195,11 @@ print(json.dumps(results))
         tester_dur=$(printf '%s' "$line" | sed -n 's/.*"tester_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         scout_dur=$(printf '%s' "$line" | sed -n 's/.*"scout_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         # M66: Extended stage durations
-        local security_dur cleanup_dur
+        local security_dur cleanup_dur test_audit_dur analyze_cleanup_dur
         security_dur=$(printf '%s' "$line" | sed -n 's/.*"security_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         cleanup_dur=$(printf '%s' "$line" | sed -n 's/.*"cleanup_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        test_audit_dur=$(printf '%s' "$line" | sed -n 's/.*"test_audit_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        analyze_cleanup_dur=$(printf '%s' "$line" | sed -n 's/.*"analyze_cleanup_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         # M66: Cycle counts
         local review_cycles_v security_rework_v
         review_cycles_v=$(printf '%s' "$line" | sed -n 's/.*"review_cycles"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
@@ -208,7 +210,7 @@ print(json.dumps(results))
         : "${specialist_security_t:=0}" "${specialist_perf_t:=0}" "${specialist_api_t:=0}"
         : "${adj_coder:=0}" "${adj_reviewer:=0}" "${adj_tester:=0}"
         : "${coder_dur:=0}" "${reviewer_dur:=0}" "${tester_dur:=0}" "${scout_dur:=0}"
-        : "${security_dur:=0}" "${cleanup_dur:=0}"
+        : "${security_dur:=0}" "${cleanup_dur:=0}" "${test_audit_dur:=0}" "${analyze_cleanup_dur:=0}"
         : "${review_cycles_v:=0}" "${security_rework_v:=0}"
         # Estimate per-stage durations proportionally when missing (legacy records)
         if [[ "$time_s" -gt 0 ]] && \
@@ -235,8 +237,8 @@ print(json.dumps(results))
                 scout)    _st="$scout_t"; _sb=0; _sd="$scout_dur" ;;
                 security) _st="$security_t"; _sb=0; _sd="$security_dur" ;;
                 cleanup)  _st="$cleanup_t"; _sb=0; _sd="$cleanup_dur" ;;
-                test_audit) _st="$test_audit_t"; _sb=0; _sd=0 ;;
-                analyze_cleanup) _st="$analyze_cleanup_t"; _sb=0; _sd=0 ;;
+                test_audit) _st="$test_audit_t"; _sb=0; _sd="$test_audit_dur" ;;
+                analyze_cleanup) _st="$analyze_cleanup_t"; _sb=0; _sd="$analyze_cleanup_dur" ;;
                 specialist_security) _st="$specialist_security_t"; _sb=0; _sd=0 ;;
                 specialist_perf) _st="$specialist_perf_t"; _sb=0; _sd=0 ;;
                 specialist_api) _st="$specialist_api_t"; _sb=0; _sd=0 ;;

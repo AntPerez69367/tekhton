@@ -140,17 +140,18 @@
 
   // --- Stage constants ---
   var stageOrder = ['intake', 'scout', 'coder', 'build_gate', 'security', 'reviewer', 'tester', 'cleanup'];
-  var stageLabels = { intake: 'Intake', scout: 'Scout', coder: 'Coder', build_gate: 'Build', security: 'Security', reviewer: 'Review', tester: 'Test', cleanup: 'Cleanup', test_audit: 'Test Audit', analyze_cleanup: 'Analyze Cleanup' };
+  var stageLabels = { intake: 'Intake', scout: 'Scout', coder: 'Coder', build_gate: 'Build', security: 'Security', reviewer: 'Review', tester: 'Test', cleanup: 'Cleanup', test_audit: 'Test Audit', analyze_cleanup: 'Analyze Cleanup', specialist_security: 'Security', specialist_perf: 'Performance', specialist_api: 'API Contract' };
   // M66: Hierarchical stage grouping for Per-Stage Breakdown
   var stageGroups = {
-    scout:    { label: 'Scout',    children: [] },
-    coder:    { label: 'Coder',    children: [] },
-    security: { label: 'Security', children: [] },
-    reviewer: { label: 'Review',   children: [] },
-    tester:   { label: 'Test',     children: ['test_audit'] },
-    cleanup:  { label: 'Cleanup',  children: ['analyze_cleanup'] }
+    scout:       { label: 'Scout',       children: [] },
+    coder:       { label: 'Coder',       children: [] },
+    security:    { label: 'Security',    children: [] },
+    reviewer:    { label: 'Review',      children: [] },
+    tester:      { label: 'Test',        children: ['test_audit'] },
+    cleanup:     { label: 'Cleanup',     children: ['analyze_cleanup'] },
+    specialists: { label: 'Specialist Reviews', children: ['specialist_security', 'specialist_perf', 'specialist_api'] }
   };
-  var stageGroupOrder = ['scout', 'coder', 'security', 'reviewer', 'tester', 'cleanup'];
+  var stageGroupOrder = ['scout', 'coder', 'security', 'reviewer', 'tester', 'cleanup', 'specialists'];
   function getExpandedStages() { try { return JSON.parse(localStorage.getItem('tk_expanded_stages') || '{}'); } catch (e) { return {}; } }
   function setExpandedStages(o) { try { localStorage.setItem('tk_expanded_stages', JSON.stringify(o)); } catch (e) { /* noop */ } }
   var teamColors = ['#4a9eff', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4'];
@@ -816,11 +817,32 @@
       }
     }
     var lastRun = runs.length ? runs[0] : null, lastStages = lastRun ? (lastRun.stages || {}) : {};
-    // Determine which parent groups have data
+    // Determine which parent groups have data (including virtual parents with child data)
     var activeGroups = [];
     for (var g = 0; g < stageGroupOrder.length; g++) {
       var gn = stageGroupOrder[g];
-      if (stageTurnCount[gn] > 0) activeGroups.push(gn);
+      if (stageTurnCount[gn] > 0) { activeGroups.push(gn); continue; }
+      // Virtual parent: include if any child has data; synthesize aggregate
+      var grpDef = stageGroups[gn];
+      if (grpDef && grpDef.children.length > 0) {
+        var hasChildData = false;
+        for (var ck = 0; ck < grpDef.children.length; ck++) {
+          if (stageTurnCount[grpDef.children[ck]] > 0) { hasChildData = true; break; }
+        }
+        if (hasChildData) {
+          activeGroups.push(gn);
+          // Build synthetic aggregate for the virtual parent from its children
+          stageTotals[gn] = { turns: 0, time: 0 }; stageTurnCount[gn] = 0; stageTimeCount[gn] = 0;
+          for (var ca = 0; ca < grpDef.children.length; ca++) {
+            var cn2 = grpDef.children[ca];
+            if (stageTurnCount[cn2] > 0) {
+              stageTotals[gn].turns += stageTotals[cn2].turns; stageTotals[gn].time += stageTotals[cn2].time;
+              if (stageTurnCount[cn2] > stageTurnCount[gn]) stageTurnCount[gn] = stageTurnCount[cn2];
+              if (stageTimeCount[cn2] > stageTimeCount[gn]) stageTimeCount[gn] = stageTimeCount[cn2];
+            }
+          }
+        }
+      }
     }
     if (activeGroups.length === 0) return '<p>No per-stage data available yet.</p>';
     var mode = getDistMode();
