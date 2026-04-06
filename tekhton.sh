@@ -2161,6 +2161,9 @@ _run_human_complete_loop() {
             break
         fi
 
+        # Reset claimed IDs so finalization only resolves the current iteration's note.
+        CLAIMED_NOTE_IDS=""
+
         # Drain any watchtower inbox notes that arrived since the last iteration
         # so they're available to pick_next_note (e.g. notes submitted mid-run).
         process_watchtower_inbox 2>/dev/null || true
@@ -2232,8 +2235,8 @@ _run_human_complete_loop() {
         _run_pipeline_stages
 
         # Pipeline succeeded — finalize (includes commit for this note).
-        # _hook_resolve_notes detects HUMAN_MODE and calls resolve_single_note
-        # for CURRENT_NOTE_LINE, marking it [x] on success.
+        # _hook_resolve_notes resolves CLAIMED_NOTE_IDS via resolve_notes_batch,
+        # marking [~] → [x] on success or [~] → [ ] on failure.
         finalize_run 0
 
         log "Note completed: ${TASK}"
