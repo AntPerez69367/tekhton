@@ -356,6 +356,7 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     # Warm indexer cache if available (M7)
     source "${TEKHTON_HOME}/lib/indexer.sh"
     source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+    source "${TEKHTON_HOME}/lib/indexer_cache.sh"
     source "${TEKHTON_HOME}/lib/indexer_history.sh"
     REPO_MAP_ENABLED="${REPO_MAP_ENABLED:-false}"
     if [[ "$REPO_MAP_ENABLED" == "true" ]] && check_indexer_available; then
@@ -755,6 +756,7 @@ source "${TEKHTON_HOME}/lib/milestone_window.sh"
 source "${TEKHTON_HOME}/lib/context_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+source "${TEKHTON_HOME}/lib/indexer_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer_history.sh"
 source "${TEKHTON_HOME}/lib/mcp.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"

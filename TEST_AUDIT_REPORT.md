@@ -1,52 +1,40 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 25 test functions
+Tests audited: 2 files, 13 test functions (7 in test_timing_repo_map_stats.sh, 6 in test_review_cache_invalidation.sh)
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: Test duplicates implementation regex rather than calling it
-- File: tests/test_milestone_shorthand_parsing.sh:62-75
-- Issue: `extract_milestone()` copies the two regexes verbatim from `tekhton.sh:1754–1755` rather than sourcing or invoking the real code. All 25 tests verify the extracted copy in isolation. If the regex is changed in `tekhton.sh`, the tests will continue to pass without detecting the regression. The line-number reference in the comment on line 60 documents the linkage but does not enforce it.
-- Severity: MEDIUM
-- Action: Add a comment block directly above `extract_milestone()` reminding maintainers to keep the copy in sync with `tekhton.sh:1754–1755` when either is changed, or consider extracting the regex into a small sourced lib function. This is not a blocking issue — isolating an embedded shell-script regex for unit testing by copying it is an accepted and common pattern; the test provides genuine value verifying 25 edge cases of regex semantics.
+#### COVERAGE: Empty file list path not covered in review cache invalidation
+- File: tests/test_review_cache_invalidation.sh (missing scenario — no single line)
+- Issue: `run_stage_review()` guards the entire indexer block with `if [[ -n "$_review_files" ]]` (review.sh:60). When `extract_files_from_coder_summary` returns an empty string, `_REVIEW_MAP_FILES` is never set and no comparison occurs across cycles. No test covers this path, so a regression where the extractor silently returns empty would not be detected by these tests.
+- Severity: LOW
+- Action: Add a test: set `extract_files_from_coder_summary() { echo ""; }`, run two cycles (CHANGES_REQUIRED → APPROVED), assert `_REVIEW_MAP_FILES` is empty and `INVALIDATE_CALLED` remains 0.
+
+#### COVERAGE: Plural "hits" grammar not enforced as a test contract
+- File: tests/test_timing_repo_map_stats.sh:95
+- Issue: T2 correctly checks for `"1 cache hits"` because the implementation always emits the plural form (`timing.sh:169`). The assertion is honest and matches real output. Noted for future maintainers: if the implementation is fixed to emit `"1 cache hit"` (singular), T2's assertion string must be updated to match.
+- Severity: LOW
+- Action: No test change required. Add an inline comment on the assertion to flag the grammar dependency.
 
 ### No Issues Found in Other Categories
 
-#### INTEGRITY
-None. All 25 expected values are derived from the regex semantics:
-verified by tracing each input through the two patterns against the actual
-`tekhton.sh:1754–1755` implementation. No hard-coded magic values appear
-that are unrelated to implementation logic. No tautological assertions
-(`assertTrue(True)`, `assertEqual(x, x)`) were found.
+#### INTEGRITY — None
+All numeric assertions in `test_timing_repo_map_stats.sh` derive directly from the implementation formula `saved_s = hits * gen_time_ms / 1000` (timing.sh:167). T1 comment documents the arithmetic (`# saved_s = 3 * 1500 / 1000 = 4`). Boundary values in T3/T4 match the exact guard `hits > 0 || gen_time_ms > 0` (timing.sh:164). T5 targets the `declare -f get_repo_map_cache_stats` guard (timing.sh:159). T6 targets the `${#_PHASE_TIMINGS[@]} -eq 0` early-return (timing.sh:113). No hard-coded magic numbers unrelated to implementation logic. No tautological assertions found.
 
-#### COVERAGE
-Excellent. Beyond happy-path extractions the suite covers:
-no-match inputs (Tests 9, 10, 16, 17, 23, 24, 25), case variants (uppercase M,
-lowercase m, long-format "Milestone"/"milestone"), boundary numbers (M0, M999,
-M99.99), structural edge cases (tab between M and digit, decimal at start,
-trailing decimal, consecutive double-dot, M alone without digits, shorthand
-appearing mid-sentence), and depth variants (2–4 decimal components). The
-ratio of error-path to happy-path tests is approximately 9:16, which is healthy.
+All assertions in `test_review_cache_invalidation.sh` trace to real conditional branches: the `INDEXER_AVAILABLE`/`REPO_MAP_ENABLED` guards (review.sh:57), the `REVIEW_CYCLE -gt 1` gate (review.sh:62), and the basename diff trigger (review.sh:66–69). Counter-based verification (`INVALIDATE_CALLED`) is the correct approach for tracking call frequency without running real infrastructure.
 
-#### WEAKENING
-None. This is a newly created file (untracked `??` in git status). No prior
-test functions exist that could have been weakened.
+#### EXERCISE — None
+`test_timing_repo_map_stats.sh` sources and calls the real `_hook_emit_timing_report`. The only mock is `get_repo_map_cache_stats`, overridden per-test to inject specific stat values — appropriate since the test is exercising timing.sh behavior, not the indexer cache module.
 
-#### NAMING
-None. All 25 test descriptions encode the input scenario and the expected
-outcome, e.g.: `"M3abc non-matching case extracts empty"`,
-`"M5. trailing decimal should not match"`,
-`"M3 in middle of text (not at start) extracts empty"`,
-`"milestone 5 lowercase long format extracts '5'"`. Names are
-diagnostic on their own without reading the test body.
+`test_review_cache_invalidation.sh` sources and calls the real `run_stage_review()`. Stubs are limited to externals requiring live agent infrastructure (`run_agent`, `render_prompt`, `build_context_packet`). The invalidation logic under test — basename comparison at review.sh:63–69 and `_REVIEW_MAP_FILES` storage at review.sh:82–84 — executes through real code paths.
 
-#### SCOPE
-None. The test references `tekhton.sh:1754–1755`, which was confirmed to
-exist and contain the exact two regexes the test exercises. The deleted file
-(`SCOUT_REPORT.md`) is not referenced anywhere in the test file.
-`CODER_SUMMARY.md` is absent; the audit context lists "Implementation Files
-Changed: none", but `tekhton.sh` is marked modified in git status — the
-test's line-number references correctly target the current state of the file.
-No orphaned imports or stale function references were found.
+#### WEAKENING — None
+Both test files are new additions (untracked `??` in git status). No existing tests were modified.
+
+#### NAMING — None
+All test cases include descriptive echo headers encoding both the scenario and the expected outcome (e.g., `"T2: New file in cycle-2 list → invalidation triggered"`, `"T4: INDEXER_AVAILABLE=false → no extract/invalidate calls"`, `"T3: hits=0 gen_time_ms=0 → no repo map line"`). Assertion failure messages include diagnostic output (grep result or "NOT FOUND").
+
+#### SCOPE — None
+All sourced functions (`_hook_emit_timing_report`, `run_stage_review`, `get_repo_map_cache_stats`, `invalidate_repo_map_run_cache`) confirmed present in their expected locations. No orphaned imports or stale function references detected. `get_repo_map_cache_stats` (defined in `lib/indexer_cache.sh`) is correctly overridden in the timing test — the test is not exercising the cache module, only timing.sh's use of its output format.
