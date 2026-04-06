@@ -91,12 +91,27 @@ record_run_metrics() {
 
     # Per-stage durations from _STAGE_DURATION (populated by tekhton.sh)
     local coder_duration_s=0 reviewer_duration_s=0 tester_duration_s=0 scout_duration_s=0
+    local security_duration_s=0 cleanup_duration_s=0
     if declare -p _STAGE_DURATION &>/dev/null; then
         coder_duration_s="${_STAGE_DURATION[coder]:-0}"
         reviewer_duration_s="${_STAGE_DURATION[reviewer]:-0}"
         tester_duration_s="${_STAGE_DURATION[tester]:-0}"
         scout_duration_s="${_STAGE_DURATION[scout]:-0}"
+        security_duration_s="${_STAGE_DURATION[security]:-0}"
+        cleanup_duration_s="${_STAGE_DURATION[cleanup]:-0}"
     fi
+
+    # Per-stage turns + durations from _STAGE_TURNS / _STAGE_DURATION (extended stages)
+    local security_turns=0 cleanup_turns=0
+    local test_audit_turns=0 test_audit_duration_s=0
+    local analyze_cleanup_turns=0 analyze_cleanup_duration_s=0
+    local specialist_security_turns=0 specialist_perf_turns=0 specialist_api_turns=0
+    local review_cycles=0 security_rework_cycles=0
+    local _ext_line
+    while IFS='=' read -r _ext_key _ext_val; do
+        [[ -z "$_ext_key" ]] && continue
+        printf -v "$_ext_key" '%s' "$_ext_val"
+    done < <(_collect_extended_stage_vars)
 
     # Compute total_time from stage durations (wall-clock) rather than
     # TOTAL_TIME (agent-invocation-only sum) to match finalize_summary.sh
@@ -134,29 +149,32 @@ record_run_metrics() {
     local pipeline_attempts="${_ORCH_ATTEMPT:-0}"
     local total_agent_calls="${_ORCH_AGENT_CALLS:-0}"
 
-    # Sanitize all numeric fields — strip any non-numeric content that may leak
-    # from log() output captured via $() subshells
-    total_turns=$(echo "$total_turns" | grep -oE '[0-9]+' | tail -1); total_turns="${total_turns:-0}"
-    total_time=$(echo "$total_time" | grep -oE '[0-9]+' | tail -1); total_time="${total_time:-0}"
-    coder_turns=$(echo "$coder_turns" | grep -oE '[0-9]+' | tail -1); coder_turns="${coder_turns:-0}"
-    reviewer_turns=$(echo "$reviewer_turns" | grep -oE '[0-9]+' | tail -1); reviewer_turns="${reviewer_turns:-0}"
-    tester_turns=$(echo "$tester_turns" | grep -oE '[0-9]+' | tail -1); tester_turns="${tester_turns:-0}"
-    scout_turns=$(echo "$scout_turns" | grep -oE '[0-9]+' | tail -1); scout_turns="${scout_turns:-0}"
-    scout_est_coder=$(echo "$scout_est_coder" | grep -oE '[0-9]+' | tail -1); scout_est_coder="${scout_est_coder:-0}"
-    scout_est_reviewer=$(echo "$scout_est_reviewer" | grep -oE '[0-9]+' | tail -1); scout_est_reviewer="${scout_est_reviewer:-0}"
-    scout_est_tester=$(echo "$scout_est_tester" | grep -oE '[0-9]+' | tail -1); scout_est_tester="${scout_est_tester:-0}"
-    adjusted_coder=$(echo "$adjusted_coder" | grep -oE '[0-9]+' | tail -1); adjusted_coder="${adjusted_coder:-0}"
-    adjusted_reviewer=$(echo "$adjusted_reviewer" | grep -oE '[0-9]+' | tail -1); adjusted_reviewer="${adjusted_reviewer:-0}"
-    adjusted_tester=$(echo "$adjusted_tester" | grep -oE '[0-9]+' | tail -1); adjusted_tester="${adjusted_tester:-0}"
-    context_tokens=$(echo "$context_tokens" | grep -oE '[0-9]+' | tail -1); context_tokens="${context_tokens:-0}"
-    retry_count=$(echo "$retry_count" | grep -oE '[0-9]+' | tail -1); retry_count="${retry_count:-0}"
-    continuation_attempts=$(echo "$continuation_attempts" | grep -oE '[0-9]+' | tail -1); continuation_attempts="${continuation_attempts:-0}"
-    pipeline_attempts=$(echo "$pipeline_attempts" | grep -oE '[0-9]+' | tail -1); pipeline_attempts="${pipeline_attempts:-0}"
-    coder_duration_s=$(echo "$coder_duration_s" | grep -oE '[0-9]+' | tail -1); coder_duration_s="${coder_duration_s:-0}"
-    reviewer_duration_s=$(echo "$reviewer_duration_s" | grep -oE '[0-9]+' | tail -1); reviewer_duration_s="${reviewer_duration_s:-0}"
-    tester_duration_s=$(echo "$tester_duration_s" | grep -oE '[0-9]+' | tail -1); tester_duration_s="${tester_duration_s:-0}"
-    scout_duration_s=$(echo "$scout_duration_s" | grep -oE '[0-9]+' | tail -1); scout_duration_s="${scout_duration_s:-0}"
-    total_agent_calls=$(echo "$total_agent_calls" | grep -oE '[0-9]+' | tail -1); total_agent_calls="${total_agent_calls:-0}"
+    # Sanitize core numeric fields — strip non-numeric content that may leak
+    # from log() output captured via $() subshells.
+    # Extended stage fields are pre-sanitized by _collect_extended_stage_vars().
+    total_turns=$(_sanitize_numeric "$total_turns")
+    total_time=$(_sanitize_numeric "$total_time")
+    coder_turns=$(_sanitize_numeric "$coder_turns")
+    reviewer_turns=$(_sanitize_numeric "$reviewer_turns")
+    tester_turns=$(_sanitize_numeric "$tester_turns")
+    scout_turns=$(_sanitize_numeric "$scout_turns")
+    scout_est_coder=$(_sanitize_numeric "$scout_est_coder")
+    scout_est_reviewer=$(_sanitize_numeric "$scout_est_reviewer")
+    scout_est_tester=$(_sanitize_numeric "$scout_est_tester")
+    adjusted_coder=$(_sanitize_numeric "$adjusted_coder")
+    adjusted_reviewer=$(_sanitize_numeric "$adjusted_reviewer")
+    adjusted_tester=$(_sanitize_numeric "$adjusted_tester")
+    context_tokens=$(_sanitize_numeric "$context_tokens")
+    retry_count=$(_sanitize_numeric "$retry_count")
+    continuation_attempts=$(_sanitize_numeric "$continuation_attempts")
+    pipeline_attempts=$(_sanitize_numeric "$pipeline_attempts")
+    coder_duration_s=$(_sanitize_numeric "$coder_duration_s")
+    reviewer_duration_s=$(_sanitize_numeric "$reviewer_duration_s")
+    tester_duration_s=$(_sanitize_numeric "$tester_duration_s")
+    scout_duration_s=$(_sanitize_numeric "$scout_duration_s")
+    security_duration_s=$(_sanitize_numeric "$security_duration_s")
+    cleanup_duration_s=$(_sanitize_numeric "$cleanup_duration_s")
+    total_agent_calls=$(_sanitize_numeric "$total_agent_calls")
 
     # Outcome
     local outcome="unknown"
@@ -204,6 +222,15 @@ record_run_metrics() {
     if [[ "$coder_duration_s" -gt 0 || "$reviewer_duration_s" -gt 0 || "$tester_duration_s" -gt 0 || "$scout_duration_s" -gt 0 ]]; then
         record="${record},\"coder_duration_s\":${coder_duration_s},\"reviewer_duration_s\":${reviewer_duration_s},\"tester_duration_s\":${tester_duration_s},\"scout_duration_s\":${scout_duration_s}"
     fi
+
+    # Append extended stage metrics (M66) — security, cleanup, specialists, cycles
+    record=$(_append_extended_stage_record "$record" \
+        "$security_turns" "$security_duration_s" \
+        "$cleanup_turns" "$cleanup_duration_s" \
+        "$test_audit_turns" "$test_audit_duration_s" \
+        "$analyze_cleanup_turns" "$analyze_cleanup_duration_s" \
+        "$specialist_security_turns" "$specialist_perf_turns" "$specialist_api_turns" \
+        "$review_cycles" "$security_rework_cycles")
 
     # Append orchestration fields when in --complete mode (M16)
     if [[ "$pipeline_attempts" -gt 0 ]]; then

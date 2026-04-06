@@ -46,6 +46,7 @@ cd "$TMPDIR"
 # --- Source dependencies ---
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
+source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
 
 # --- Mock render_prompt ---
 render_prompt() {

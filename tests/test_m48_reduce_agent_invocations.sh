@@ -54,6 +54,7 @@ BOLD=""
 NC=""
 
 source "${TEKHTON_HOME}/lib/specialists.sh"
+source "${TEKHTON_HOME}/lib/specialists_helpers.sh"
 
 # --- Test: security specialist detects auth file changes ---
 mkdir -p src
@@ -202,6 +203,7 @@ echo
 echo "=== Adaptive turn budget floor ==="
 
 source "${TEKHTON_HOME}/lib/metrics.sh"
+source "${TEKHTON_HOME}/lib/metrics_extended.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 
 _METRICS_FILE=""

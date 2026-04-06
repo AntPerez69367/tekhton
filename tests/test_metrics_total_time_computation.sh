@@ -37,6 +37,8 @@ export LOG_DIR PROJECT_DIR
 # Source metrics.sh
 # shellcheck source=../lib/metrics.sh
 source "${TEKHTON_HOME}/lib/metrics.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/metrics_extended.sh"
 
 # Helper: extract total_time_s from metrics.jsonl
 _read_total_time() {
