@@ -1,73 +1,82 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file (same path listed twice in audit context — treated as 1),
-8 test functions (32 sub-assertions: 1.1–1.4, 2.1–2.2, 3.1–3.3, 4.1–4.4, 5.1–5.4, 6.1–6.4, 7.1–7.2, 8.1–8.4)
+Tests audited: 1 file, 23 assertions (9 test sections)
 Verdict: PASS
 
 ---
 
 ### Findings
 
-None. No HIGH or MEDIUM findings. One LOW observation follows.
+#### EXERCISE: Format construction tests are circular
+- File: tests/test_stage_summary_model_display.sh:51-58, 76-92, 172-184, 202-208, 250-257
+- Issue: Tests 1, 2, 5, 6, and 8 build `STAGE_SUMMARY` inline using the same
+  format string as `agent.sh:225`, then assert that the constructed string
+  contains what they just put there. Example from Test 1:
+  ```
+  STAGE_SUMMARY="...\n  ${label} (${model}): ${turns_display} turns, ${mins}m${secs}s..."
+  grep -q "Coder (claude-sonnet-4-6): 30/50 turns, 3m45s"
+  ```
+  This verifies bash string interpolation, not that `run_agent()` produces the
+  correct format. If `agent.sh:225` were changed to a different format, these
+  tests would still pass because they embed their own copy of the format string
+  rather than sourcing it from the implementation. Note: `run_agent()` cannot be
+  called without a live Claude CLI, so inline simulation is a reasonable constraint;
+  the issue is that format drift between the test and implementation would go
+  undetected. The comment at test line 42 correctly references `agent.sh:225`,
+  showing clear intent.
+- Severity: MEDIUM
+- Action: Add an explicit comment block to each of Tests 1, 2, 5, 6, 8 stating
+  these are format-documentation tests, not implementation-exercise tests.
+  Optionally, extract the format pattern from `lib/agent.sh` via `grep` in the
+  test setup so any format change in the implementation causes immediate test
+  failure rather than a silent false pass.
 
-#### COVERAGE: Test 8 is a regression guard for a known omission — semantically inverted pass conditions
-- File: tests/test_m66_full_stage_metrics.sh:402–411
-- Issue: Assertions 8.3 and 8.4 pass when `test_audit_duration_s` and
-  `analyze_cleanup_duration_s` are **absent** from the JSONL record, and fail
-  when those fields are **present**. This is intentional: the test documents
-  that the omission is known and guards against it being silently corrected
-  without a corresponding parser update. The test comments explain this clearly.
-  However, a future reader unfamiliar with the omission may misread 8.3/8.4
-  as defective "assert absence" tests rather than deliberate regression guards.
+#### COVERAGE: No test for empty or unset model parameter
+- File: tests/test_stage_summary_model_display.sh (omission — no specific line)
+- Issue: `run_agent()` receives `model` as positional parameter `$2`. If a caller
+  passes an empty string, the STAGE_SUMMARY line renders as `Coder (): 30/50 turns`,
+  which is misleading. `_extract_stage_turns` would still function correctly since
+  its regex (`[0-9]+/`) is unaffected, but the display output gives no diagnostic
+  signal about the misconfiguration. No test covers this case.
 - Severity: LOW
-- Action: No action required. The comment block at lines 360–370 explains the
-  intent precisely. If the omission is later corrected, 8.3 and 8.4 will fail
-  with messages that direct the fixer to also update the dashboard parser and
-  this test — exactly the right behavior.
+- Action: Add a test section verifying `_extract_stage_turns` correctly parses a
+  STAGE_SUMMARY entry with an empty model `()`. A display-format test with an
+  empty model is optional but would document the expected graceful-degradation
+  behavior.
 
 ---
 
 ### Positive Observations
 
-**Assertion honesty (PASS)**
-All expected values in assertions derive directly from the inputs set in each
-test. For example, `_STAGE_TURNS[security]=9` produces `"security_turns":9` via
-`metrics.sh:109` and `metrics.sh:241-242`. No magic constants disconnected from
-implementation logic. Assertions 8.1 and 8.2 check positive presence; 8.3 and
-8.4 check deliberate absence consistent with `metrics.sh:247-252` (no
-`test_audit_duration_s` emit path exists).
+- **Tests 3, 4, 7** call the real `_extract_stage_turns()` from `lib/metrics.sh`
+  with correctly-formatted inputs. These directly exercise the implementation's
+  regex and cover: new format with model suffix (Test 3), old format without model
+  for backward compatibility (Test 4), and case-insensitive label matching (Test 7).
+  All three produce deterministic, implementation-derived expected values.
 
-**Edge case coverage (PASS)**
-- Test 3: sparse key behavior — security fields omitted when `security_turns=0`;
-  `review_cycles` omitted when `REVIEW_CYCLE=0`. Exercises the conditional
-  append guards at `metrics.sh:241-267`.
-- Test 6: backward-compatibility with JSONL records lacking new fields —
-  verifies both Python and bash parser paths produce no phantom stages.
-- Test 7: parent key isolation — verifies that sub-step keys in `_STAGE_DURATION`
-  (`security_scan`, `security_rework_1`) do not corrupt the parent `security`
-  values. Exercises `metrics.sh:95-102` (reads only named parent keys).
-- Test 8: regression guard for documented implementation gap.
+- **Test 9** calls the real `print_run_summary()` from `lib/agent_helpers.sh` with
+  a fully-built `STAGE_SUMMARY`, `TOTAL_TURNS=42`, `TOTAL_TIME=300`, and
+  `LAST_CONTEXT_TOKENS=5000`. The five-assertion verification confirms that
+  `print_run_summary` passes STAGE_SUMMARY through unmodified (via `echo -e`) and
+  formats totals correctly (`300s → 5m0s`). This is the highest-value test in the
+  suite.
 
-**Implementation exercise (PASS)**
-Tests 1–3, 7, 8 call `record_run_metrics()` directly with real associative-array
-inputs. Tests 4–6 call `_parse_run_summaries_from_jsonl()` with real JSONL
-fixture files. Test 5 mocks only the `python3` binary (not the implementation)
-to force the bash fallback path — minimal, targeted mocking.
+- **Retry suffix interplay** (Test 6) verifies that `_extract_stage_turns` is not
+  confused by the ` (after N retries)` trailing suffix appended by `run_agent()`.
 
-**No weakening detected (PASS)**
-The tester added only Test 8. No pre-existing test assertions were modified or
-removed. TESTER_REPORT.md confirms: "add Test 8: verify test_audit_duration_s
-and analyze_cleanup_duration_s are absent from JSONL."
+- **Backward compatibility** (Test 4) is explicitly tested — old `Label: N/M turns`
+  format without model parentheses still parses correctly.
 
-**Test naming (PASS)**
-Section headers (`[Test N]`) and sub-assertion labels (`N.M description`) clearly
-encode the scenario and expected outcome throughout. Test 8's block comment
-(lines 360–370) documents the NON_BLOCKING_LOG reference, the exact omission
-involved, and the intent of each sub-assertion.
+- **Scope alignment is correct.** The comment at test line 42 references
+  `lib/agent.sh:225`, which matches the actual implementation line for STAGE_SUMMARY
+  construction (confirmed). `_extract_stage_turns` at `lib/metrics.sh:296-304`
+  uses `grep -i "${stage_label}"` with a comment noting it handles both `"Label:"`
+  and `"Label (suffix):"` patterns — consistent with what the tests exercise.
+  No orphaned references or stale function names detected.
 
-**Scope alignment (PASS)**
-`INTAKE_REPORT.md` was deleted by the coder. The test file does not reference
-that file. `metrics.sh:292-293` reads `INTAKE_REPORT_FILE` only when
-`INTAKE_VERDICT` is set; no test in the audited file sets `INTAKE_VERDICT`, so
-the deleted file is never accessed. No orphaned references.
+- **No weakening detected.** This is a new test file — no pre-existing assertions
+  were modified or removed.
+
+- **Naming is descriptive.** Section headers clearly encode scenario and expected
+  outcome (`"_extract_stage_turns finds Coder turns (30) with model suffix"`).

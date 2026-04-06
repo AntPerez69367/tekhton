@@ -5,9 +5,9 @@ PASS
 88
 
 ## Reasoning
-- Scope is well-defined: the Milestone Map display is not reflecting the ACTIVE state during execution, skipping from READY to DONE
-- Expected vs actual behavior is unambiguous: milestones should appear in the Active column while running, not jump directly from READY to DONE
-- Testability is clear: run a milestone and observe the Milestone Map during execution — the active milestone must appear in the Active column
-- Similar Watchtower dashboard bugs (e.g., the Trends screen backslash bug) have passed intake and completed cleanly in a single cycle
-- No migration impact: this is a display/state-tracking fix with no new config keys or file format changes
-- Fix domain is well-scoped: milestone state transition logic in the dashboard data emission layer (dashboard_emitters.sh / milestones.sh / dashboard.sh area)
+- Scope is clear: enrich the existing Run Summary printout with per-stage model information
+- The example provided (coder using sonnet-4-6 or opus-4-6) disambiguates what "which model" means — the specific model ID, not just the model family
+- Motivation is explicit (debugging and performance comparison), which helps a developer make good display choices
+- No config keys, new files, or format migrations are required — this is additive output enrichment
+- Acceptance criteria are implicit but derivable: run the pipeline, check that the summary shows a model ID next to each stage that ran an agent
+- Historical patterns show similar polish tasks pass cleanly in one cycle
