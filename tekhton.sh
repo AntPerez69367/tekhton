@@ -1486,6 +1486,9 @@ if [[ "$HUMAN_MODE" = true ]]; then
                 _TEKHTON_CLEAN_EXIT=true
                 exit 0
             fi
+            # Re-read note line after triage — triage_before_claim may have added
+            # metadata which changes the line. claim_single_note needs the current line.
+            CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
         fi
         # Capture count BEFORE claiming so pre-flight display is accurate (M33 Bug 5)
         _PRE_CLAIM_NOTE_COUNT=$(count_human_notes)
@@ -2178,6 +2181,14 @@ _run_human_complete_loop() {
             log "Note ${CURRENT_NOTE_ID} was promoted/skipped by triage."
             human_attempt=$(( human_attempt - 1 ))
             continue
+        fi
+
+        # Re-read note line after triage — triage_before_claim may have added
+        # metadata (triage:, est_turns:, text_hash:, triaged:) which changes
+        # the line in HUMAN_NOTES.md. claim_single_note uses exact string
+        # matching, so it needs the current line, not the pre-triage version.
+        if [[ -n "$CURRENT_NOTE_ID" ]]; then
+            CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
         fi
 
         export CURRENT_NOTE_LINE

@@ -37,6 +37,17 @@ run_stage_intake() {
         return 0
     fi
 
+    # Skip intake for --human mode. Human notes are user-written observations
+    # that have already been triaged — running clarity evaluation on terse note
+    # text (e.g. "[BUG] Fix X") produces false NEEDS_CLARITY verdicts and
+    # blocks the pipeline with unnecessary clarification questions.
+    if [[ "${HUMAN_MODE:-false}" == "true" ]]; then
+        log "Intake: skipped in --human mode (notes are pre-triaged by user)."
+        export INTAKE_VERDICT="PASS"
+        export INTAKE_CONFIDENCE="100"
+        return 0
+    fi
+
     # Use cached intake results from dry-run if available (Milestone 23)
     if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
         header "Pre-stage 1 — Task Intake (cached)"
