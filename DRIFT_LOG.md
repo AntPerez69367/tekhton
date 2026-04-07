@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-07
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-04-07 | "M65"] `tekhton.sh` lines 812-815 source `tester_tdd.sh`, `tester_continuation.sh`, and `tester_fix.sh` directly after sourcing `tester.sh` (which itself sources some of them). The convention for which sub-stage files get a direct `source` in `tekhton.sh` vs only through their parent is undocumented. As the tester family grows (timing, tdd, continuation, fix), this is worth codifying.

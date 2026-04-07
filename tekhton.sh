@@ -810,9 +810,8 @@ source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/review_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
-source "${TEKHTON_HOME}/stages/tester_tdd.sh"
-source "${TEKHTON_HOME}/stages/tester_continuation.sh"
-source "${TEKHTON_HOME}/stages/tester_fix.sh"
+# Note: tester sub-stages (tester_tdd.sh, tester_continuation.sh, tester_fix.sh,
+# tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.
 source "${TEKHTON_HOME}/stages/cleanup.sh"
 
 _phase_end "startup"

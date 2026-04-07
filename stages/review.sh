@@ -127,8 +127,8 @@ run_stage_review() {
             if [[ "$_rev_usage_pct" -ge 85 ]]; then
                 # Bump by 25%, clamped to REVIEWER_MAX_TURNS_CAP
                 local _bumped=$(( _rev_limit * 125 / 100 ))
-                if [[ "$_bumped" -gt "${REVIEWER_MAX_TURNS_CAP:-30}" ]]; then
-                    _bumped="${REVIEWER_MAX_TURNS_CAP:-30}"
+                if [[ "$_bumped" -gt "${REVIEWER_MAX_TURNS_CAP}" ]]; then
+                    _bumped="${REVIEWER_MAX_TURNS_CAP}"
                 fi
                 if [[ "$_bumped" -gt "$_rev_limit" ]]; then
                     log "[turns] Reviewer used ${_rev_used}/${_rev_limit} turns (${_rev_usage_pct}%) — bumping limit to ${_bumped} for next cycle."

@@ -146,6 +146,11 @@ tekhton/
 │   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing
 │   ├── tester.sh           # Test writing + validation
+│   ├── tester_tdd.sh       # TDD phase orchestration
+│   ├── tester_continuation.sh # Turn-exhaustion continuation logic
+│   ├── tester_fix.sh       # Test failure fix orchestration
+│   ├── tester_timing.sh    # Tester timing and duration estimation
+│   ├── tester_validation.sh # Post-tester output validation and routing
 │   ├── cleanup.sh          # Post-success debt sweep stage
 │   ├── init_synthesize.sh  # Init synthesis stage
 │   ├── plan_interview.sh   # Planning: interactive interview agent

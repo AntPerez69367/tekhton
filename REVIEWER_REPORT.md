@@ -8,11 +8,15 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `REVIEWER_MAX_TURNS_CAP` is a new config variable introduced in `stages/review.sh:130` with an inline default of 30 but is not added to `lib/config_defaults.sh` or documented in the CLAUDE.md template variables table — add a default entry there for discoverability.
-- `CODER_SUMMARY.md` was not produced by the coder agent, which is required pipeline output. The review was conducted directly from git status and file inspection, but downstream pipeline steps that parse `CODER_SUMMARY.md` (e.g., `extract_files_from_coder_summary` in `review.sh:59`) will silently receive empty results.
+- `stages/tester_validation.sh` is a new file not listed in the repo layout tables in `CLAUDE.md` or `ARCHITECTURE.md` — add a line entry for discoverability (pattern: existing tester sub-stages like `tester_tdd.sh`, `tester_continuation.sh`, `tester_fix.sh` are also missing from ARCHITECTURE.md)
+- `CODER_SUMMARY.md` was again not produced by the coder — same observation as cycle 1. Downstream pipeline functions that parse it (e.g., `extract_files_from_coder_summary` in `review.sh`) will receive empty results.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
 - None
+
+## Prior Blocker Verification
+- **Note 1 (REVIEWER_MAX_TURNS_CAP inline default):** ADDRESSED — `lib/config_defaults.sh:96` now sets `REVIEWER_MAX_TURNS_CAP:=50` with a clamp at line 416. The inline `:-30` fallback was correctly removed from `stages/review.sh`.
+- **Note 2 (CODER_SUMMARY.md not produced):** Observational — not a code defect, carried forward above.
