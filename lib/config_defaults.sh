@@ -59,7 +59,7 @@ set -euo pipefail
 
 # --- Final check fix defaults (auto-fix on final check test failures) ---
 # Note: FINAL_FIX_* controls the inline fix agent in hooks.sh (final checks).
-#       TESTER_FIX_* controls the recursive fix in stages/tester.sh (tester stage).
+#       TESTER_FIX_* controls the inline fix agent in stages/tester.sh (tester stage).
 #       They are complementary, not duplicates.
 : "${FINAL_FIX_ENABLED:=true}"              # Spawn fix agent when TEST_CMD fails in final checks
 : "${FINAL_FIX_MAX_ATTEMPTS:=2}"            # Max fix attempts before giving up
@@ -322,8 +322,9 @@ set -euo pipefail
 
 # --- Tester stage fix defaults (auto-fix on test failure) ---
 : "${TESTER_FIX_ENABLED:=false}"           # Auto-seed fix run on test failure (opt-in)
-: "${TESTER_FIX_MAX_DEPTH:=1}"             # Max recursive fix attempts (recursion guard)
+: "${TESTER_FIX_MAX_DEPTH:=1}"             # Max inline fix attempts per tester stage
 : "${TESTER_FIX_OUTPUT_LIMIT:=4000}"       # Max chars of test output in fix task string
+: "${TESTER_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
 
 # --- Test baseline defaults (pre-existing failure detection) ---
 : "${TEST_BASELINE_ENABLED:=true}"
@@ -471,6 +472,9 @@ _clamp_config_value PREFLIGHT_FIX_MAX_ATTEMPTS 10
 _clamp_config_value PREFLIGHT_FIX_MAX_TURNS 500
 _clamp_config_value FINAL_FIX_MAX_ATTEMPTS 10
 _clamp_config_value FINAL_FIX_MAX_TURNS 500
+_clamp_config_value TESTER_FIX_MAX_DEPTH 5
+_clamp_config_value TESTER_FIX_MAX_TURNS 100
+_clamp_config_value TESTER_FIX_OUTPUT_LIMIT 16000
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
 _clamp_config_value BUILD_GATE_TIMEOUT 1800
 _clamp_config_value BUILD_GATE_ANALYZE_TIMEOUT 900

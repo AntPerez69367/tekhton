@@ -1,4 +1,4 @@
-# Reviewer Report — M64 Non-Blocking Notes
+# Reviewer Report — M64 Surgical Tester Fix (Cycle 4)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,10 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/test_baseline.sh` is 344 lines — still above the 300-line soft ceiling after extraction (down from 388). The two requested functions were extracted; further reduction would require extracting additional blocks (e.g., `_check_acceptance_stuck`, `save_acceptance_test_output`).
+- `stages/tester_fix.sh` is sourced twice: once at the end of `tester.sh` (line 398) and once explicitly in `tekhton.sh` (line 815). Double-sourcing is harmless (functions are redefined to the same definition) but the `tekhton.sh` entry is redundant and could be removed.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `stages/tester.sh` is 438 lines — pre-existing overage, not introduced by this task. Candidate for future extraction (continuation logic, TDD write_failing helper are already factored out but the file remains large).
+- `TEKHTON_VERSION` remains at `3.30.0` — per CLAUDE.md convention, completing M64 should bump to `3.64.0`. The same gap was present after M63 (`a5901e1`). The version bump convention appears not to have been applied for many milestones. Pre-existing pattern, not introduced by this task.

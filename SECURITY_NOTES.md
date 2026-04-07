@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-06 17:15:17
+Generated: 2026-04-07 09:26:04
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A03] [platforms/mobile_native_android/detect.sh:60,65,87] fixable:yes — `echo "$gradle_files" | xargs grep -l '...'` splits newline-separated paths on whitespace, so any `build.gradle` path containing spaces will be silently mishandled by xargs (treated as two arguments). No injection risk since filenames come from `find` within `PROJECT_DIR`, but the detection logic will silently fail for space-containing paths. Fix: replace with a `while IFS= read -r f; do grep -ql '...' "$f" && ...; done <<< "$gradle_files"` loop or use `grep -rl '...' "$proj_dir" --include='build.gradle'` directly.
+- [LOW] [category:A03] [stages/tester_fix.sh:162] fixable:unknown — `eval "${TEST_CMD}"` executes the configured test command via eval. This is a pre-existing convention shared with `lib/health_checks.sh:120`. `TEST_CMD` is sourced from project-owner-controlled `pipeline.conf`, not end-user input — no new attack surface is introduced. No action needed unless the project decides to sandbox config values globally.

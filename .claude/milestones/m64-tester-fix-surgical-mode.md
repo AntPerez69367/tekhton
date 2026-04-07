@@ -1,7 +1,7 @@
 # Milestone 64: Tester Fix — Surgical Mode
 <!-- milestone-meta
 id: "64"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
