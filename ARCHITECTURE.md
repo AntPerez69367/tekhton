@@ -52,6 +52,27 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Detects compilation failures in log, resets affected items in report
   - Turn exhaustion continuation: auto-continues if partial tests remain with substantive work
   - Saves state on partial completion for turn-limit resume
+  - Sources sub-stages: `tester_tdd.sh`, `tester_continuation.sh`, `tester_fix.sh`, `tester_timing.sh`, `tester_validation.sh`
+
+- **`stages/tester_tdd.sh`** — TDD phase orchestration
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: TDD phase detection and routing logic
+
+- **`stages/tester_continuation.sh`** — Turn-exhaustion continuation logic
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: continuation prompt rendering and resume handling for partial test runs
+
+- **`stages/tester_fix.sh`** — Test failure fix orchestration
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: test failure detection, fix routing, and recursive fix attempt limits
+
+- **`stages/tester_timing.sh`** — Tester timing and duration estimation
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: stage timing utilities for progress tracking and turn estimation
+
+- **`stages/tester_validation.sh`** — Post-tester output validation and routing
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: `_validate_tester_output()` for report validation, missing output synthesis, and test file discovery
 
 - **`stages/plan_interview.sh`** → `run_plan_interview()`
   - Planning phase only (sourced via `--plan`, not the execution pipeline)

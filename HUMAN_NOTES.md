@@ -17,4 +17,5 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 ## Bugs
 
+
 ## Polish

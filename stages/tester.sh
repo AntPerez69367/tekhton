@@ -8,85 +8,25 @@
 
 set -euo pipefail
 
-# --- Tester timing globals (M62) ---
-# These are accumulated across continuations and consumed by finalize_summary.sh.
-_TESTER_TIMING_EXEC_COUNT=-1
-_TESTER_TIMING_EXEC_APPROX_S=-1
-_TESTER_TIMING_FILES_WRITTEN=-1
-_TESTER_TIMING_WRITING_S=-1
+# Source extracted tester timing globals and parsing (M62 → M65 SIM-1)
+# shellcheck source=stages/tester_timing.sh
+source "${TEKHTON_HOME}/stages/tester_timing.sh"
 
-# _parse_tester_timing — Extract timing data from TESTER_REPORT.md.
-# Reads the ## Timing section and populates _TESTER_TIMING_* globals.
-# If section is missing or unparseable, values remain -1.
-# Args: $1 = path to TESTER_REPORT.md (default: TESTER_REPORT.md)
-#       $2 = "accumulate" to add to existing values (for continuations)
-_parse_tester_timing() {
-    local report="${1:-TESTER_REPORT.md}"
-    local mode="${2:-replace}"
+# Source extracted post-tester validation and routing
+# shellcheck source=stages/tester_validation.sh
+source "${TEKHTON_HOME}/stages/tester_validation.sh"
 
-    [[ -f "$report" ]] || return 0
+# Source extracted TDD helper
+# shellcheck source=stages/tester_tdd.sh
+source "${TEKHTON_HOME}/stages/tester_tdd.sh"
 
-    # Extract the ## Timing section (must be at end of file per milestone spec)
-    local timing_block
-    timing_block=$(sed -n '/^## Timing$/,$ p' "$report" 2>/dev/null || true)
-    [[ -n "$timing_block" ]] || return 0
+# Source extracted turn-exhaustion continuation loop
+# shellcheck source=stages/tester_continuation.sh
+source "${TEKHTON_HOME}/stages/tester_continuation.sh"
 
-    # Parse each field with defensive regex
-    local _exec_count _exec_time _files_written
-    _exec_count=$(echo "$timing_block" | grep -oiE 'Test executions:\s*([0-9]+)' | grep -oE '[0-9]+' | tail -1 || true)
-    _exec_time=$(echo "$timing_block" | grep -oiE 'Approximate total test execution time:\s*~?([0-9]+)' | grep -oE '[0-9]+' | tail -1 || true)
-    _files_written=$(echo "$timing_block" | grep -oiE 'Test files written:\s*([0-9]+)' | grep -oE '[0-9]+' | tail -1 || true)
-
-    # Validate: must be numeric
-    [[ "$_exec_count" =~ ^[0-9]+$ ]] || _exec_count=""
-    [[ "$_exec_time" =~ ^[0-9]+$ ]] || _exec_time=""
-    [[ "$_files_written" =~ ^[0-9]+$ ]] || _files_written=""
-
-    if [[ "$mode" == "accumulate" ]]; then
-        # Accumulate: add to running totals (only if current value is valid)
-        if [[ -n "$_exec_count" ]]; then
-            if [[ "$_TESTER_TIMING_EXEC_COUNT" -eq -1 ]]; then
-                _TESTER_TIMING_EXEC_COUNT="$_exec_count"
-            else
-                _TESTER_TIMING_EXEC_COUNT=$(( _TESTER_TIMING_EXEC_COUNT + _exec_count ))
-            fi
-        fi
-        if [[ -n "$_exec_time" ]]; then
-            if [[ "$_TESTER_TIMING_EXEC_APPROX_S" -eq -1 ]]; then
-                _TESTER_TIMING_EXEC_APPROX_S="$_exec_time"
-            else
-                _TESTER_TIMING_EXEC_APPROX_S=$(( _TESTER_TIMING_EXEC_APPROX_S + _exec_time ))
-            fi
-        fi
-        if [[ -n "$_files_written" ]]; then
-            if [[ "$_TESTER_TIMING_FILES_WRITTEN" -eq -1 ]]; then
-                _TESTER_TIMING_FILES_WRITTEN="$_files_written"
-            else
-                _TESTER_TIMING_FILES_WRITTEN=$(( _TESTER_TIMING_FILES_WRITTEN + _files_written ))
-            fi
-        fi
-    else
-        # Replace mode: set values (or leave as -1 if unparseable)
-        if [[ -n "$_exec_count" ]]; then _TESTER_TIMING_EXEC_COUNT="$_exec_count"; fi
-        if [[ -n "$_exec_time" ]]; then _TESTER_TIMING_EXEC_APPROX_S="$_exec_time"; fi
-        if [[ -n "$_files_written" ]]; then _TESTER_TIMING_FILES_WRITTEN="$_files_written"; fi
-    fi
-}
-
-# _compute_tester_writing_time — Compute approximate writing time.
-# Returns: writing time in seconds, or -1 if unavailable.
-# Uses total tester agent duration minus reported execution time.
-_compute_tester_writing_time() {
-    local agent_duration="${1:-0}"
-    if [[ "$_TESTER_TIMING_EXEC_APPROX_S" -gt 0 ]] && [[ "$agent_duration" -gt 0 ]]; then
-        local writing_s=$(( agent_duration - _TESTER_TIMING_EXEC_APPROX_S ))
-        # Clamp to zero — agent estimates can exceed actual wall time
-        [[ "$writing_s" -lt 0 ]] && writing_s=0
-        echo "$writing_s"
-    else
-        echo "-1"
-    fi
-}
+# Source extracted inline tester fix (M64)
+# shellcheck source=stages/tester_fix.sh
+source "${TEKHTON_HOME}/stages/tester_fix.sh"
 
 # run_stage_tester — Runs the tester stage:
 #   1. Select prompt (fresh vs resume)
@@ -277,96 +217,8 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
         return
     fi
 
-    # --- Post-tester validation ----------------------------------------------
-
-    if [ ! -f "TESTER_REPORT.md" ]; then
-        warn "Tester did not produce TESTER_REPORT.md."
-        # Check if test files were created despite missing report
-        local _test_file_count=0
-        if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-            _test_file_count=$(git diff --name-only HEAD 2>/dev/null | grep -ciE 'test|spec' || echo "0")
-        fi
-        if [[ "$_test_file_count" -gt 0 ]]; then
-            warn "Tester created ${_test_file_count} test file(s) but no report — synthesizing minimal TESTER_REPORT.md."
-            local _test_files
-            _test_files=$(git diff --name-only HEAD 2>/dev/null | grep -iE 'test|spec' | head -20 || true)
-            cat > TESTER_REPORT.md <<TESTER_EOF
-## Test Summary
-TESTER_REPORT.md was synthesized by the pipeline. The tester agent created
-test files but did not produce a report. Review the test files directly.
-
-## Test Files Created
-$(echo "$_test_files" | sed 's/^/- [x] `/' | sed 's/$/`/')
-
-## Bugs Found
-None
-TESTER_EOF
-        else
-            warn "Check the log: ${LOG_FILE}"
-            warn "Re-run with: $0 --start-at test \"${TASK}\""
-        fi
-    else
-        REMAINING=$(grep -c "^- \[ \]" TESTER_REPORT.md || true)
-        REMAINING=$(echo "$REMAINING" | tr -d '[:space:]')
-
-        # Check for compilation errors or test failures in the log
-        if grep -q "Compilation failed" "$LOG_FILE" || grep -q "Failed to load" "$LOG_FILE"; then
-            error "One or more test files failed to compile. The tester report may be inaccurate."
-            error "Compilation errors detected in:"
-            _failed_paths=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=/  /' | sed 's/:.*//' | sort -u)
-            echo "$_failed_paths"
-            warn "Fix the failing test files, then resume with: $0 --start-at tester \"${TASK}\""
-            # Mark affected test files as unchecked in TESTER_REPORT.md so resume picks them up
-            FAILED_FILES=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=//' | sed 's/:.*//' | sort -u)
-            for FAILED in $FAILED_FILES; do
-                BASENAME=$(basename "$FAILED")
-                # Flip [x] back to [ ] for the failed file in the report
-                sed -i "s|\[x\] \`.*${BASENAME}.*\`|- [ ] \`${BASENAME}\` — COMPILATION FAILED: re-read source models before rewriting|g" TESTER_REPORT.md
-            done
-            warn "TESTER_REPORT.md updated — failed files reset to unchecked for resume."
-        elif grep -qE "^\s+-[0-9]+:" "$LOG_FILE" || grep -q " -[1-9][0-9]*:" "$LOG_FILE"; then
-            # --- Inline tester fix agent (M64 — replaces recursive pipeline spawn) ---
-            if [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]] \
-               && [[ "${TESTER_FIX_MAX_DEPTH:-1}" -gt 0 ]]; then
-                _run_tester_inline_fix
-            else
-                error "${TEST_CMD} reported failures. Review TESTER_REPORT.md and the log."
-                if [[ "${TESTER_FIX_ENABLED:-false}" != "true" ]]; then
-                    warn "Set TESTER_FIX_ENABLED=true in pipeline.conf to enable auto-fix."
-                fi
-                warn "Resume with: $0 --start-at tester \"${TASK}\""
-            fi
-        elif [ "$REMAINING" -gt 0 ]; then
-            warn "Tester completed partial run — ${REMAINING} planned test(s) not yet written."
-
-            # --- Turn exhaustion continuation for tester (Milestone 14) ---
-            # Extracted to stages/tester_continuation.sh
-            _TESTER_CONTINUED=false
-            _tester_run_continuations "$resume_flag" "$_tester_stage_start"
-
-            if [[ "$_TESTER_CONTINUED" = false ]]; then
-                local resume_tester_flag
-                resume_tester_flag="$(_build_resume_flag tester)"
-
-                write_pipeline_state \
-                    "tester" \
-                    "partial_tests" \
-                    "$resume_tester_flag" \
-                    "${TASK}" \
-                    "${REMAINING} test(s) remaining — TESTER_REPORT.md has the checklist"
-
-                warn "State saved — re-run with no arguments to resume."
-            fi
-        else
-            print_run_summary
-            success "Tester agent finished — all planned tests written and passing."
-            # Clean run — clear any stale state
-            clear_pipeline_state
-
-            # --- Test integrity audit (M20) ---
-            _run_and_record_test_audit
-        fi
-    fi
+    # --- Post-tester validation (extracted to tester_validation.sh) -----------
+    _validate_tester_output "$resume_flag" "$_tester_stage_start"
 
     # --- Tester diagnostics: final stage summary --------------------------------
     local _tester_stage_end
@@ -390,10 +242,3 @@ TESTER_EOF
     export _TESTER_TIMING_EXEC_COUNT _TESTER_TIMING_EXEC_APPROX_S _TESTER_TIMING_FILES_WRITTEN _TESTER_TIMING_WRITING_S
 }
 
-# Source extracted TDD helper
-# shellcheck source=stages/tester_tdd.sh
-source "${TEKHTON_HOME}/stages/tester_tdd.sh"
-
-# Source extracted inline tester fix (M64)
-# shellcheck source=stages/tester_fix.sh
-source "${TEKHTON_HOME}/stages/tester_fix.sh"
