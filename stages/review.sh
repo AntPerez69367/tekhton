@@ -38,7 +38,7 @@ run_stage_review() {
     estimate_post_coder_turns "${ACTUAL_CODER_TURNS:-0}"
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"
-    _REVIEW_MAP_FILES=""  # M61: track cycle-1 file list for cache comparison
+    _REVIEW_MAP_FILES=""  # M61: track cycle-1 file list for cache comparison (global — tested externally)
 
     while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; do
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
@@ -53,7 +53,7 @@ run_stage_review() {
 
         # Repo map slice: changed files + their callers/callees
         # M61: Use run cache — only regenerate if new files detected since cycle 1
-        export REPO_MAP_CONTENT=""
+        REPO_MAP_CONTENT=""
         if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
             local _review_files
             _review_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")

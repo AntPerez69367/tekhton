@@ -159,7 +159,13 @@ _hook_emit_run_summary() {
             continue
         fi
         if [[ "$stage_first" = true ]]; then stage_first=false; else stages_json="${stages_json},"; fi
-        stages_json="${stages_json}\"${_stg}\":{\"turns\":${_s_turns},\"duration_s\":${_s_dur},\"budget\":${_s_budget}}"
+        # M62: Include tester timing sub-fields when available
+        # Guard: always emit for tester stage; defaults to -1 (unavailable sentinel)
+        local _stg_extra=""
+        if [[ "$_stg" == "tester" ]]; then
+            _stg_extra=",\"test_execution_count\":${_TESTER_TIMING_EXEC_COUNT:--1},\"test_execution_approx_s\":${_TESTER_TIMING_EXEC_APPROX_S:--1},\"test_writing_approx_s\":${_TESTER_TIMING_WRITING_S:--1}"
+        fi
+        stages_json="${stages_json}\"${_stg}\":{\"turns\":${_s_turns},\"duration_s\":${_s_dur},\"budget\":${_s_budget}${_stg_extra}}"
     done
     stages_json="${stages_json}}"
 

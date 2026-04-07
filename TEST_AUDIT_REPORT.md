@@ -1,40 +1,61 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 13 test functions (7 in test_timing_repo_map_stats.sh, 6 in test_review_cache_invalidation.sh)
+Tests audited: 8 files, 39 test cases
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Empty file list path not covered in review cache invalidation
-- File: tests/test_review_cache_invalidation.sh (missing scenario — no single line)
-- Issue: `run_stage_review()` guards the entire indexer block with `if [[ -n "$_review_files" ]]` (review.sh:60). When `extract_files_from_coder_summary` returns an empty string, `_REVIEW_MAP_FILES` is never set and no comparison occurs across cycles. No test covers this path, so a regression where the extractor silently returns empty would not be detected by these tests.
+#### COVERAGE: All tests are static text inspection — no behavioral execution
+- File: tests/test_m62_comment_accuracy.sh, tests/test_timing_deadcode_removal.sh, tests/test_finalize_summary_tester_guard.sh, tests/test_tester_timing_initialization.sh, tests/test_indexer_line_ceiling.sh, tests/test_timing_cache_hits_display.sh, tests/test_review_map_files_global.sh, tests/test_m62_fixes_integration.sh
+- Issue: All 39 test cases use `grep` and `sed` to inspect file content at rest, or `bash -n` for syntax checking. No test invokes a function or exercises runtime behavior. Behavioral regressions in the fixed code paths (e.g., the `_sub_phase_parents` loop in timing.sh, the `_stg_extra` serialization in finalize_summary.sh, the `_REVIEW_MAP_FILES` cache-comparison logic in review.sh) would not be caught. The file `test_m62_fixes_integration.sh` is labeled as an integration test but contains only file-existence checks and syntax checks — it is not an integration test in the behavioral sense.
+- Severity: MEDIUM
+- Action: For M62's current changes (dead code removal, comment clarification, variable initialization, grammar fix), static inspection is acceptable. For any future milestone that touches runtime logic in these files, add a scenario block that sources the file, calls the affected function, and asserts on output. No immediate change required for M62 scope.
+
+#### COVERAGE: Line number assertions are fragile across 6 test files
+- File: tests/test_timing_deadcode_removal.sh:21,28,35,42 — pins lines 138, 135-142, 130-145 of lib/timing.sh
+- File: tests/test_finalize_summary_tester_guard.sh:21,28,35,43 — pins lines 165, 164-166, 165-167 of lib/finalize_summary.sh
+- File: tests/test_tester_timing_initialization.sh:28,36-39,47 — pins line 16 and lines 11-16 of stages/tester.sh
+- File: tests/test_timing_cache_hits_display.sh:21,28,35,42 — pins lines 240, 238, 238-240 of lib/timing.sh
+- File: tests/test_review_map_files_global.sh:28,34 — pins line 41 of stages/review.sh
+- File: tests/test_m62_fixes_integration.sh:74,81,88 — pins lines 165, 138, 41
+- Issue: Assertions on absolute line numbers mean any future unrelated edit that shifts those lines by even one line produces a false failure. The underlying properties being verified (e.g., "simplified single-condition check exists", "all four globals initialized") are stable code properties, not stable line positions.
+- Severity: MEDIUM
+- Action: Replace `sed -n 'Np' "$FILE" | grep -q 'pattern'` with `grep -q 'pattern' "$FILE"` wherever the test is checking for the presence of a construct, not its specific location. The patterns themselves are correct and precise enough to be unambiguous without line pinning. Retain line-number assertions only where position relative to surrounding code is semantically meaningful (e.g., verifying ordering of initialization).
+
+#### SCOPE: Duplicate assertions in test_m62_fixes_integration.sh
+- File: tests/test_m62_fixes_integration.sh:67-92
+- Issue: Tests 7-10 exactly duplicate assertions already present in dedicated test files: Test 7 = test_tester_timing_initialization.sh:21, Test 8 = test_finalize_summary_tester_guard.sh:21, Test 9 = test_timing_deadcode_removal.sh:21, Test 10 = test_review_map_files_global.sh:34. Any future assertion change must be made in two places, increasing maintenance surface without adding coverage.
 - Severity: LOW
-- Action: Add a test: set `extract_files_from_coder_summary() { echo ""; }`, run two cycles (CHANGES_REQUIRED → APPROVED), assert `_REVIEW_MAP_FILES` is empty and `INVALIDATE_CALLED` remains 0.
+- Action: Remove Tests 7-10 from test_m62_fixes_integration.sh. Tests 1-6 (file existence + syntax checks) represent genuine integration-level value and should be retained. The individual property assertions are already owned by their dedicated test files.
 
-#### COVERAGE: Plural "hits" grammar not enforced as a test contract
-- File: tests/test_timing_repo_map_stats.sh:95
-- Issue: T2 correctly checks for `"1 cache hits"` because the implementation always emits the plural form (`timing.sh:169`). The assertion is honest and matches real output. Noted for future maintainers: if the implementation is fixed to emit `"1 cache hit"` (singular), T2's assertion string must be updated to match.
+#### NAMING: test_m62_comment_accuracy.sh describes "comment" but Test 2-4 match echo statement content at line 206
+- File: tests/test_m62_comment_accuracy.sh:28-46
+- Issue: The test header and inline labels say "Verify comment at lines 206-208 describes delta-based behavior." Line 206 of the target file is an `echo` statement (`echo "=== Test: accumulate on -1 baseline + delta report..."`) — not a `#`-prefixed comment. The actual comments are at lines 207-208. Tests 2-4 pass because "delta", "accumulate", and "continuation" appear across the combined echo+comment content of lines 206-208, but the description conflates an echo label with a comment block.
 - Severity: LOW
-- Action: No test change required. Add an inline comment on the assertion to flag the grammar dependency.
+- Action: Update the inline descriptions for Tests 2-4 to read "echo label and comment block at lines 206-208" rather than just "comment." No assertion logic change needed — the content being verified exists in the implementation and the tests correctly find it.
 
-### No Issues Found in Other Categories
+---
 
-#### INTEGRITY — None
-All numeric assertions in `test_timing_repo_map_stats.sh` derive directly from the implementation formula `saved_s = hits * gen_time_ms / 1000` (timing.sh:167). T1 comment documents the arithmetic (`# saved_s = 3 * 1500 / 1000 = 4`). Boundary values in T3/T4 match the exact guard `hits > 0 || gen_time_ms > 0` (timing.sh:164). T5 targets the `declare -f get_repo_map_cache_stats` guard (timing.sh:159). T6 targets the `${#_PHASE_TIMINGS[@]} -eq 0` early-return (timing.sh:113). No hard-coded magic numbers unrelated to implementation logic. No tautological assertions found.
+### Notes on Integrity, Weakening, Exercise, and Scope
 
-All assertions in `test_review_cache_invalidation.sh` trace to real conditional branches: the `INDEXER_AVAILABLE`/`REPO_MAP_ENABLED` guards (review.sh:57), the `REVIEW_CYCLE -gt 1` gate (review.sh:62), and the basename diff trigger (review.sh:66–69). Counter-based verification (`INVALIDATE_CALLED`) is the correct approach for tracking call frequency without running real infrastructure.
+#### INTEGRITY — No issues
+All assertions check for patterns that genuinely exist in the current implementation files. Cross-referencing every `grep`/`sed` pattern against the actual file content confirms 100% match:
+- `lib/timing.sh:138` contains `if [[ "$_spk" == "${_pfx}"* ]]; then` (confirmed)
+- `lib/finalize_summary.sh:164-166` contains `_stg_extra=""`, simplified tester guard, and all three timing fields on line 166 (confirmed)
+- `stages/tester.sh:13-16` contains all four `_TESTER_TIMING_*=-1` initializations (confirmed)
+- `lib/timing.sh:238-240` contains the grammatically correct cache hits display strings (confirmed)
+- `stages/review.sh:41` contains `_REVIEW_MAP_FILES=""` with `# ... (global — tested externally)` (confirmed)
+- `lib/indexer.sh` has 298 lines, under the 300-line ceiling (confirmed), with `# Intra-run cache functions: see lib/indexer_cache.sh (M61)` at line 298 (confirmed)
+- `tests/test_m62_resume_cumulative_overcount.sh:206-208` contains "delta", "accumulate", and "continuation" (confirmed)
 
-#### EXERCISE — None
-`test_timing_repo_map_stats.sh` sources and calls the real `_hook_emit_timing_report`. The only mock is `get_repo_map_cache_stats`, overridden per-test to inject specific stat values — appropriate since the test is exercising timing.sh behavior, not the indexer cache module.
+No hard-coded magic numbers unrelated to the implementation. No tautological assertions.
 
-`test_review_cache_invalidation.sh` sources and calls the real `run_stage_review()`. Stubs are limited to externals requiring live agent infrastructure (`run_agent`, `render_prompt`, `build_context_packet`). The invalidation logic under test — basename comparison at review.sh:63–69 and `_REVIEW_MAP_FILES` storage at review.sh:82–84 — executes through real code paths.
+#### WEAKENING — No issues
+All 8 test files are new untracked additions (`??` in git status). No existing tests were modified or weakened.
 
-#### WEAKENING — None
-Both test files are new additions (untracked `??` in git status). No existing tests were modified.
+#### EXERCISE — Acceptable for scope
+All tests directly read the implementation files they are testing. No mocking. Static inspection is an appropriate strategy for M62's changes, which are entirely cosmetic and structural (not algorithmic).
 
-#### NAMING — None
-All test cases include descriptive echo headers encoding both the scenario and the expected outcome (e.g., `"T2: New file in cycle-2 list → invalidation triggered"`, `"T4: INDEXER_AVAILABLE=false → no extract/invalidate calls"`, `"T3: hits=0 gen_time_ms=0 → no repo map line"`). Assertion failure messages include diagnostic output (grep result or "NOT FOUND").
-
-#### SCOPE — None
-All sourced functions (`_hook_emit_timing_report`, `run_stage_review`, `get_repo_map_cache_stats`, `invalidate_repo_map_run_cache`) confirmed present in their expected locations. No orphaned imports or stale function references detected. `get_repo_map_cache_stats` (defined in `lib/indexer_cache.sh`) is correctly overridden in the timing test — the test is not exercising the cache module, only timing.sh's use of its output format.
+#### SCOPE — No issues
+No references to deleted or renamed symbols. All file paths are current. No stale imports or orphaned tests detected.
