@@ -211,9 +211,6 @@ DRY_RUN_MODE=false
 CONTINUE_PREVIEW=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
-# Auto-fix recursion guard: inherited from parent invocation via env export.
-# Incremented by the tester stage before spawning a fix run.
-export TEKHTON_FIX_DEPTH="${TEKHTON_FIX_DEPTH:-0}"
 TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""
@@ -815,6 +812,7 @@ source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 source "${TEKHTON_HOME}/stages/tester_tdd.sh"
 source "${TEKHTON_HOME}/stages/tester_continuation.sh"
+source "${TEKHTON_HOME}/stages/tester_fix.sh"
 source "${TEKHTON_HOME}/stages/cleanup.sh"
 
 _phase_end "startup"

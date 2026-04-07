@@ -236,7 +236,7 @@ _report_stage_tester() {
     : "${test_count:=0}"
 
     local bug_count
-    bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^- /{c++} END{print c+0}' "$tester_file" 2>/dev/null || echo "0")
+    bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{next} f && /^- /{c++} END{print c+0}' "$tester_file" 2>/dev/null || echo "0")
     bug_count="${bug_count//[!0-9]/}"
     : "${bug_count:=0}"
 

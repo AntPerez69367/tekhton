@@ -177,7 +177,7 @@ run_stage_tester() {
 
         # --- Test baseline summary for tester context (M63) -------------------
         export TEST_BASELINE_SUMMARY=""
-        if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] \
+        if [[ "${TEST_BASELINE_ENABLED:-true}" == "true" ]] \
            && declare -f has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
             local _bl_json
             _bl_json=$(_test_baseline_json)
@@ -299,7 +299,7 @@ test files but did not produce a report. Review the test files directly.
 $(echo "$_test_files" | sed 's/^/- [x] `/' | sed 's/$/`/')
 
 ## Bugs Found
-- None reported (tester did not produce a structured report)
+None
 TESTER_EOF
         else
             warn "Check the log: ${LOG_FILE}"
@@ -325,57 +325,14 @@ TESTER_EOF
             done
             warn "TESTER_REPORT.md updated — failed files reset to unchecked for resume."
         elif grep -qE "^\s+-[0-9]+:" "$LOG_FILE" || grep -q " -[1-9][0-9]*:" "$LOG_FILE"; then
-            # --- Auto-fix on test failure (opt-in) --------------------------------
+            # --- Inline tester fix agent (M64 — replaces recursive pipeline spawn) ---
             if [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]] \
-               && [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${TESTER_FIX_MAX_DEPTH:-1}" ]]; then
-                local _fix_depth="${TEKHTON_FIX_DEPTH:-0}"
-                local _max_depth="${TESTER_FIX_MAX_DEPTH:-1}"
-                local _output_limit="${TESTER_FIX_OUTPUT_LIMIT:-4000}"
-                log_decision "Seeding auto-fix run" "${TEST_CMD} failures detected (depth ${_fix_depth}/${_max_depth})" "TESTER_FIX_ENABLED=true"
-
-                # Capture test failure output from log (truncate to limit)
-                local _failure_output
-                _failure_output=$(grep -E '(FAIL|ERROR|error|failure|assert)' "$LOG_FILE" | tail -c "$_output_limit" || true)
-                if [[ -z "$_failure_output" ]]; then
-                    _failure_output=$(tail -100 "$LOG_FILE" | tail -c "$_output_limit")
-                fi
-
-                # M63: Check baseline — skip fix if all failures are pre-existing
-                if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] \
-                   && declare -f has_test_baseline &>/dev/null \
-                   && declare -f compare_test_with_baseline &>/dev/null \
-                   && has_test_baseline 2>/dev/null; then
-                    local _tfix_comparison
-                    _tfix_comparison=$(compare_test_with_baseline "$_failure_output" "1")
-                    if [[ "$_tfix_comparison" == "pre_existing" ]]; then
-                        log "All test failures are pre-existing — skipping tester fix."
-                        return
-                    fi
-                fi
-
-                # Spawn fix run with incremented depth
-                local _fix_task
-                _fix_task="Fix failing tests from previous pipeline run:
-${_failure_output}"
-                log "[auto-fix] Invoking fix run (depth $((_fix_depth + 1))/${_max_depth})..."
-                local _fix_exit=0
-                TEKHTON_FIX_DEPTH=$((_fix_depth + 1)) \
-                    bash "${TEKHTON_HOME}/tekhton.sh" "$_fix_task" || _fix_exit=$?
-
-                if [[ "$_fix_exit" -eq 0 ]]; then
-                    success "Auto-fix run succeeded — test failures resolved."
-                    # Prevent duplicate finalization: child pipeline already ran its
-                    # own finalize phase (archive reports, commit prompt, etc.).
-                    export SKIP_FINAL_CHECKS=true
-                    clear_pipeline_state
-                else
-                    error "Auto-fix run failed (exit ${_fix_exit}). Original test failures remain."
-                    warn "Resume with: $0 --start-at tester \"${TASK}\""
-                fi
+               && [[ "${TESTER_FIX_MAX_DEPTH:-1}" -gt 0 ]]; then
+                _run_tester_inline_fix
             else
                 error "${TEST_CMD} reported failures. Review TESTER_REPORT.md and the log."
-                if [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]]; then
-                    warn "Auto-fix depth limit reached (${TEKHTON_FIX_DEPTH:-0}/${TESTER_FIX_MAX_DEPTH:-1}). No further recursion."
+                if [[ "${TESTER_FIX_ENABLED:-false}" != "true" ]]; then
+                    warn "Set TESTER_FIX_ENABLED=true in pipeline.conf to enable auto-fix."
                 fi
                 warn "Resume with: $0 --start-at tester \"${TASK}\""
             fi
@@ -436,3 +393,7 @@ ${_failure_output}"
 # Source extracted TDD helper
 # shellcheck source=stages/tester_tdd.sh
 source "${TEKHTON_HOME}/stages/tester_tdd.sh"
+
+# Source extracted inline tester fix (M64)
+# shellcheck source=stages/tester_fix.sh
+source "${TEKHTON_HOME}/stages/tester_fix.sh"
