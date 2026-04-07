@@ -299,7 +299,7 @@ test files but did not produce a report. Review the test files directly.
 $(echo "$_test_files" | sed 's/^/- [x] `/' | sed 's/$/`/')
 
 ## Bugs Found
-- None reported (tester did not produce a structured report)
+None
 TESTER_EOF
         else
             warn "Check the log: ${LOG_FILE}"

@@ -9,4 +9,4 @@ test files but did not produce a report. Review the test files directly.
 - [x] `tests/test_test_baseline.sh`
 
 ## Bugs Found
-- None reported (tester did not produce a structured report)
+None
