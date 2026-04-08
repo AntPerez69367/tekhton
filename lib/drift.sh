@@ -133,6 +133,7 @@ count_drift_observations() {
 # resolve_drift_observations — Marks matching observations as resolved.
 # Usage: resolve_drift_observations "pattern1" "pattern2" ...
 # Moves lines matching any pattern from Unresolved to Resolved.
+# Deduplicates: skips observations whose text already appears in Resolved.
 resolve_drift_observations() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     if [ ! -f "$drift_file" ]; then
@@ -160,6 +161,10 @@ resolve_drift_observations() {
         return 0
     fi
 
+    # Pre-read existing resolved entries to avoid duplicates
+    local existing_resolved
+    existing_resolved=$(awk '/^## Resolved/{found=1; next} found{print}' "$drift_file" 2>/dev/null || true)
+
     # Process file: move matching unresolved lines to resolved section
     local in_unresolved=false
     while IFS= read -r line; do
@@ -178,8 +183,13 @@ resolve_drift_observations() {
             local stripped
             # shellcheck disable=SC2001
             stripped=$(echo "$line" | sed 's/^- \[[^]]*\] //')
-            resolved_lines="${resolved_lines}
+            # Skip if this observation text already appears in the Resolved section
+            if [ -n "$existing_resolved" ] && echo "$existing_resolved" | grep -qF -- "$stripped"; then
+                : # Already resolved — drop from unresolved without re-adding
+            else
+                resolved_lines="${resolved_lines}
 - [RESOLVED ${date_tag}] ${stripped}"
+            fi
         else
             echo "$line" >> "$tmpfile"
         fi
@@ -191,6 +201,7 @@ resolve_drift_observations() {
 # resolve_all_drift_observations — Moves ALL unresolved observations to Resolved.
 # Used after architect audit completes: the architect reviewed every observation,
 # so all are considered addressed. Out of Scope items get re-added separately.
+# Deduplicates: skips observations whose text already appears in Resolved.
 resolve_all_drift_observations() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     if [ ! -f "$drift_file" ]; then
@@ -203,6 +214,10 @@ resolve_all_drift_observations() {
     local tmpfile
     tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     local resolved_lines=""
+
+    # Pre-read existing resolved entries to avoid duplicates
+    local existing_resolved
+    existing_resolved=$(awk '/^## Resolved/{found=1; next} found{print}' "$drift_file" 2>/dev/null || true)
 
     local in_unresolved=false
     while IFS= read -r line; do
@@ -221,8 +236,13 @@ resolve_all_drift_observations() {
             local stripped
             # shellcheck disable=SC2001
             stripped=$(echo "$line" | sed 's/^- \[[^]]*\] //')
-            resolved_lines="${resolved_lines:+${resolved_lines}
+            # Skip if this observation text already appears in the Resolved section
+            if [ -n "$existing_resolved" ] && echo "$existing_resolved" | grep -qF -- "$stripped"; then
+                : # Already resolved — drop from unresolved without re-adding
+            else
+                resolved_lines="${resolved_lines:+${resolved_lines}
 }- [RESOLVED ${date_tag}] ${stripped}"
+            fi
         else
             echo "$line" >> "$tmpfile"
         fi

@@ -34,7 +34,10 @@ _switch_to_sub_milestone() {
 # Called when the coder agent did substantive work but failed to produce or
 # maintain the summary file. This allows the pipeline to proceed to review
 # instead of crashing. The reviewer will assess actual file changes.
+# Args: $1 (optional) — status to set (default: COMPLETE). Use FAILED for
+#       error-exit paths so the audit trail reflects the actual outcome.
 _reconstruct_coder_summary() {
+    local _status="${1:-COMPLETE}"
     local _files_changed=""
     local _diff_stat=""
     local _untracked_files=""
@@ -52,7 +55,7 @@ _reconstruct_coder_summary() {
         | head -30 || true)
 
     cat > CODER_SUMMARY.md <<RECON_EOF
-## Status: COMPLETE
+## Status: ${_status}
 
 ## Summary
 CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
@@ -74,7 +77,7 @@ ${_diff_stat}
 Unable to determine — coder did not report remaining items.
 Review the task description against actual changes to identify gaps.
 RECON_EOF
-    warn "Reconstructed CODER_SUMMARY.md ($(wc -l < CODER_SUMMARY.md) lines) from git state."
+    warn "Reconstructed CODER_SUMMARY.md (status=${_status}, $(wc -l < CODER_SUMMARY.md) lines) from git state."
 }
 
 # run_stage_coder — Runs the full coder stage including:
@@ -735,6 +738,8 @@ ${nb_notes}"
             error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
             error "Check the log: ${LOG_FILE}"
             error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            # Reconstruct for audit trail even on failure
+            _reconstruct_coder_summary "FAILED"
             # Reset claimed notes — coder didn't produce any work
             resolve_human_notes
 
@@ -749,6 +754,8 @@ ${nb_notes}"
             error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
             error "Check the log: ${LOG_FILE}"
             error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            # Reconstruct for audit trail even on failure
+            _reconstruct_coder_summary "FAILED"
             # Reset claimed notes — coder didn't produce any work
             resolve_human_notes
             exit 1
@@ -1031,6 +1038,11 @@ ${GIT_DIFF_STAT}
             fi
         else
             warn "Coder did not complete — blocking reviewer and tester."
+
+            # Ensure CODER_SUMMARY.md exists for post-run auditing
+            if [[ ! -f "CODER_SUMMARY.md" ]]; then
+                _reconstruct_coder_summary "INCOMPLETE"
+            fi
 
             GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20 || echo "no changes")
 
