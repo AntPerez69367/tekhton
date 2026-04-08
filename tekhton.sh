@@ -416,6 +416,11 @@ if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--plan-browser" ] || [ "${1:-}" = "-
     source "${TEKHTON_HOME}/lib/plan_browser.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    # DAG defaults needed by milestone_dag.sh (config_defaults.sh is not
+    # sourced in --plan mode because it depends on _clamp_config_value)
+    : "${MILESTONE_DAG_ENABLED:=true}"
+    : "${MILESTONE_DIR:=.claude/milestones}"
+    : "${MILESTONE_MANIFEST:=MANIFEST.cfg}"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"

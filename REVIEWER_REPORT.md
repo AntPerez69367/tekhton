@@ -8,10 +8,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/drift.sh:187,240` — `grep -qF "$stripped"` does not use `--` to end option parsing; if `$stripped` ever begins with `-` (unlikely for observation text but theoretically possible), grep may misinterpret it as a flag. Adding `--` (`grep -qF -- "$stripped"`) is a one-character fix for robustness.
+- `plan_milestone_review.sh:40` — the iteration loop accesses the internal `_DAG_IDS[]` array directly instead of going through a public API. No `dag_get_id_at_index()` exists so this is the pragmatic choice, but it creates a coupling to the private array name.
 
 ## Coverage Gaps
-- None
+- No test for "DAG enabled, manifest exists but contains zero entries" — the path where `load_manifest` succeeds but `dag_get_count` returns 0 (triggering fallback to inline) is not covered.
 
 ## Drift Observations
-- None
+- `lib/plan_milestone_review.sh:40` — direct access to `_DAG_IDS[]` bypasses the DAG public API boundary. All other callers use `dag_get_*` accessors. If the array is renamed, this site won't be caught by a grep for the public API name.

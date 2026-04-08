@@ -17,4 +17,6 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 ## Bugs
 
+- [x] [BUG] Greenfield plan Milestone Summary incorrectly reports "0 milestones" and "No milestone headings found in CLAUDE.md" even when milestones were successfully generated in `.claude/milestones/`. The summary display logic is looking for milestone headings in CLAUDE.md (the old inline location) instead of counting files in the DAG milestone directory. Fix the milestone count and warning message in the plan review/summary display to check the milestone directory when `MILESTONE_DAG_ENABLED` is true.
+
 ## Polish
