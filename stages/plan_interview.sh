@@ -341,6 +341,24 @@ run_plan_interview() {
         "$synthesis_prompt" \
         "$log_file") || batch_exit=$?
 
+    # Guard against tool-write overwrite: if Claude used the Write tool to create
+    # DESIGN.md (substantive content on disk) and returned only a summary as text
+    # output, the captured text won't start with a markdown heading. Detect this
+    # and preserve the on-disk version.
+    if [[ -n "$design_content" ]] && [[ -f "$design_file" ]]; then
+        local _captured_first
+        _captured_first=$(printf '%s\n' "$design_content" | head -1)
+        if [[ "$_captured_first" != "#"* ]]; then
+            local _disk_lines _disk_first
+            _disk_first=$(head -1 "$design_file")
+            _disk_lines=$(count_lines < "$design_file")
+            if [[ "$_disk_first" == "#"* ]] && [[ "$_disk_lines" -gt 20 ]]; then
+                log "Detected tool-written DESIGN.md (${_disk_lines} lines on disk) — using on-disk version."
+                design_content=$(cat "$design_file")
+            fi
+        fi
+    fi
+
     local design_status="not created"
     if [[ -n "$design_content" ]]; then
         printf '%s\n' "$design_content" > "$design_file"

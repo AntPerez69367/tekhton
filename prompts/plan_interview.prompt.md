@@ -31,8 +31,10 @@ answer "(skipped — write a placeholder)" should have a brief TBD placeholder.
 
 Produce the complete DESIGN.md in markdown format. Follow these rules:
 
-1. **Output only the DESIGN.md content.** No preamble, no explanation, no
-   commentary. Start directly with the document title (e.g. `# Design Document`).
+1. **Output DESIGN.md content directly as text.** Do NOT use any tools to write
+   files — the shell captures your text output and writes the file. No preamble,
+   no explanation, no commentary. Start directly with the document title
+   (e.g. `# Design Document`).
 
 2. **No HTML comments.** Strip all `<!-- ... -->` guidance comments from the
    output. Replace them with the developer's answers synthesized into clear,
