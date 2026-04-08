@@ -75,6 +75,16 @@ Cross-reference test imports/references against CODER_SUMMARY.md:
 For each detected case: recommend removal or update, NOT implementation changes
 to satisfy the test. **Tests follow code, not the other way around.**
 
+### 7. Test Isolation
+Do tests create their own fixtures or do they read mutable project files directly?
+- FLAG: Tests that read live build reports, pipeline logs, config state files, or
+  run artifacts (e.g., `CODER_SUMMARY.md`, `REVIEWER_REPORT.md`, `BUILD_ERRORS.md`,
+  `.claude/logs/*`) without first creating a controlled copy in a temp directory
+- FLAG: Tests whose pass/fail outcome depends on prior pipeline runs or repo state
+- GOOD: Tests that create their own fixture data in a temp directory, independent
+  of any mutable project state
+- Any test reading mutable project files without fixture isolation is Severity: HIGH
+
 ## Required Output
 Write `{{TEST_AUDIT_REPORT_FILE}}` with this EXACT format:
 
@@ -96,7 +106,7 @@ Verdict: NEEDS_WORK | PASS | CONCERNS
 (repeat for each finding, or "None" if no issues found)
 ```
 
-Categories: INTEGRITY, COVERAGE, SCOPE, WEAKENING, NAMING, EXERCISE
+Categories: INTEGRITY, COVERAGE, SCOPE, WEAKENING, NAMING, EXERCISE, ISOLATION
 
 ## Verdict Rules
 - **PASS**: No HIGH findings. Tests meet integrity standards.

@@ -1,86 +1,37 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 8 test functions (4 per file)
+Tests audited: 1 file, 15 test assertions
 Verdict: CONCERNS
-
----
 
 ### Findings
 
-#### INTEGRITY: Test 3 dual-path assertion masks guard false-positive regression
-- File: tests/test_plan_interview_tool_write_guard.sh:218-228
-- File: tests/test_plan_generate_tool_write_guard.sh:247-256
-- Issue: Both Test 3 blocks accept two mutually exclusive pass conditions. The
-  second branch fires when the tool-written short file's content (e.g. `"# Short"`)
-  is still the first line — the comment labels this "guard threshold not met".
-  However, this state is only reachable if the guard *incorrectly fired*: without
-  guard activation, `printf '%s\n' "$design_content"` overwrites the tool-written
-  file with the summary text, so `"# Short"` would never remain as the first line.
-  A regression that lowers the threshold constant (e.g., `_disk_lines -gt 5`
-  instead of `_disk_lines -gt 20`) would trigger a false-positive guard fire on a
-  10-line file, leave the tool-written content on disk, and the second branch would
-  accept it with a pass. The dual-path means the test cannot detect a false-positive
-  guard trigger on short files.
+#### INTEGRITY: Test 12 assertion matches pre-existing content, not Section 7 specifically
+- File: tests/test_prompt_isolation_guardrails.sh:113
+- Issue: `assert_contains` checks for pattern `"Severity: HIGH"` to verify that Section 7 marks isolation violations as HIGH severity. This exact string appears at TWO locations in `prompts/test_audit.prompt.md`: (1) line 86 in Section 7 (`is Severity: HIGH`) and (2) in the Required Output format template (`- Severity: HIGH | MEDIUM | LOW`). If the HIGH severity marking were removed from Section 7 but retained in the output format template, this test would still PASS, providing false assurance that Section 7 is correctly configured. The test description claims to verify Section 7 content but the assertion cannot distinguish between the two occurrences.
 - Severity: HIGH
-- Action: Remove the else-if branch in Test 3 of both files
-  (test_plan_interview lines 221-227, test_plan_generate lines 250-255). The only
-  valid pass condition is that the summary text was written over the tool file:
-  `grep -q "created with 10 lines"`. If that does not match, the test must fail.
+- Action: Replace the broad pattern with one unique to Section 7. Use the full phrase `"fixture isolation is Severity: HIGH"` which only appears in Section 7 and cannot match the output format template. Alternatively, use `assert_line_contains` with the `"^### 7\. Test Isolation"` header as the anchor and `"Severity: HIGH"` as the content check.
 
-#### INTEGRITY: Test 3 pass message is logically inverted
-- File: tests/test_plan_interview_tool_write_guard.sh:223
-- File: tests/test_plan_generate_tool_write_guard.sh:252
-- Issue: The second-branch pass message reads "10-line file remains from
-  tool-write (guard threshold not met)". The parenthetical is backwards: "guard
-  threshold not met" means the guard did NOT fire, which means the file should
-  have been overwritten — the tool-written content cannot remain. The message
-  describes the opposite of the state it accepts, which would confuse any developer
-  reading a passing test output.
-- Severity: HIGH
-- Action: This finding is resolved by removing the second branch entirely
-  (same fix as above). No separate action needed.
-
-#### COVERAGE: No test for empty batch output (null-run error path)
-- File: tests/test_plan_interview_tool_write_guard.sh (missing test case)
-- File: tests/test_plan_generate_tool_write_guard.sh (missing test case)
-- Issue: Both implementations have an explicit error path when
-  `_call_planning_batch` returns empty output and no file is written to disk
-  (stages/plan_interview.sh:379-390, stages/plan_generate.sh:131-136). Both emit
-  `warn "Synthesis produced no output"` and return 1. No test exercises this path.
-  A regression that silently swallows batch output would go undetected.
+#### INTEGRITY: Test 13 multi-name pattern fails on any reformatting
+- File: tests/test_prompt_isolation_guardrails.sh:119
+- Issue: Pattern `"CODER_SUMMARY.md.*REVIEWER_REPORT.md.*BUILD_ERRORS.md"` uses basic-regex `.*` which only matches when all three filenames appear on the same line. The content currently satisfies this (all three appear on one line in `test_audit.prompt.md`), but reformatting the example list across multiple lines for readability would silently break the test, producing a false failure. This fragility is disproportionate to what the assertion is trying to prove — it only needs to verify that the three example filenames are present in Section 7, not that they appear on one line.
 - Severity: MEDIUM
-- Action: Add a Test 5 to each file: mock returns empty string and writes nothing
-  to disk. Assert that the output file does not exist and the function returns
-  non-zero.
+- Action: Replace the single three-name pattern with three independent `assert_contains` calls, one per filename. This eliminates the line-ordering dependency while keeping the same intent.
 
-#### COVERAGE: Guard non-fire when captured output IS heading-started and prior disk file exists
-- File: tests/test_plan_interview_tool_write_guard.sh (edge case absent from Test 2)
-- File: tests/test_plan_generate_tool_write_guard.sh (edge case absent from Test 2)
-- Issue: Test 2 ("Normal case") verifies that heading-started captured output is
-  written correctly, but only when no file pre-exists on disk. The guard's outer
-  condition (`[[ -f "$design_file" ]]`) is trivially unsatisfied in Test 2, so the
-  inner heading-check branch is never reached. If the outer condition were
-  accidentally removed, Test 2 would still pass. The case of heading-captured
-  output with a substantive file already on disk is not covered.
+#### SCOPE: Test 15 verifies pre-existing content unrelated to this feature
+- File: tests/test_prompt_isolation_guardrails.sh:132
+- Issue: Test 15 checks that `TEST_AUDIT_CONTEXT` appears in `prompts/test_audit.prompt.md`. This variable reference was present in the file before this task — it is part of pre-existing template infrastructure. The test would pass against the unmodified file and adds no coverage for the new Section 7 isolation guardrail.
 - Severity: LOW
-- Action: Extend Test 2 (or add Test 2b) to pre-seed a substantive disk file
-  before calling the function. Verify the guard does not fire and the captured
-  heading-started output is correctly written.
+- Action: Remove Test 15. Its absence does not reduce coverage of the feature. If a test for `TEST_AUDIT_CONTEXT` is desired for infrastructure reasons, note its pre-existing nature in the description and move it to a general prompt-structure test file rather than this isolation-specific one.
 
-#### SCOPE: CODER_SUMMARY.md absent; audit context "Implementation Files Changed: none" contradicts git status
-- File: CODER_SUMMARY.md (absent)
-- Issue: The audit context states "Implementation Files Changed: none", but git
-  status shows M on stages/plan_interview.sh, stages/plan_generate.sh,
-  prompts/plan_interview.prompt.md, and prompts/plan_generate.prompt.md. The guard
-  logic tested by these files is present and correct in the implementation:
-  - stages/plan_interview.sh:345-360 — tool-write guard
-  - stages/plan_generate.sh:80-96   — tool-write guard
-  - prompts/plan_interview.prompt.md:37 — "Output DESIGN.md content directly as
-    text. Do NOT use any tools to write files"
-  - prompts/plan_generate.prompt.md:221 — matching directive for CLAUDE.md
-  No orphaned imports, stale function references, or misaligned assertions were
-  found. Tests correctly target the real implementation.
+#### COVERAGE: No section-positioning tests; new content could be misplaced
+- File: tests/test_prompt_isolation_guardrails.sh
+- Issue: All 15 tests verify string presence anywhere in the target file. Tests 2–6 for `prompts/tester.prompt.md` would pass even if the new isolation rules were accidentally inserted outside the `CRITICAL: Test Integrity Rules` section (e.g., appended at the end of the file). Similarly, Test 8 confirms `"### 7. Test Isolation"` exists, but no test confirms it appears after `"### 6. Scope Alignment"`, so Section 7 content relocated to a different position would pass all tests.
 - Severity: LOW
-- Action: Generate CODER_SUMMARY.md documenting the four modified files and the
-  guard logic added to each. No test changes required for this finding.
+- Action: Add one positional test per file. For the tester prompt: verify `"NEVER read live repo artifact files"` appears within the CRITICAL block (between `^## CRITICAL: Test Integrity Rules` and the next `^##` heading). For the audit prompt: verify `"### 7. Test Isolation"` appears after `"### 6. Scope Alignment"`.
+
+#### COVERAGE: No negative tests
+- File: tests/test_prompt_isolation_guardrails.sh
+- Issue: All 15 assertions are presence-only checks. There are no tests verifying that deprecated or incomplete text is absent. A notable gap: no test verifies the audit prompt's rubric header now reads "Seven-Point" (or equivalent) rather than the original "Six-Point Audit Rubric". Adding a "Seven-Point" header or updating the section count could silently fail without a negative test.
+- Severity: LOW
+- Action: Add a test verifying the old "Six-Point Audit Rubric" header no longer appears in `prompts/test_audit.prompt.md` (the heading was not changed but the rubric now has 7 points). If the header was updated, test that "Six-Point" is absent. If not changed, document that the heading is intentionally stale so future editors know.
