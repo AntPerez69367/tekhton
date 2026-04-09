@@ -1,4 +1,4 @@
-# Reviewer Report — M67: Structured Project Index Data Layer
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,15 +10,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `crawler_emit.sh` is 521 lines, over the 300-line soft ceiling. All 7 emitters landed in one file instead of the spec's per-source-file split (e.g., `_emit_dependencies_json` was specified for `crawler_deps.sh`). Functionally correct; candidate for `--cleanup` pass once M69 lands.
-- Comment at `tekhton.sh:777` is stale: it reads "also sources … crawler_deps.sh (via crawler_content.sh)" but does not mention the newly added `crawler_emit.sh`. Low-risk but will mislead future readers.
-- `tmp_m=$(mktemp) tmp_d=$(mktemp)` on one line in `_emit_dependencies_json` (`crawler_emit.sh:113`). Valid bash, but the compound single-line assignment is uncommon in the codebase and masks intent. Prefer two separate lines.
-- `_emit_sampled_files` accumulates manifest JSON entries via string concatenation (`manifest_entries+=...`). For the small number of sample files this is harmless, but it contrasts with the O(n) inventory fix that was the point of the milestone.
+- `crawler_inventory.sh` is now 405 lines — the 300-line soft ceiling violation was shifted from `crawler_emit.sh` to `crawler_inventory.sh` by moving `_emit_inventory_jsonl`, `_emit_configs_json`, and `_emit_tests_json` into it. The original file was 257 lines; those three emitters add ~148 lines. Candidate for a split (e.g., `crawler_inventory_emitters.sh`) in a future cleanup pass.
+- `entry_count` is declared and incremented in `_emit_sampled_files` (`crawler_content.sh:185,205`) but never read. Dead code — likely left over from a removed logging branch. Safe to delete.
 
 ## Coverage Gaps
-- `tests/test_structured_index.sh` does not exercise the incremental rescan path: no test verifies that `_record_scan_metadata` reads `file_count`/`total_lines` from `inventory.jsonl` instead of re-running `wc -l` per file (spec §12 fix).
-- No test for the `rescan_project` full-crawl fallback after M67 structured files exist (ensures `_record_scan_metadata` updates `meta.json` correctly on subsequent rescans).
+- None
 
 ## Drift Observations
-- `crawler_emit.sh:300-366` (`_emit_tests_json`) and `crawler_inventory.sh:183-258` (`_crawl_test_structure`) duplicate ~60 lines of framework/coverage detection logic. Both are needed for now (one emits JSON, one emits markdown for the legacy bridge), but the duplication will compound in M69 when the markdown producer is retired.
-- `_generate_legacy_index` (`crawler_emit.sh:476-520`) calls `_crawl_directory_tree` a second time, even though `_emit_tree_txt` already ran it and wrote the result to `tree.txt`. The legacy bridge could read `tree.txt` instead, saving a redundant traversal. Not worth fixing until M69 removes the bridge.
+- `crawler_inventory.sh:261` — section header comment says "moved from crawler_emit.sh per M67 spec" but the M67 spec originally placed these emitters in `crawler_emit.sh`, not in `crawler_inventory.sh`. The relocation is a good improvement but the comment framing slightly misrepresents the spec; a future reader could be confused about whether the current placement was intentional.

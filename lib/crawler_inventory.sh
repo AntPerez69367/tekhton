@@ -257,3 +257,7 @@ _crawl_test_structure() {
 
     printf '%s' "$output"
 }
+
+# Source emitter functions from separate file (keeps crawler_inventory.sh under 300 lines)
+# shellcheck source=lib/crawler_inventory_emitters.sh
+source "${BASH_SOURCE[0]%/*}/crawler_inventory_emitters.sh"
