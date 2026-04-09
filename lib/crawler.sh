@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# crawler.sh — Project crawler & index generator (Milestone 18, M67 structured)
+# crawler.sh — Project crawler & index generator (Milestone 18, M67/M69)
 #
 # Breadth-first project crawler that produces structured data files in
-# .claude/index/ and a backward-compatible PROJECT_INDEX.md view.
+# .claude/index/ and generates PROJECT_INDEX.md from structured data.
 #
 # Sourced by tekhton.sh — do not run directly.
 # Depends on: common.sh (log, warn, error), detect.sh (_DETECT_EXCLUDE_DIRS)
@@ -57,8 +57,8 @@ _CRAWL_EXCLUDE_DIRS="${_DETECT_EXCLUDE_DIRS:-node_modules|.git|__pycache__|.dart
 
 # --- Main entry point ---------------------------------------------------------
 
-# crawl_project — Writes structured data to .claude/index/ and legacy
-# PROJECT_INDEX.md for backward compatibility.
+# crawl_project — Writes structured data to .claude/index/ and generates
+# PROJECT_INDEX.md view from structured data (M69).
 # Args: $1 = project directory, $2 = budget in chars (default: PROJECT_INDEX_BUDGET)
 # Returns: 0 on success
 crawl_project() {
@@ -75,7 +75,7 @@ crawl_project() {
     local file_list
     file_list=$(_list_tracked_files "$project_dir")
 
-    # Doc quality (computed once, shared by meta emitter and legacy bridge)
+    # Doc quality (computed once, passed to meta emitter)
     local doc_quality_score=0
     if type -t assess_doc_quality &>/dev/null; then
         local dq_output
@@ -92,9 +92,8 @@ crawl_project() {
     _emit_sampled_files "$project_dir" "$file_list" "$index_dir" "$budget_chars"
     _emit_meta_json "$project_dir" "$index_dir" "$doc_quality_score"
 
-    # Phase 2: Generate legacy PROJECT_INDEX.md (backward compat, replaced by M69)
-    _generate_legacy_index "$project_dir" "$file_list" "$budget_chars" \
-        "$index_file" "$doc_quality_score"
+    # Phase 2: Generate human-readable view from structured data (M69)
+    generate_project_index_view "$project_dir" "$budget_chars"
 
     local final_size
     final_size=$(wc -c < "$index_file" | tr -d '[:space:]')
@@ -207,66 +206,3 @@ _list_tracked_files() {
     fi
 }
 
-# _truncate_section — Truncates text to fit within a character budget.
-_truncate_section() {
-    local text="$1"
-    local budget="$2"
-    if [[ ${#text} -le "$budget" ]]; then
-        printf '%s' "$text"
-    else
-        local truncated="${text:0:$budget}"
-        truncated="${truncated%$'\n'*}"
-        printf '%s\n\n... (truncated to fit budget)' "$truncated"
-    fi
-}
-
-# _build_index_header — Builds the PROJECT_INDEX.md header with metadata.
-# M67: reads from inventory.jsonl when available (fix for O(n) per-file wc -l).
-_build_index_header() {
-    local project_dir="$1"
-    local file_list="$2"
-    local doc_quality="${3:-}"
-    local index_dir="${project_dir}/.claude/index"
-    local file_count total_lines scan_commit scan_date project_name
-
-    project_name=$(basename "$project_dir")
-    scan_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-
-    if git -C "$project_dir" rev-parse --git-dir &>/dev/null; then
-        scan_commit=$(git -C "$project_dir" rev-parse --short HEAD 2>/dev/null || echo "unknown")
-    else
-        scan_commit="non-git"
-    fi
-
-    # M67: read from structured data when available
-    if [[ -s "${index_dir}/inventory.jsonl" ]]; then
-        file_count=$(wc -l < "${index_dir}/inventory.jsonl" | tr -d '[:space:]')
-        total_lines=$(awk -F'"lines":' '{split($2,a,/[,}]/); s+=a[1]} END {print s+0}' \
-            "${index_dir}/inventory.jsonl" 2>/dev/null || echo "0")
-    else
-        file_count=$(echo "$file_list" | grep -c '.' || echo "0")
-        total_lines=$(echo "$file_list" | while IFS= read -r f; do
-            [[ -z "$f" ]] && continue
-            [[ -f "${project_dir}/${f}" ]] && wc -l < "${project_dir}/${f}" 2>/dev/null || echo 0
-        done | awk '{s+=$1} END {print s+0}')
-    fi
-
-    local dq_line=""
-    if [[ -n "$doc_quality" ]]; then
-        dq_line="
-<!-- ${doc_quality} -->"
-    fi
-
-    cat <<EOF
-# PROJECT_INDEX.md — ${project_name}
-
-<!-- Last-Scan: ${scan_date} -->
-<!-- Scan-Commit: ${scan_commit} -->
-<!-- File-Count: ${file_count} -->
-<!-- Total-Lines: ${total_lines} -->${dq_line}
-
-**Project:** ${project_name}
-**Scanned:** ${scan_date}
-**Files:** ${file_count} | **Lines:** ${total_lines}
-EOF
-}

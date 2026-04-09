@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# crawler_emit.sh — Core structured index emitters (Milestone 67)
+# crawler_emit.sh — Core structured index emitters (Milestone 67, M69 cleanup)
 #
-# Contains: dependency JSON emitter, scan metadata emitter, legacy bridge.
+# Contains: dependency JSON emitter, scan metadata emitter.
 # Per-domain emitters live in their source files:
 #   crawler_inventory.sh — _emit_inventory_jsonl, _emit_configs_json, _emit_tests_json
 #   crawler_content.sh   — _emit_sampled_files
 #   crawler.sh           — _json_escape, _ensure_index_dir, _emit_tree_txt
 #
 # Sourced by crawler.sh — do not run directly.
-# Depends on: crawler.sh (_json_escape, _crawl_directory_tree, _truncate_section,
-#             _budget_allocator, _build_index_header),
-#             crawler_inventory.sh (_crawl_file_inventory, _crawl_config_inventory,
-#             _crawl_test_structure, _config_purpose),
-#             crawler_content.sh (_crawl_sample_files),
-#             crawler_deps.sh (_crawl_dependency_graph),
+# Depends on: crawler.sh (_json_escape),
 #             detect.sh (_extract_json_keys)
 # =============================================================================
 
@@ -222,54 +217,3 @@ _emit_meta_json() {
     mv "$tmp_file" "${index_dir}/meta.json"
 }
 
-# --- Legacy bridge ------------------------------------------------------------
-
-# _generate_legacy_index — Assembles PROJECT_INDEX.md from existing markdown
-# producers for backward compatibility. Uses cached file_list to avoid
-# redundant _list_tracked_files calls. Temporary — replaced by M69 view generator.
-# Args: $1=project_dir, $2=file_list, $3=budget_chars, $4=index_file, $5=doc_quality_score
-_generate_legacy_index() {
-    local project_dir="$1" file_list="$2" budget_chars="$3"
-    local index_file="$4" doc_quality_score="${5:-0}"
-
-    # Generate sections using existing markdown producers (with cached file_list)
-    local tree_section inventory_section dep_section config_section test_section
-    tree_section=$(_crawl_directory_tree "$project_dir" 6)
-    inventory_section=$(_crawl_file_inventory "$project_dir" "$file_list")
-    dep_section=$(_crawl_dependency_graph "$project_dir")
-    config_section=$(_crawl_config_inventory "$project_dir" "$file_list")
-    test_section=$(_crawl_test_structure "$project_dir" "$file_list")
-
-    # Budget allocation
-    local remaining_budget
-    remaining_budget=$(_budget_allocator "$budget_chars" \
-        "${#tree_section}" "${#inventory_section}" "${#dep_section}" \
-        "${#config_section}" "${#test_section}")
-
-    local sample_section
-    sample_section=$(_crawl_sample_files "$project_dir" "$file_list" "$remaining_budget")
-
-    # Truncate sections
-    tree_section=$(_truncate_section "$tree_section" $(( budget_chars * 10 / 100 )))
-    inventory_section=$(_truncate_section "$inventory_section" $(( budget_chars * 15 / 100 )))
-    dep_section=$(_truncate_section "$dep_section" $(( budget_chars * 10 / 100 )))
-    config_section=$(_truncate_section "$config_section" $(( budget_chars * 5 / 100 )))
-    test_section=$(_truncate_section "$test_section" $(( budget_chars * 5 / 100 )))
-
-    # Build header (reads from inventory.jsonl if available)
-    local doc_quality_section=""
-    [[ "$doc_quality_score" -gt 0 ]] 2>/dev/null && \
-        doc_quality_section="DOC_QUALITY_SCORE: ${doc_quality_score}"
-    local header_section
-    header_section=$(_build_index_header "$project_dir" "$file_list" "$doc_quality_section")
-
-    {
-        printf '%s\n\n' "$header_section"
-        printf '## Directory Tree\n\n%s\n\n' "$tree_section"
-        printf '## File Inventory\n\n%s\n\n' "$inventory_section"
-        printf '## Key Dependencies\n\n%s\n\n' "$dep_section"
-        printf '## Configuration Files\n\n%s\n\n' "$config_section"
-        printf '## Test Infrastructure\n\n%s\n\n' "$test_section"
-        printf '## Sampled File Content\n\n%s\n' "$sample_section"
-    } > "$index_file"
-}

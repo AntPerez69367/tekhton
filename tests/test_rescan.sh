@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Test: Milestone 20 — rescan_project fallback and _detect_significant_changes
+# Test: Milestone 20/69 — rescan_project fallback and _detect_significant_changes
 # Covers: rescan_project fallback when no PROJECT_INDEX.md,
 #         _detect_significant_changes trivial/moderate/major classification,
 #         _is_manifest_file, _is_config_file, _extract_scan_metadata,
-#         _extract_sampled_files, _replace_section metadata roundtrip
+#         _extract_sampled_files
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -103,6 +103,10 @@ PROJ=$(mktemp -d "${TEST_TMPDIR}/proj_non_git.XXXXX")
 printf '<!-- Last-Scan: 2026-01-01T00:00:00Z -->\n' > "${PROJ}/PROJECT_INDEX.md"
 printf '<!-- Scan-Commit: abc1234 -->\n' >> "${PROJ}/PROJECT_INDEX.md"
 printf '# Index\n' >> "${PROJ}/PROJECT_INDEX.md"
+# M69: create structured index so migration check at rescan.sh:51 does not intercept
+mkdir -p "${PROJ}/.claude/index"
+printf '{"schema_version":1,"scan_commit":"abc1234","file_count":1,"total_lines":1}\n' \
+    > "${PROJ}/.claude/index/meta.json"
 reset_crawl_tracker
 
 # This dir is not a git repo — rescan should fall back gracefully
@@ -122,6 +126,10 @@ echo "=== rescan_project: no Scan-Commit in index → full crawl ==="
 PROJ=$(mktemp -d "${TEST_TMPDIR}/proj_no_commit.XXXXX")
 # Index exists but has no Scan-Commit metadata
 printf '# Project Index\n\nNo metadata here.\n' > "${PROJ}/PROJECT_INDEX.md"
+# M69: create structured index so migration check at rescan.sh:51 does not intercept
+mkdir -p "${PROJ}/.claude/index"
+printf '{"schema_version":1,"scan_commit":"","file_count":0,"total_lines":0}\n' \
+    > "${PROJ}/.claude/index/meta.json"
 reset_crawl_tracker
 
 # Need a git repo for this test path to reach the commit check
@@ -430,70 +438,6 @@ if [[ -z "$empty_samples" ]]; then
     pass "_extract_sampled_files returns empty for index with no sampled files"
 else
     fail "_extract_sampled_files returned non-empty for index without samples: '${empty_samples}'"
-fi
-
-# =============================================================================
-# _replace_section — replaces a ## section body while preserving other sections
-# =============================================================================
-echo "=== _replace_section: replaces section body correctly ==="
-
-CONTENT='# Title
-
-## Section One
-
-Old content for section one.
-
-## Section Two
-
-Content for section two.
-
-## Section Three
-
-Content for section three.'
-
-new_body="New content for section one."
-result=$(_replace_section "$CONTENT" "Section One" "$new_body")
-
-if echo "$result" | grep -q "New content for section one."; then
-    pass "_replace_section inserts new body into Section One"
-else
-    fail "_replace_section did not insert new body"
-fi
-
-if echo "$result" | grep -q "Old content for section one."; then
-    fail "_replace_section still contains old body content"
-else
-    pass "_replace_section correctly removed old body content"
-fi
-
-if echo "$result" | grep -q "Content for section two."; then
-    pass "_replace_section preserves Section Two content"
-else
-    fail "_replace_section lost Section Two content"
-fi
-
-if echo "$result" | grep -q "Content for section three."; then
-    pass "_replace_section preserves Section Three content"
-else
-    fail "_replace_section lost Section Three content"
-fi
-
-# =============================================================================
-# _replace_section — section heading not found → content unchanged
-# =============================================================================
-echo "=== _replace_section: nonexistent section → content unchanged ==="
-
-CONTENT_SIMPLE='# Title
-
-## Only Section
-
-Some content.'
-
-result=$(_replace_section "$CONTENT_SIMPLE" "Nonexistent Section" "replacement")
-if echo "$result" | grep -q "Some content."; then
-    pass "_replace_section leaves content unchanged when section not found"
-else
-    fail "_replace_section altered content for nonexistent section"
 fi
 
 # =============================================================================

@@ -28,6 +28,10 @@ header()  { :; }
 source "${TEKHTON_HOME}/lib/detect.sh"
 # shellcheck source=../lib/crawler.sh
 source "${TEKHTON_HOME}/lib/crawler.sh"
+# shellcheck source=../lib/index_reader.sh
+source "${TEKHTON_HOME}/lib/index_reader.sh"
+# shellcheck source=../lib/index_view.sh
+source "${TEKHTON_HOME}/lib/index_view.sh"
 
 # Helper: create a test project with representative files
 make_test_project() {

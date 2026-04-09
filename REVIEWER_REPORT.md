@@ -1,12 +1,20 @@
 # REVIEWER_REPORT.md
 
 Generated: 2026-04-09
-Review type: Expedited Architect Remediation (single-pass, no rework cycle)
+Review type: Re-review (M69 cycle 3 — verifying cycle 2 blocker resolution)
+
+---
+
+## Prior Blocker Verification
+
+**Blocker (cycle 2):** `tekhton.sh:465-486` — `--rescan` early-exit block did not source `lib/index_view.sh`, causing `generate_project_index_view()` to be unresolvable at runtime.
+
+**Status: FIXED** — `source "${TEKHTON_HOME}/lib/index_view.sh"` added at line 478, immediately after `rescan.sh` is sourced. Change is minimal and correct; no regression risk.
 
 ---
 
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
 None
@@ -15,34 +23,18 @@ None
 None
 
 ## Non-Blocking Notes
-None
+- `crawler.sh:136` — Stale comment: "no head -500 truncation; `_truncate_section` handles display limits." `_truncate_section` was deleted in M69; comment should be updated.
+- `tekhton.sh:779` — Source comment says "also sources … crawler_deps.sh" — that file doesn't exist; should read `crawler_emit.sh`.
+- `index_view.sh:418-421` — Last-resort budget guard in `_view_render_tests` uses substring truncation (`output="${output:0:$budget}"`) instead of record selection, inconsistent with other section renderers. Works correctly but diverges from the stated design principle.
+- `index_view.sh:451` — Sample file path built as `${index_dir}/samples/${stored}` without validating `$stored` for path traversal characters. Risk is minimal (manifest written by Tekhton itself).
+- `index_view.sh:205-208` — Inventory field extraction uses sequential `sed` calls on `$line`; filenames with regex-special characters could produce garbled table output.
 
 ## Coverage Gaps
-None
+- `tests/test_rescan.sh` — Tests for "non-git dir → full crawl" (line 99) and "no Scan-Commit in index → full crawl" (line 120) do not create `.claude/index/meta.json` in their fixtures. The M69 migration check (`! -f .claude/index/meta.json`) at `rescan.sh:51` now intercepts first, so these tests exercise the legacy migration fallback rather than their stated code paths. Tests still pass but no longer cover the intended paths.
 
----
+## ACP Verdicts
 
-## Review Notes
-
-**Senior coder (CODER_SUMMARY.md):** Simplification section was "None" per the plan.
-Coder correctly produced a status-only report and took no action. Appropriate.
-
-**Jr coder (JR_CODER_SUMMARY.md):** Staleness fix at `lib/crawler_content.sh:149-150`
-verified. The updated comment reads:
-
-```
-# --- Structured emitter — moved here from crawler_emit.sh (size management; -------
-# --- M67 spec originally placed this in crawler_emit.sh) -----------------------
-```
-
-This matches the plan specification verbatim. Change is comment-only — no behavioral
-risk, no scope creep. Work is complete and correct.
-
-**Architecture.md:** No doc updates were required per the plan (Design Doc Observations:
-None). Confirmed no stale references in ARCHITECTURE.md.
-
-**Out-of-scope items (Observations 2 & 3):** Correctly deferred. Neither coder touched
-`crawler_inventory_emitters.sh` or `crawler_emit.sh:231-275`. Plan boundaries respected.
+No `## Architecture Change Proposals` section present in CODER_SUMMARY.md.
 
 ## Drift Observations
-None
+- `crawler.sh:136` — Comment references `_truncate_section` which was deleted in this milestone. Same item as Non-Blocking Note above; surfacing here for drift log accumulation.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Test: Milestone 18 — _budget_allocator surplus redistribution and _truncate_section
+# Test: _budget_allocator surplus redistribution and view generator budget compliance
+# M69: _truncate_section removed; view generator tests added
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,6 +26,10 @@ header()  { :; }
 source "${TEKHTON_HOME}/lib/detect.sh"
 # shellcheck source=../lib/crawler.sh
 source "${TEKHTON_HOME}/lib/crawler.sh"
+# shellcheck source=../lib/index_reader.sh
+source "${TEKHTON_HOME}/lib/index_reader.sh"
+# shellcheck source=../lib/index_view.sh
+source "${TEKHTON_HOME}/lib/index_view.sh"
 
 # =============================================================================
 # _budget_allocator — all sections fill allocation exactly
@@ -100,73 +105,200 @@ else
 fi
 
 # =============================================================================
-# _truncate_section — text within budget → returned unchanged
+# View generator: produces valid markdown with all section headings
 # =============================================================================
-echo "=== _truncate_section: text within budget returned unchanged ==="
+echo "=== View generator: produces all 6 section headings ==="
 
-text="line one
-line two
-line three"
-budget=1000
-result=$(_truncate_section "$text" "$budget")
-if [[ "$result" == "$text" ]]; then
-    pass "_truncate_section returns text unchanged when within budget"
+# Create a minimal structured index fixture
+VIEW_DIR="${TEST_TMPDIR}/view_proj"
+mkdir -p "${VIEW_DIR}/.claude/index/samples"
+
+cat > "${VIEW_DIR}/.claude/index/meta.json" << 'JSON'
+{
+  "schema_version": 1,
+  "project_name": "view-test",
+  "scan_date": "2026-04-01T00:00:00Z",
+  "scan_commit": "abc1234",
+  "file_count": 3,
+  "total_lines": 100,
+  "tree_lines": 5,
+  "doc_quality_score": 0
+}
+JSON
+
+cat > "${VIEW_DIR}/.claude/index/tree.txt" << 'TREE'
+.
+├── src
+│   └── main.ts
+├── tests
+│   └── main.test.ts
+└── package.json
+TREE
+
+cat > "${VIEW_DIR}/.claude/index/inventory.jsonl" << 'JSONL'
+{"path":"src/main.ts","dir":"src","lines":50,"size":"small"}
+{"path":"tests/main.test.ts","dir":"tests","lines":30,"size":"tiny"}
+{"path":"package.json","dir":".","lines":20,"size":"tiny"}
+JSONL
+
+cat > "${VIEW_DIR}/.claude/index/dependencies.json" << 'JSON'
+{
+  "manifests": [
+    {"file":"package.json","manager":"npm","deps":1,"dev_deps":0}
+  ],
+  "key_dependencies": [
+    {"name":"express","version":"^4.18.0","manifest":"package.json"}
+  ]
+}
+JSON
+
+cat > "${VIEW_DIR}/.claude/index/configs.json" << 'JSON'
+{
+  "configs": [
+    {"path":"package.json","purpose":"Node.js manifest"}
+  ]
+}
+JSON
+
+cat > "${VIEW_DIR}/.claude/index/tests.json" << 'JSON'
+{
+  "test_dirs": [
+    {"path":"tests/","file_count":1}
+  ],
+  "test_file_count": 1,
+  "frameworks": ["jest"],
+  "coverage": []
+}
+JSON
+
+printf 'console.log("hello");\n' > "${VIEW_DIR}/.claude/index/samples/src__main.ts.txt"
+cat > "${VIEW_DIR}/.claude/index/samples/manifest.json" << 'JSON'
+{
+  "samples": [
+    {"original":"src/main.ts","stored":"src__main.ts.txt","chars":24}
+  ],
+  "total_chars": 24,
+  "budget_chars": 66000
+}
+JSON
+
+generate_project_index_view "$VIEW_DIR" 120000
+
+if [[ -f "${VIEW_DIR}/PROJECT_INDEX.md" ]]; then
+    pass "View generator creates PROJECT_INDEX.md"
 else
-    fail "_truncate_section modified text that fit within budget"
+    fail "View generator did not create PROJECT_INDEX.md"
+fi
+
+VIEW_CONTENT=$(cat "${VIEW_DIR}/PROJECT_INDEX.md")
+
+for heading in "Directory Tree" "File Inventory" "Key Dependencies" \
+               "Configuration Files" "Test Infrastructure" "Sampled File Content"; do
+    if echo "$VIEW_CONTENT" | grep -q "## ${heading}"; then
+        pass "View contains ## ${heading}"
+    else
+        fail "View missing ## ${heading}"
+    fi
+done
+
+# =============================================================================
+# View generator: output fits within budget
+# =============================================================================
+echo "=== View generator: output fits within budget ==="
+
+for budget in 1000 10000 50000 120000; do
+    generate_project_index_view "$VIEW_DIR" "$budget"
+    local_size=$(wc -c < "${VIEW_DIR}/PROJECT_INDEX.md" | tr -d '[:space:]')
+    if [[ "$local_size" -le "$budget" ]]; then
+        pass "View fits within ${budget}-char budget (actual: ${local_size})"
+    else
+        fail "View exceeds ${budget}-char budget (actual: ${local_size})"
+    fi
+done
+
+# =============================================================================
+# View generator: no truncation markers
+# =============================================================================
+echo "=== View generator: no truncation markers ==="
+
+generate_project_index_view "$VIEW_DIR" 120000
+if grep -q "truncated to fit budget" "${VIEW_DIR}/PROJECT_INDEX.md"; then
+    fail "View contains legacy truncation marker"
+else
+    pass "View does not contain legacy truncation markers"
 fi
 
 # =============================================================================
-# _truncate_section — text exactly at budget → returned unchanged
+# View generator: selection indicators present for large inventory
 # =============================================================================
-echo "=== _truncate_section: text at budget boundary returned unchanged ==="
+echo "=== View generator: selection indicators for large data ==="
 
-text="hello"
-budget=${#text}
-result=$(_truncate_section "$text" "$budget")
-if [[ "$result" == "$text" ]]; then
-    pass "_truncate_section returns text unchanged at exact budget boundary"
+# Create large inventory (100 files)
+LARGE_DIR="${TEST_TMPDIR}/large_proj"
+mkdir -p "${LARGE_DIR}/.claude/index/samples"
+cp "${VIEW_DIR}/.claude/index/meta.json" "${LARGE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/tree.txt" "${LARGE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/dependencies.json" "${LARGE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/configs.json" "${LARGE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/tests.json" "${LARGE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/samples/manifest.json" "${LARGE_DIR}/.claude/index/samples/"
+cp "${VIEW_DIR}/.claude/index/samples/src__main.ts.txt" "${LARGE_DIR}/.claude/index/samples/"
+
+# Generate 100 inventory records
+{
+    for i in $(seq 1 100); do
+        printf '{"path":"src/file_%03d.ts","dir":"src","lines":200,"size":"small"}\n' "$i"
+    done
+} > "${LARGE_DIR}/.claude/index/inventory.jsonl"
+
+# Use tiny budget to force selection
+generate_project_index_view "$LARGE_DIR" 2000
+if grep -q "more files" "${LARGE_DIR}/PROJECT_INDEX.md"; then
+    pass "View shows selection indicator for large inventory"
 else
-    fail "_truncate_section modified text at exact budget boundary"
+    fail "View missing selection indicator for large inventory"
 fi
 
 # =============================================================================
-# _truncate_section — text over budget → includes truncation marker
+# View generator: tree capped at 300 lines
 # =============================================================================
-echo "=== _truncate_section: text over budget includes truncation marker ==="
+echo "=== View generator: tree capped at 300 lines ==="
 
-# Build a text larger than 50 chars
-text="line one
-line two
-line three
-line four
-line five
-line six"
-budget=20
-result=$(_truncate_section "$text" "$budget")
-if echo "$result" | grep -q "truncated"; then
-    pass "_truncate_section includes 'truncated' marker when text exceeds budget"
+TREE_DIR="${TEST_TMPDIR}/tree_proj"
+mkdir -p "${TREE_DIR}/.claude/index/samples"
+cp "${VIEW_DIR}/.claude/index/meta.json" "${TREE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/inventory.jsonl" "${TREE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/dependencies.json" "${TREE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/configs.json" "${TREE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/tests.json" "${TREE_DIR}/.claude/index/"
+cp "${VIEW_DIR}/.claude/index/samples/manifest.json" "${TREE_DIR}/.claude/index/samples/"
+cp "${VIEW_DIR}/.claude/index/samples/src__main.ts.txt" "${TREE_DIR}/.claude/index/samples/"
+
+# Generate 400-line tree
+{
+    for i in $(seq 1 400); do
+        printf '├── dir_%03d\n' "$i"
+    done
+} > "${TREE_DIR}/.claude/index/tree.txt"
+
+generate_project_index_view "$TREE_DIR" 120000
+if grep -q "more lines" "${TREE_DIR}/PROJECT_INDEX.md"; then
+    pass "View shows indicator for deep tree"
 else
-    fail "_truncate_section did not add truncation marker for oversized text"
+    fail "View missing indicator for deep tree"
 fi
 
 # =============================================================================
-# _truncate_section — truncated output must not exceed budget + marker overhead
-# (The truncation cuts at last newline and then appends a marker, so the final
-#  result can be slightly larger than budget due to marker. Verify prefix stays
-#  within budget chars.)
+# View generator: samples section includes only complete samples
 # =============================================================================
-echo "=== _truncate_section: truncated prefix stays within budget ==="
+echo "=== View generator: samples are complete (no mid-file cuts) ==="
 
-# Build 200-char text
-long_text=$(printf 'abcdefghijklmnopqrstuvwxyz\n%.0s' {1..8})
-budget=50
-result=$(_truncate_section "$long_text" "$budget")
-# Extract prefix before the marker
-prefix="${result%%...*}"
-if [[ ${#prefix} -le $((budget + 2)) ]]; then
-    pass "_truncate_section prefix stays within budget (${#prefix} <= $((budget+2)) chars)"
+generate_project_index_view "$VIEW_DIR" 120000
+VIEW_CONTENT=$(cat "${VIEW_DIR}/PROJECT_INDEX.md")
+if echo "$VIEW_CONTENT" | grep -q 'console.log("hello")'; then
+    pass "View includes complete sample content"
 else
-    fail "_truncate_section prefix too large: ${#prefix} chars for budget ${budget}"
+    fail "View missing or truncated sample content"
 fi
 
 # =============================================================================

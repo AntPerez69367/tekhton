@@ -1,21 +1,16 @@
-# JR Coder Summary
+# JR_CODER_SUMMARY.md
+
+Generated: 2026-04-09 (M69 cycle 2)
 
 ## What Was Fixed
 
-- **Staleness Fix**: Updated misleading comment at `crawler_content.sh:149`
-  - **Before**: `# --- Structured emitter — moved from crawler_emit.sh per M67 spec ------------`
-  - **After**: 
-    ```
-    # --- Structured emitter — moved here from crawler_emit.sh (size management; -------
-    # --- M67 spec originally placed this in crawler_emit.sh) -----------------------
-    ```
-  - **Rationale**: The original comment was misleading. It implied the current placement was spec-intentional, when in fact the function was moved *out* of crawler_emit.sh for size management—contrary to the spec's original placement. The corrected comment now clearly explains this deviation and prevents future confusion.
+- **tekhton.sh:465-486** — Added missing `source "${TEKHTON_HOME}/lib/index_view.sh"` after line 477 in the `--rescan` early-exit block. The `rescan_project()` function calls `generate_project_index_view()`, which is defined in `index_view.sh`. Without this source, `tekhton --rescan` would fail with "command not found". Fixed by sourcing the library immediately after `rescan.sh`.
 
 ## Files Modified
 
-- `lib/crawler_content.sh` (line 149–150)
+- `tekhton.sh` — Added one source statement at line 478 (within the `--rescan` block)
 
 ## Verification
 
-- ✓ Syntax check passed (`bash -n`)
-- ✓ No breaking changes — comment-only modification
+- `bash -n tekhton.sh` — Syntax check passed
+- `shellcheck tekhton.sh` — All SC1091 informational warnings (expected for sourced files)

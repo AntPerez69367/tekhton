@@ -28,6 +28,10 @@ header()  { :; }
 source "${TEKHTON_HOME}/lib/detect.sh"
 # shellcheck source=../lib/crawler.sh
 source "${TEKHTON_HOME}/lib/crawler.sh"
+# shellcheck source=../lib/index_reader.sh
+source "${TEKHTON_HOME}/lib/index_reader.sh"
+# shellcheck source=../lib/index_view.sh
+source "${TEKHTON_HOME}/lib/index_view.sh"
 # shellcheck source=../lib/rescan.sh
 source "${TEKHTON_HOME}/lib/rescan.sh"
 
@@ -103,25 +107,25 @@ else
     fail "meta.json total_lines=${meta_tl}, expected 300 from inventory.jsonl (not per-file wc -l)"
 fi
 
-# PROJECT_INDEX.md <!-- File-Count --> comment updated to 2
-if grep -q "<!-- File-Count: 2 -->" "${PROJ1}/PROJECT_INDEX.md"; then
-    pass "PROJECT_INDEX.md <!-- File-Count: 2 --> updated from inventory.jsonl"
+# M69: _record_scan_metadata only updates meta.json now.
+# PROJECT_INDEX.md HTML comments are rendered by the view generator.
+# Verify meta.json has correct scan_commit (proves _emit_meta_json was called)
+meta_sc=$(grep '"scan_commit"' "${PROJ1}/.claude/index/meta.json" | \
+    sed 's/.*"scan_commit": *"\([^"]*\)".*/\1/' | tr -d '[:space:]')
+expected_commit=$(git -C "$PROJ1" rev-parse --short HEAD 2>/dev/null)
+if [[ "$meta_sc" == "$expected_commit" ]]; then
+    pass "meta.json scan_commit updated to HEAD (${meta_sc})"
 else
-    fail "PROJECT_INDEX.md File-Count comment not updated to 2"
+    fail "meta.json scan_commit=${meta_sc}, expected ${expected_commit}"
 fi
 
-# PROJECT_INDEX.md <!-- Total-Lines --> comment updated to 300
-if grep -q "<!-- Total-Lines: 300 -->" "${PROJ1}/PROJECT_INDEX.md"; then
-    pass "PROJECT_INDEX.md <!-- Total-Lines: 300 --> updated from inventory.jsonl"
+# meta.json scan_date should be updated (not the stale 2025 date)
+meta_sd=$(grep '"scan_date"' "${PROJ1}/.claude/index/meta.json" | \
+    sed 's/.*"scan_date": *"\([^"]*\)".*/\1/' | tr -d '[:space:]')
+if [[ "$meta_sd" != "2025-01-01T00:00:00Z" ]]; then
+    pass "meta.json scan_date updated from stale value"
 else
-    fail "PROJECT_INDEX.md Total-Lines comment not updated to 300"
-fi
-
-# PROJECT_INDEX.md visible **Files:** / **Lines:** metadata line updated
-if grep -q "Files.*2.*Lines.*300" "${PROJ1}/PROJECT_INDEX.md"; then
-    pass "PROJECT_INDEX.md visible Files/Lines metadata updated to 2/300"
-else
-    fail "PROJECT_INDEX.md visible Files/Lines metadata not updated correctly"
+    fail "meta.json scan_date still stale (2025-01-01T00:00:00Z)"
 fi
 
 # =============================================================================
@@ -163,20 +167,22 @@ INDEXEOF
 _record_scan_metadata "${PROJ2}/PROJECT_INDEX.md" "$PROJ2"
 pass "_record_scan_metadata completes without crash when inventory.jsonl absent"
 
-# file_count should be 2 (actual git-tracked files), not the stale 99
+# M69: _record_scan_metadata delegates to _emit_meta_json which reads from
+# inventory.jsonl.  Without inventory.jsonl, file_count and total_lines are 0
+# (the old git ls-files fallback was removed).  Key test: stale value (99) is
+# overwritten, proving _emit_meta_json was called.
 meta_fc2=$(_meta_field "file_count" "${PROJ2}/.claude/index/meta.json")
-if [[ "$meta_fc2" == "2" ]]; then
-    pass "fallback path: meta.json file_count=2 from git ls-files (2 tracked files)"
+if [[ "$meta_fc2" == "0" ]]; then
+    pass "fallback path: meta.json file_count=0 (no inventory.jsonl, stale 99 overwritten)"
 else
-    fail "fallback path: meta.json file_count=${meta_fc2}, expected 2 from git ls-files"
+    fail "fallback path: meta.json file_count=${meta_fc2}, expected 0 (no inventory.jsonl)"
 fi
 
-# total_lines should be > 0 from actual per-file wc -l (2 files × 5 lines = 10)
 meta_tl2=$(_meta_field "total_lines" "${PROJ2}/.claude/index/meta.json")
-if [[ "$meta_tl2" -gt 0 ]] && [[ "$meta_tl2" != "999" ]]; then
-    pass "fallback path: meta.json total_lines=${meta_tl2} from per-file wc -l (stale was 999)"
+if [[ "$meta_tl2" == "0" ]]; then
+    pass "fallback path: meta.json total_lines=0 (no inventory.jsonl, stale 999 overwritten)"
 else
-    fail "fallback path: meta.json total_lines=${meta_tl2}, expected >0 and != 999"
+    fail "fallback path: meta.json total_lines=${meta_tl2}, expected 0 (no inventory.jsonl)"
 fi
 
 # =============================================================================

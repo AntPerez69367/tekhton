@@ -1,31 +1,37 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, ~102 test assertions
-Verdict: CONCERNS
+Tests audited: 1 file, 33 test functions (45 pass/fail assertions)
+Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Over-budget test never triggers the over-budget path
-- File: tests/test_init_synthesize.sh:237-250
-- Issue: The test "_compress_synthesis_context: over budget — index unchanged (M68: reader bounds it)" sets `DETECTION_REPORT_CONTENT` to 200,001 chars and `PROJECT_INDEX_CONTENT` to 25 chars. Total ≈ 200,826 chars ÷ 4 (CHARS_PER_TOKEN) ≈ 50,207 tokens. `check_context_budget` for model "opus" at 50% of a 200k-token window enforces a budget of 100,000 tokens. 50,207 < 100,000, so `_compress_synthesis_context` returns early on the "within budget" path without entering any compression logic. `PROJECT_INDEX_CONTENT` is left unchanged — but because compression was never triggered, not because of the M68 guard. A regression that reinstated `summarize_headings` on the index inside the over-budget branch would not be caught. This is confirmed by reading `lib/context.sh:136-151` (`check_context_budget`) and `lib/init_synthesize_helpers.sh:129-175` (`_compress_synthesis_context`).
-- Severity: HIGH
-- Action: Increase fixture sizes so total chars exceed ~400,001 (100,001 tokens at 4 chars/token). For example: set `PROJECT_INDEX_CONTENT` to 200,001 '#' chars and `DETECTION_REPORT_CONTENT` to 200,001 'D' chars (total ≈ 400,002 chars ≈ 100,001 tokens, just over the 100k budget). Then assert `PROJECT_INDEX_CONTENT` is still `"bounded index from reader"` (i.e., it was NOT subjected to summarize_headings). The git-log-truncation test at lines 254-274 already uses this approach correctly and can serve as a template.
-
-#### COVERAGE: Sample budget test passes on empty output, not bounded output
-- File: tests/test_index_reader.sh:431-436
-- Issue: `read_index_samples "$PROJ" 50` is called with a 50-char budget. Inside the function (`lib/index_reader.sh:304-310`), the loop computes `remaining=$((50 - 0))` = 50, then checks `[[ "$remaining" -le 100 ]] && break` — 50 ≤ 100 is true, so the loop breaks immediately and returns empty output. `SAMPLE_SIZE=${#SAMPLES_SMALL}` = 0. The assertion `[[ "$SAMPLE_SIZE" -lt 200 ]]` trivially passes on 0 chars. If the budget guard were removed, the function would return all sample content, but `SAMPLE_SIZE` would still be a few hundred chars and `< 200` would still pass. The test labelled "respects max_chars budget" does not actually verify that partial content is bounded within the budget.
+#### COVERAGE: M69 migration trigger path in rescan_project never exercised
+- File: tests/test_rescan.sh:99–144
+- Issue: The M69 migration check at rescan.sh:51–55 (`if [[ ! -f "${project_dir}/.claude/index/meta.json" ]]`) is never directly exercised as its own test. The two tests modified for M69 (non-git dir, no Scan-Commit) both CREATE a meta.json to bypass this path and reach their intended code branches. The scenario "PROJECT_INDEX.md exists, meta.json absent → M69 migration full crawl" has no dedicated test.
 - Severity: MEDIUM
-- Action: Add a second budget assertion using a value large enough to include at least one sample but small enough to exclude the second. The fixture README sample is ~34 chars of content; set budget to ~120 chars. Assert `echo "$result" | grep -q 'README.md'` AND `! echo "$result" | grep -q 'src/index.ts'` to verify exactly one sample is included.
+- Action: Add a test with a PROJECT_INDEX.md but no `.claude/index/meta.json`. Assert `CRAWL_PROJECT_CALLED -ge 1`. Comment should note it exercises the M69 migration path specifically (rescan.sh:51–55).
 
-#### NAMING: Test name claims PLAN_INCOMPLETE_SECTIONS is verified; assertion is a smoke test
-- File: tests/test_init_synthesize.sh:429-442
-- Issue: The test is titled "_check_synthesis_completeness: thin section detected and PLAN_INCOMPLETE_SECTIONS formatted". The body `eval`s `_check_synthesis_completeness "$PROJECT_DIR" > /dev/null 2>&1 || true; echo "done"` and asserts `[[ "$result" == "done" ]]` — verifying only that the function did not crash. The test comment at line 433-435 acknowledges that `PLAN_INCOMPLETE_SECTIONS` is exported and then unset inside the function after `_synthesize_design` is called, so it cannot be inspected post-call. No aspect of the formatting (`sed '/^$/d' | sed 's/^/- /'`, `lib/init_synthesize_helpers.sh:220`) is exercised.
+#### COVERAGE: _extract_scan_metadata structured-data path (M69) not tested
+- File: tests/test_rescan.sh:338–381
+- Issue: `_extract_scan_metadata` prefers `.claude/index/meta.json` over HTML comment parsing (rescan_helpers.sh:122–139). Every test in this section creates its index file at `${TEST_TMPDIR}/meta_test_index.md`, so `project_dir = $TEST_TMPDIR`. No `.claude/index/meta.json` exists there, so all three assertions (Scan-Commit, File-Count, Last-Scan) exercise only the legacy fallback path. If the structured-data branch had a regression (wrong JSON key name, bad sed), these tests would not detect it.
 - Severity: MEDIUM
-- Action: Either rename the test to "_check_synthesis_completeness completes without error on thin sections" to match what is asserted, OR capture stderr (`2>&1`) and verify the warn output includes the thin section name: `echo "$warn_result" | grep -q "ThinSection"`. The `warn` output from `lib/init_synthesize_helpers.sh:214-216` lists each thin section name and is visible in stderr.
+- Action: Add a test that creates `${TEST_TMPDIR}/.claude/index/meta.json` with known values and verifies that `_extract_scan_metadata` reads `scan_commit`, `file_count`, and `scan_date` from it (the M69 preferred path). Existing legacy-path tests should remain unchanged.
 
-#### NAMING/COVERAGE: Consumer sections re-test the reader API at different budgets, not actual consumer call sites
-- File: tests/test_index_reader.sh:590-644
-- Issue: The sections "Intake consumer — structured project" (line 590), "Intake consumer — legacy project" (line 603), "Synthesis consumer — bounded without summarize_headings" (line 616), and "Replan consumer — bounded" (line 636) all call `read_index_summary` directly. The M68 migration wired up `read_index_summary` in `stages/intake.sh`, `lib/replan_brownfield.sh`, and `lib/init_synthesize_helpers.sh`. The intake and replan call sites are not exercised by either test file. `_assemble_synthesis_context` (synthesis call site) is tested in `test_init_synthesize.sh:99-107`, which is adequate. The section labels overstate what is covered.
+#### COVERAGE: _extract_sampled_files structured-data path (M69) not tested
+- File: tests/test_rescan.sh:386–441
+- Issue: `_extract_sampled_files` prefers `.claude/index/samples/manifest.json` (rescan_helpers.sh:203–208) and falls back to `grep '^### '` only when absent. Both tests place the index in `$TEST_TMPDIR` with no `samples/manifest.json`, so they exercise only the legacy grep path. The M69 manifest.json path is untested.
+- Severity: MEDIUM
+- Action: Add a test that creates `.claude/index/samples/manifest.json` with `"original"` entries and verifies that `_extract_sampled_files` correctly extracts them.
+
+#### COVERAGE: Incremental update path (_update_index_sections) not tested
+- File: tests/test_rescan.sh (no test present)
+- Issue: The incremental update branch of `rescan_project` — reached when significance is "trivial" or "moderate" and a valid scan commit exists — is never exercised. This calls `_update_index_sections` (rescan.sh:109), which drives M69 structured-file regeneration (`_emit_tree_txt`, `_emit_inventory_jsonl`, `_emit_dependencies_json`, etc.). Every `rescan_project` test triggers a full-crawl fallback, so this code path has zero coverage in the audited file.
+- Severity: MEDIUM
+- Action: Verify whether `tests/test_index_structured.sh` (new file visible in git status, not in audit scope) covers `_update_index_sections`. If not, add a test in `test_rescan.sh` that sets up a git repo, commits a known scan commit, introduces a trivial change, and asserts that `crawl_project` is NOT called and that the index is updated incrementally.
+
+#### SCOPE: Audit context lists test_rescan.sh twice; test_index_structured.sh omitted
+- File: (audit configuration)
+- Issue: The audit context lists `tests/test_rescan.sh` twice and does not list `tests/test_index_structured.sh`, which is a new file in the working tree likely covering M69 structured-index behavior. The coverage gaps above may be partially addressed by that file.
 - Severity: LOW
-- Action: Rename the intake and replan consumer sections to reflect their actual scope: "read_index_summary: 8KB budget returns non-empty output" and "read_index_summary: 40KB budget returns bounded output". Add a note (inline comment) that direct intake/replan call-site coverage is a future gap.
+- Action: Re-run audit with `tests/test_index_structured.sh` included to determine if the MEDIUM coverage findings above are already covered elsewhere.

@@ -1,7 +1,7 @@
 # Milestone 69: Markdown View Generator, Rescan Rewrite & Legacy Migration
 <!-- milestone-meta
 id: "69"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

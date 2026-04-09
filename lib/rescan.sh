@@ -47,6 +47,13 @@ rescan_project() {
         return $?
     fi
 
+    # M69: Legacy migration — force full crawl if no structured index exists
+    if [[ ! -f "${project_dir}/.claude/index/meta.json" ]]; then
+        log "No structured index found — running full crawl for migration..."
+        crawl_project "$project_dir" "$budget_chars"
+        return $?
+    fi
+
     # Check if this is a git repo
     if ! git -C "$project_dir" rev-parse --git-dir &>/dev/null; then
         warn "Not a git repository — falling back to full crawl."
@@ -97,12 +104,9 @@ rescan_project() {
         return $?
     fi
 
-    # Perform incremental update
+    # Perform incremental update (M69: updates structured files + regenerates view)
     log "Performing incremental index update..."
     _update_index_sections "$index_file" "$project_dir" "$changed_files" "$budget_chars"
-
-    # Record new scan metadata
-    _record_scan_metadata "$index_file" "$project_dir"
 
     local final_size
     final_size=$(wc -c < "$index_file" | tr -d '[:space:]')
@@ -112,15 +116,18 @@ rescan_project() {
 
 # --- Index section updates ----------------------------------------------------
 
-# _update_index_sections — Surgically updates affected sections of PROJECT_INDEX.md.
+# _update_index_sections — Updates affected structured data files, then
+# regenerates PROJECT_INDEX.md view from structured data.
+# M69: replaces surgical markdown patching with structured data updates.
 # Args: $1 = index file, $2 = project dir, $3 = changed files, $4 = budget
 _update_index_sections() {
     local index_file="$1"
     local project_dir="$2"
     local changed_files="$3"
     local budget_chars="$4"
+    local index_dir="${project_dir}/.claude/index"
 
-    # Determine which sections need regeneration
+    # Determine which structured files need regeneration
     local regen_inventory=false
     local regen_tree=false
     local regen_deps=false
@@ -180,53 +187,38 @@ _update_index_sections() {
         regen_samples=true
     fi
 
-    # Read current index content
-    local current_content
-    current_content=$(cat "$index_file")
+    # Regenerate only affected structured data files
+    local file_list
+    file_list=$(_list_tracked_files "$project_dir")
 
     if [[ "$regen_tree" == true ]]; then
         log "  Regenerating directory tree..."
-        local new_tree
-        new_tree=$(_crawl_directory_tree "$project_dir" 6)
-        new_tree=$(_truncate_section "$new_tree" $(( budget_chars * 10 / 100 )))
-        current_content=$(_replace_section "$current_content" "Directory Tree" "$new_tree")
+        _emit_tree_txt "$project_dir" "$index_dir"
     fi
 
     if [[ "$regen_inventory" == true ]]; then
         log "  Regenerating file inventory..."
-        local new_inventory
-        new_inventory=$(_crawl_file_inventory "$project_dir")
-        new_inventory=$(_truncate_section "$new_inventory" $(( budget_chars * 15 / 100 )))
-        current_content=$(_replace_section "$current_content" "File Inventory" "$new_inventory")
+        _emit_inventory_jsonl "$project_dir" "$file_list" "$index_dir"
     fi
 
     if [[ "$regen_deps" == true ]]; then
         log "  Regenerating dependencies..."
-        local new_deps
-        new_deps=$(_crawl_dependency_graph "$project_dir")
-        new_deps=$(_truncate_section "$new_deps" $(( budget_chars * 10 / 100 )))
-        current_content=$(_replace_section "$current_content" "Key Dependencies" "$new_deps")
+        _emit_dependencies_json "$project_dir" "$index_dir"
     fi
 
     if [[ "$regen_config" == true ]]; then
         log "  Regenerating config inventory..."
-        local new_config
-        new_config=$(_crawl_config_inventory "$project_dir")
-        new_config=$(_truncate_section "$new_config" $(( budget_chars * 5 / 100 )))
-        current_content=$(_replace_section "$current_content" "Configuration Files" "$new_config")
+        _emit_configs_json "$project_dir" "$file_list" "$index_dir"
     fi
 
     if [[ "$regen_samples" == true ]]; then
         log "  Re-sampling modified key files..."
-        local file_list remaining_budget new_samples
-        file_list=$(_list_tracked_files "$project_dir")
-        remaining_budget=$(( budget_chars * 55 / 100 ))
-        new_samples=$(_crawl_sample_files "$project_dir" "$file_list" "$remaining_budget")
-        current_content=$(_replace_section "$current_content" "Sampled File Content" "$new_samples")
+        _emit_sampled_files "$project_dir" "$file_list" "$index_dir" "$budget_chars"
     fi
 
-    local temp_file
-    temp_file=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/rescan_XXXXXXXX")
-    printf '%s\n' "$current_content" > "$temp_file"
-    mv "$temp_file" "$index_file"
+    # Always update meta (scan date, commit, file count)
+    _emit_meta_json "$project_dir" "$index_dir" "0"
+
+    # Regenerate the markdown view from updated structured data
+    generate_project_index_view "$project_dir" "$budget_chars"
 }
