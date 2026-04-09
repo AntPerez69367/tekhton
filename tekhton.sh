@@ -479,7 +479,7 @@ if [ "${1:-}" = "--rescan" ]; then
         local_full="full"
     fi
 
-    rescan_project "$PROJECT_DIR" 120000 "$local_full"
+    rescan_project "$PROJECT_DIR" "${PROJECT_INDEX_BUDGET:-120000}" "$local_full"
     exit 0
 fi
 

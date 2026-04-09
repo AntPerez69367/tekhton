@@ -150,10 +150,12 @@ _extract_scan_metadata() {
 }
 
 # _record_scan_metadata — Updates scan metadata in PROJECT_INDEX.md header.
+# M67: reads from .claude/index/meta.json when available instead of per-file wc -l.
 # Args: $1 = index file, $2 = project directory
 _record_scan_metadata() {
     local index_file="$1"
     local project_dir="$2"
+    local index_dir="${project_dir}/.claude/index"
 
     local new_commit new_date file_count total_lines
     new_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -164,13 +166,20 @@ _record_scan_metadata() {
         new_commit="non-git"
     fi
 
-    local file_list
-    file_list=$(_list_tracked_files "$project_dir")
-    file_count=$(echo "$file_list" | grep -c '.' || echo "0")
-    total_lines=$(echo "$file_list" | while IFS= read -r f; do
-        [[ -z "$f" ]] && continue
-        [[ -f "${project_dir}/${f}" ]] && wc -l < "${project_dir}/${f}" 2>/dev/null || echo 0
-    done | awk '{s+=$1} END {print s+0}')
+    # M67: read from structured data when available
+    if [[ -s "${index_dir}/inventory.jsonl" ]]; then
+        file_count=$(wc -l < "${index_dir}/inventory.jsonl" | tr -d '[:space:]')
+        total_lines=$(awk -F'"lines":' '{split($2,a,/[,}]/); s+=a[1]} END {print s+0}' \
+            "${index_dir}/inventory.jsonl" 2>/dev/null || echo "0")
+    else
+        local file_list
+        file_list=$(_list_tracked_files "$project_dir")
+        file_count=$(echo "$file_list" | grep -c '.' || echo "0")
+        total_lines=$(echo "$file_list" | while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            [[ -f "${project_dir}/${f}" ]] && wc -l < "${project_dir}/${f}" 2>/dev/null || echo 0
+        done | awk '{s+=$1} END {print s+0}')
+    fi
 
     # Update HTML comment metadata
     sed -i "s|<!-- Last-Scan: .* -->|<!-- Last-Scan: ${new_date} -->|" "$index_file"
@@ -181,6 +190,22 @@ _record_scan_metadata() {
     # Update visible metadata line
     sed -i "s|^\*\*Scanned:\*\*.*|**Scanned:** ${new_date}|" "$index_file"
     sed -i "s|^\*\*Files:\*\*.*|**Files:** ${file_count} \| **Lines:** ${total_lines}|" "$index_file"
+
+    # Update meta.json if it exists
+    if [[ -f "${index_dir}/meta.json" ]] && type -t _json_escape &>/dev/null; then
+        local tmp_meta
+        tmp_meta=$(mktemp "${index_dir}/meta_XXXXXXXX")
+        local tree_lines=0
+        [[ -s "${index_dir}/tree.txt" ]] && \
+            tree_lines=$(wc -l < "${index_dir}/tree.txt" | tr -d '[:space:]')
+        local dq_score=0
+        dq_score=$(awk -F'"doc_quality_score":' 'NF>1{split($2,a,/[,}]/); print a[1]+0}' \
+            "${index_dir}/meta.json" 2>/dev/null || echo "0")
+        printf '{\n  "schema_version": 1,\n  "project_name": "%s",\n  "scan_date": "%s",\n  "scan_commit": "%s",\n  "file_count": %d,\n  "total_lines": %d,\n  "tree_lines": %d,\n  "doc_quality_score": %s\n}\n' \
+            "$(_json_escape "$(basename "$project_dir")")" "$new_date" "$new_commit" \
+            "$file_count" "$total_lines" "$tree_lines" "$dq_score" > "$tmp_meta"
+        mv "$tmp_meta" "${index_dir}/meta.json"
+    fi
 }
 
 # --- File-type helpers --------------------------------------------------------

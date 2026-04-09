@@ -27,7 +27,7 @@ source "${_RESCAN_DIR}/rescan_helpers.sh"
 #       $3 = "full" to force full crawl (optional)
 rescan_project() {
     local project_dir="${1:-.}"
-    local budget_chars="${2:-120000}"
+    local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
     local force_full="${3:-}"
     local index_file="${project_dir}/PROJECT_INDEX.md"
 

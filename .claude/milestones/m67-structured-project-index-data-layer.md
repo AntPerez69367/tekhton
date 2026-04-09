@@ -1,7 +1,7 @@
 # Milestone 67: Structured Project Index Data Layer
 <!-- milestone-meta
 id: "67"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

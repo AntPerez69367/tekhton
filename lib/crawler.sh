@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# crawler.sh — Project crawler & index generator (Milestone 18)
+# crawler.sh — Project crawler & index generator (Milestone 18, M67 structured)
 #
-# Breadth-first project crawler that produces PROJECT_INDEX.md — a structured,
-# token-budgeted manifest of a project's architecture, file inventory,
-# dependency structure, and sampled key files. No LLM calls.
+# Breadth-first project crawler that produces structured data files in
+# .claude/index/ and a backward-compatible PROJECT_INDEX.md view.
 #
 # Sourced by tekhton.sh — do not run directly.
 # Depends on: common.sh (log, warn, error), detect.sh (_DETECT_EXCLUDE_DIRS)
-# Also sources: crawler_inventory.sh, crawler_content.sh
+# Also sources: crawler_inventory.sh, crawler_content.sh, crawler_emit.sh
 # =============================================================================
 
 # Source companion files
@@ -18,6 +17,8 @@ _CRAWLER_DIR="${BASH_SOURCE[0]%/*}"
 source "${_CRAWLER_DIR}/crawler_inventory.sh"
 # shellcheck source=lib/crawler_content.sh
 source "${_CRAWLER_DIR}/crawler_content.sh"
+# shellcheck source=lib/crawler_emit.sh
+source "${_CRAWLER_DIR}/crawler_emit.sh"
 
 # --- Exclusion list (consistent with detect.sh and replan_brownfield.sh) ------
 
@@ -25,82 +26,44 @@ _CRAWL_EXCLUDE_DIRS="${_DETECT_EXCLUDE_DIRS:-node_modules|.git|__pycache__|.dart
 
 # --- Main entry point ---------------------------------------------------------
 
-# crawl_project — Orchestrates crawl phases and writes PROJECT_INDEX.md.
-# Args: $1 = project directory, $2 = budget in chars (default: 120000)
+# crawl_project — Writes structured data to .claude/index/ and legacy
+# PROJECT_INDEX.md for backward compatibility.
+# Args: $1 = project directory, $2 = budget in chars (default: PROJECT_INDEX_BUDGET)
 # Returns: 0 on success
 crawl_project() {
     local project_dir="${1:-.}"
-    local budget_chars="${2:-120000}"
+    local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
     local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_dir="${project_dir}/.claude/index"
 
     log "Crawling project: ${project_dir} (budget: ${budget_chars} chars)"
 
-    # Phase 1: Generate all sections
-    local tree_section inventory_section dep_section
-    local config_section test_section sample_section
+    _ensure_index_dir "$index_dir"
 
-    tree_section=$(_crawl_directory_tree "$project_dir" 6)
-    inventory_section=$(_crawl_file_inventory "$project_dir")
-    dep_section=$(_crawl_dependency_graph "$project_dir")
-    config_section=$(_crawl_config_inventory "$project_dir")
-    test_section=$(_crawl_test_structure "$project_dir")
-
-    # Phase 2: Budget allocation
-    local tree_size inventory_size dep_size config_size test_size
-    tree_size=${#tree_section}
-    inventory_size=${#inventory_section}
-    dep_size=${#dep_section}
-    config_size=${#config_section}
-    test_size=${#test_section}
-
-    local remaining_budget
-    remaining_budget=$(_budget_allocator "$budget_chars" \
-        "$tree_size" "$inventory_size" "$dep_size" "$config_size" "$test_size")
-
-    # Phase 3: Sample files with remaining budget
+    # Single file list call for all phases (M67 fix: was 4 separate calls)
     local file_list
     file_list=$(_list_tracked_files "$project_dir")
-    sample_section=$(_crawl_sample_files "$project_dir" "$file_list" "$remaining_budget")
 
-    # Phase 4: Truncate sections to budget allocations
-    local budget_tree budget_inv budget_dep budget_cfg budget_test
-    budget_tree=$(( budget_chars * 10 / 100 ))
-    budget_inv=$(( budget_chars * 15 / 100 ))
-    budget_dep=$(( budget_chars * 10 / 100 ))
-    budget_cfg=$(( budget_chars * 5 / 100 ))
-    budget_test=$(( budget_chars * 5 / 100 ))
-
-    tree_section=$(_truncate_section "$tree_section" "$budget_tree")
-    inventory_section=$(_truncate_section "$inventory_section" "$budget_inv")
-    dep_section=$(_truncate_section "$dep_section" "$budget_dep")
-    config_section=$(_truncate_section "$config_section" "$budget_cfg")
-    test_section=$(_truncate_section "$test_section" "$budget_test")
-
-    # Phase 5: Doc quality assessment (Milestone 12)
-    local doc_quality_section=""
+    # Doc quality (computed once, shared by meta emitter and legacy bridge)
+    local doc_quality_score=0
     if type -t assess_doc_quality &>/dev/null; then
         local dq_output
         dq_output=$(assess_doc_quality "$project_dir" 2>/dev/null || true)
-        if [[ -n "$dq_output" ]]; then
-            local dq_score
-            dq_score=$(echo "$dq_output" | cut -d'|' -f1)
-            doc_quality_section="DOC_QUALITY_SCORE: ${dq_score}"
-        fi
+        [[ -n "$dq_output" ]] && doc_quality_score=$(echo "$dq_output" | cut -d'|' -f1)
     fi
 
-    # Phase 6: Assemble and write index
-    local header_section
-    header_section=$(_build_index_header "$project_dir" "$file_list" "$doc_quality_section")
+    # Phase 1: Emit structured data files to .claude/index/
+    _emit_tree_txt "$project_dir" "$index_dir"
+    _emit_inventory_jsonl "$project_dir" "$file_list" "$index_dir"
+    _emit_dependencies_json "$project_dir" "$index_dir"
+    _emit_configs_json "$project_dir" "$file_list" "$index_dir"
+    _emit_tests_json "$project_dir" "$file_list" "$index_dir"
+    _emit_sampled_files "$project_dir" "$file_list" "$index_dir" "$budget_chars"
+    _emit_meta_json "$project_dir" "$index_dir" "$doc_quality_score"
 
-    {
-        printf '%s\n\n' "$header_section"
-        printf '## Directory Tree\n\n%s\n\n' "$tree_section"
-        printf '## File Inventory\n\n%s\n\n' "$inventory_section"
-        printf '## Key Dependencies\n\n%s\n\n' "$dep_section"
-        printf '## Configuration Files\n\n%s\n\n' "$config_section"
-        printf '## Test Infrastructure\n\n%s\n\n' "$test_section"
-        printf '## Sampled File Content\n\n%s\n' "$sample_section"
-    } > "$index_file"
+    # Phase 2: Generate legacy PROJECT_INDEX.md (backward compat, replaced by M69)
+    _generate_legacy_index "$project_dir" "$file_list" "$budget_chars" \
+        "$index_file" "$doc_quality_score"
 
     local final_size
     final_size=$(wc -c < "$index_file" | tr -d '[:space:]')
@@ -112,7 +75,7 @@ crawl_project() {
 
 # _budget_allocator — Distributes token budget across sections.
 # Fixed: tree 10%, inventory 15%, deps 10%, config 5%, tests 5%.
-# Remaining 55% + surplus from thin sections → sampled file content.
+# Remaining 55% + surplus from thin sections -> sampled file content.
 # Args: $1=total, $2=tree_size, $3=inv_size, $4=dep_size, $5=cfg_size, $6=test_size
 # Prints: remaining budget for file sampling
 _budget_allocator() {
@@ -126,7 +89,6 @@ _budget_allocator() {
     local budget_cfg=$(( total * 5 / 100 ))
     local budget_test=$(( total * 5 / 100 ))
 
-    # Calculate surplus from sections that underflow their allocation
     local surplus=0
     [[ "$tree_actual" -lt "$budget_tree" ]] && surplus=$(( surplus + budget_tree - tree_actual ))
     [[ "$inv_actual" -lt "$budget_inv" ]]   && surplus=$(( surplus + budget_inv - inv_actual ))
@@ -141,6 +103,7 @@ _budget_allocator() {
 # --- Directory tree -----------------------------------------------------------
 
 # _crawl_directory_tree — Breadth-first traversal with purpose annotations.
+# M67: no head -500 truncation; _truncate_section handles display limits.
 # Args: $1 = project directory, $2 = max depth (default: 6)
 _crawl_directory_tree() {
     local project_dir="$1"
@@ -151,18 +114,17 @@ _crawl_directory_tree() {
         local exclude_pattern
         exclude_pattern=$(echo "$_CRAWL_EXCLUDE_DIRS" | tr '|' '\n' | paste -sd'|')
         output=$(tree -L "$max_depth" --noreport --dirsfirst \
-            -I "$exclude_pattern" "$project_dir" 2>/dev/null | head -500 || true)
+            -I "$exclude_pattern" "$project_dir" 2>/dev/null || true)
     else
-        # Fallback: find-based tree
         output=$(_find_based_tree "$project_dir" "$max_depth")
     fi
 
-    # Add purpose annotations for well-known directories
     output=$(_annotate_directories "$output")
     printf '%s' "$output"
 }
 
 # _find_based_tree — Fallback directory listing when tree is unavailable.
+# M67: no head -500 truncation.
 _find_based_tree() {
     local project_dir="$1"
     local max_depth="$2"
@@ -176,7 +138,7 @@ _find_based_tree() {
     unset IFS
 
     find "$project_dir" -maxdepth "$max_depth" -type d \
-        "${exclude_args[@]}" 2>/dev/null | sort | head -500 | \
+        "${exclude_args[@]}" 2>/dev/null | sort | \
         sed "s|^${project_dir}|.|" || true
 }
 
@@ -215,7 +177,6 @@ _list_tracked_files() {
 }
 
 # _truncate_section — Truncates text to fit within a character budget.
-# Adds a marker if truncated.
 _truncate_section() {
     local text="$1"
     local budget="$2"
@@ -223,32 +184,40 @@ _truncate_section() {
         printf '%s' "$text"
     else
         local truncated="${text:0:$budget}"
-        # Cut at last newline to avoid mid-line truncation
         truncated="${truncated%$'\n'*}"
         printf '%s\n\n... (truncated to fit budget)' "$truncated"
     fi
 }
 
 # _build_index_header — Builds the PROJECT_INDEX.md header with metadata.
+# M67: reads from inventory.jsonl when available (fix for O(n) per-file wc -l).
 _build_index_header() {
     local project_dir="$1"
     local file_list="$2"
     local doc_quality="${3:-}"
+    local index_dir="${project_dir}/.claude/index"
     local file_count total_lines scan_commit scan_date project_name
 
-    file_count=$(echo "$file_list" | grep -c '.' || echo "0")
-    total_lines=$(echo "$file_list" | while IFS= read -r f; do
-        [[ -z "$f" ]] && continue
-        [[ -f "${project_dir}/${f}" ]] && wc -l < "${project_dir}/${f}" 2>/dev/null || echo 0
-    done | awk '{s+=$1} END {print s+0}')
-
-    scan_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     project_name=$(basename "$project_dir")
+    scan_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
     if git -C "$project_dir" rev-parse --git-dir &>/dev/null; then
         scan_commit=$(git -C "$project_dir" rev-parse --short HEAD 2>/dev/null || echo "unknown")
     else
         scan_commit="non-git"
+    fi
+
+    # M67: read from structured data when available
+    if [[ -s "${index_dir}/inventory.jsonl" ]]; then
+        file_count=$(wc -l < "${index_dir}/inventory.jsonl" | tr -d '[:space:]')
+        total_lines=$(awk -F'"lines":' '{split($2,a,/[,}]/); s+=a[1]} END {print s+0}' \
+            "${index_dir}/inventory.jsonl" 2>/dev/null || echo "0")
+    else
+        file_count=$(echo "$file_list" | grep -c '.' || echo "0")
+        total_lines=$(echo "$file_list" | while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            [[ -f "${project_dir}/${f}" ]] && wc -l < "${project_dir}/${f}" 2>/dev/null || echo 0
+        done | awk '{s+=$1} END {print s+0}')
     fi
 
     local dq_line=""

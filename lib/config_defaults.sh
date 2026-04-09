@@ -244,6 +244,9 @@ set -euo pipefail
 : "${INTAKE_ROLE_FILE:=.claude/agents/intake.md}"
 : "${INTAKE_REPORT_FILE:=INTAKE_REPORT.md}"
 
+# --- Project index budget (Milestone 67: structured index data layer) ---
+: "${PROJECT_INDEX_BUDGET:=120000}"        # Char budget for markdown view; structured data is unbounded
+
 # --- Brownfield deep analysis defaults (Milestone 12) ---
 : "${DETECT_WORKSPACES_ENABLED:=true}"
 : "${DETECT_SERVICES_ENABLED:=true}"

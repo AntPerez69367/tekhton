@@ -1,31 +1,85 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 24 test assertions
+Tests audited: 1 file, 14 test assertions
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: Detection condition is duplicated in tests rather than exercised through production code
-- File: tests/test_coder_placeholder_detection.sh:76-80, :141-144, :177-180
-- Issue: All three tests replicate the outer detection condition from `stages/coder.sh:768-773` verbatim (the `grep -q 'fill in as you go\|update as you go'` check) rather than calling through a named function. The component functions `is_substantive_work` and `_reconstruct_coder_summary` ARE exercised from the real implementation, so this is an improvement over the prior tautological tests. However, if the grep pattern at `stages/coder.sh:768` changes (e.g., a third placeholder variant is added), the tests will not detect the regression because each test uses its own copy of the pattern rather than the one in the production block.
+#### INTEGRITY: Overly broad total_lines assertion in fallback path
+- File: tests/test_rescan_metadata.sh:176
+- Issue: The fixture creates exactly 2 files with 5 lines each (total=10), but the
+  assertion checks `meta_tl2 > 0 && != 999`. This passes for any non-zero, non-stale
+  value — it would not catch a bug where only one file was counted (total=5) or where
+  wc -l was applied to only one of the two files. The exact expected value is known
+  from the fixture.
 - Severity: MEDIUM
-- Action: Extract `stages/coder.sh:768-773` into a named function (e.g., `_check_and_reconstruct_placeholder`) and call it directly from the tests instead of duplicating the condition. This makes the tests sensitive to changes in the detection pattern.
+- Action: Replace with `[[ "$meta_tl2" == "10" ]]` to pin the exact value derived
+  from the fixture (2 files × 5 lines each).
 
-#### COVERAGE: No test for placeholder-detected-but-no-substantive-work path
-- File: tests/test_coder_placeholder_detection.sh (entire file)
-- Issue: Tests 1 and 2 verify reconstruction fires when both a placeholder AND substantive work exist. Test 3 verifies a properly filled summary is not touched. There is no test for the case where a placeholder is present but `is_substantive_work` returns false (i.e., the agent wrote the skeleton but did no real work). The production code at `stages/coder.sh:769` guards reconstruction behind `if is_substantive_work` specifically to handle this case — skipping reconstruction when there is nothing to reconstruct from. This guard is never exercised for its false (no-reconstruction) branch.
+#### INTEGRITY: Loose file_count floor in Section 3 initial crawl assertion
+- File: tests/test_rescan_metadata.sh:204-209
+- Issue: Section 3 commits exactly 4 files (src/a.sh, src/b.sh, src/c.sh, README.md)
+  then asserts `initial_fc >= 1`. This passes even if only 1 file is indexed — a
+  regression that silently drops 3 of 4 files from the crawl would go undetected.
+  The exact expected count is known from the fixture setup.
 - Severity: MEDIUM
-- Action: Add a test that creates a placeholder CODER_SUMMARY.md with fewer than 20 lines and no untracked/modified files, verifies `is_substantive_work` returns non-zero, and asserts CODER_SUMMARY.md still contains placeholder text after the detection block runs.
+- Action: Replace with `[[ "$initial_fc" == "4" ]]` to pin the exact expected count.
+  The fixture is a clean git repo with no extraneous tracked files, making an exact
+  assertion safe.
 
-#### NAMING: Header comment in test_coder_summary_reconstruction.sh is incomplete and mislabeled
-- File: tests/test_coder_summary_reconstruction.sh:8-19
-- Issue: The header lists 10 tests ending with "10. Large number of files is truncated to 30". The actual file contains 13 tests. The real test 10 (line 249) verifies reconstruction documentation is present — it does not test file truncation. "Large number of files is truncated to 30" is actually test 12 (line 302). Tests 11 ("Multiple file modifications") and 13 ("Excluded files not listed") are not in the header at all. A developer reading the header to understand coverage will get a false picture.
+#### INTEGRITY: Unconditional pass() inflates reported test count
+- File: tests/test_rescan_metadata.sh:163-164
+- Issue: `pass "_record_scan_metadata completes without crash when inventory.jsonl absent"`
+  is called unconditionally on the line immediately after invoking the function. With
+  `set -euo pipefail` in effect, a non-zero exit already aborts the script — this
+  `pass()` adds no assertion value but increments PASS by 1, inflating the count from
+  13 real assertions to 14 and misrepresenting test depth to readers.
 - Severity: LOW
-- Action: Update lines 8-19 to list all 13 tests with correct descriptions matching the test bodies.
+- Action: Remove the unconditional `pass()` on line 164. The substantive assertions
+  on lines 167-180 are sufficient to verify this code path.
 
-#### ISOLATION: Within-suite git state bleeds across tests in test_coder_summary_reconstruction.sh
-- File: tests/test_coder_summary_reconstruction.sh:55-57, :106, :186, :251
-- Issue: Tests 1, 4, 7, and 10 each modify or overwrite README.md without restoring it afterward. Starting from test 4, `_reconstruct_coder_summary` will always include README.md in its "Files Modified" section even for tests that don't intend to have tracked changes. Tests 5, 6, 7, and 8 silently inherit this artifact. The suite does not fail because the assertions in those tests do not check for the absence of README.md, but the test environment no longer reflects what the test author intended. Test 9's `git reset --hard HEAD -q` + `git clean -fd -q` provides a mid-suite reset that limits blast radius for tests 10–13.
-- Severity: MEDIUM
-- Action: After each test that modifies README.md, add `git checkout HEAD -- README.md 2>/dev/null || true` or restructure each test to call `git reset --hard HEAD -q` at its start (as test 4 already does) to guarantee a clean baseline.
+#### COVERAGE: Section 2 omits PROJECT_INDEX.md HTML comment verification
+- File: tests/test_rescan_metadata.sh:130-180
+- Issue: Section 1 (JSONL present) verifies all four `sed -i` writes in
+  `_record_scan_metadata` — the `File-Count`, `Total-Lines` HTML comments, and the
+  visible `**Files:** | **Lines:**` line. Section 2 (no JSONL fallback) only checks
+  meta.json. The six sed calls in rescan_helpers.sh:185-192 that update
+  PROJECT_INDEX.md are not exercised for the fallback branch. A regression that breaks
+  the sed path specifically when inventory.jsonl is absent would not be caught.
+- Severity: LOW
+- Action: After the existing fallback assertions, add:
+  `grep -q "<!-- File-Count: 2 -->" "${PROJ2}/PROJECT_INDEX.md"` and
+  `grep -q "Files.*2.*Lines" "${PROJ2}/PROJECT_INDEX.md"`.
+
+#### SCOPE: CODER_SUMMARY.md absent — cross-reference incomplete
+- File: tests/test_rescan_metadata.sh (audit-wide)
+- Issue: CODER_SUMMARY.md does not exist in the repository. The required reading for
+  this audit specifies it as the primary record of what implementation files changed
+  and why. Git status shows lib/crawler_emit.sh as new and five existing files
+  modified (crawler.sh, crawler_inventory.sh, rescan.sh, rescan_helpers.sh, etc.).
+  The test sources crawler.sh → crawler_emit.sh and exercises _emit_meta_json,
+  _emit_inventory_jsonl, and _record_scan_metadata — the M67 emitters are covered.
+  Scope appears aligned based on direct implementation reading, but cannot be fully
+  confirmed without the coder summary.
+- Severity: LOW
+- Action: Ensure the coder agent produces CODER_SUMMARY.md so future audits can
+  formally cross-reference changed files against tested code paths.
+
+### No Issues Found In These Categories
+
+**ISOLATION**: All fixtures are created in $TEST_TMPDIR and cleaned up via trap. No
+test reads from mutable project state files (pipeline logs, REVIEWER_REPORT.md,
+BUILD_ERRORS.md, etc.). Clean.
+
+**EXERCISE**: All tests invoke real implementation functions (_record_scan_metadata,
+crawl_project, rescan_project) against real git repositories constructed in temp
+directories. No mocking is used. The fixture design in Section 1 — where the JSONL
+deliberately contradicts the actual file state (2 phantom files, 300 claimed lines
+vs 1 real file with 3 lines) — is an effective technique to prove which code path
+fires.
+
+**WEAKENING**: New test file. No existing tests were modified.
+
+**NAMING**: Section echo headers and pass/fail message strings are descriptive of
+both the scenario and the expected outcome. Acceptable for a flat bash test harness.
