@@ -101,6 +101,12 @@ run_plan_generate() {
         fi
     fi
 
+    # Trim preamble lines (e.g. "I have enough context...") before the first
+    # top-level heading, unless we already rescued the on-disk version.
+    if [[ -n "$claude_md_content" ]] && [[ "$_disk_rescued" == "false" ]]; then
+        claude_md_content=$(printf '%s' "$claude_md_content" | _trim_document_preamble)
+    fi
+
     {
         echo "=== Session End ==="
         echo "Exit code: ${batch_exit}"

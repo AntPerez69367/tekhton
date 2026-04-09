@@ -219,8 +219,8 @@ and what is explicitly out of scope (deferred to later milestones).
 
 1. **Output CLAUDE.md content directly to stdout.** Do NOT use any tools to
    write files — the shell captures your text output and writes the file.
-   Start directly with `# [ProjectName]` title. Do not wrap the output in
-   code fences.
+   No preamble, no explanation, no commentary — start directly with the
+   `# [ProjectName]` title. Do not wrap the output in code fences.
 
 2. **Markdown format.** Use clean, well-structured markdown with `#` for the
    title, `##` for major sections, `###` for subsections, and `####` for

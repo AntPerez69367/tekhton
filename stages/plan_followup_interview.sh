@@ -180,6 +180,11 @@ run_plan_followup_interview() {
         "$followup_prompt" \
         "$log_file") || batch_exit=$?
 
+    # Trim preamble lines before the first top-level heading.
+    if [[ -n "$updated_content" ]]; then
+        updated_content=$(printf '%s' "$updated_content" | _trim_document_preamble)
+    fi
+
     local design_status="not created"
     if [[ -n "$updated_content" ]]; then
         printf '%s\n' "$updated_content" > "$design_file"

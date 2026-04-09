@@ -179,7 +179,8 @@ For each major subsystem or module:
 ## Output Rules
 
 1. **Output DESIGN.md content directly to stdout.** Do NOT use any tools to
-   write files. Start with `# [ProjectName] — Design Document`.
+   write files. No preamble, no explanation, no commentary — start directly
+   with `# [ProjectName] — Design Document`.
 
 2. **Be evidence-based.** Every claim about the codebase must be supported by
    something in the project index or sampled files. Do not invent patterns

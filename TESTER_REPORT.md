@@ -1,11 +1,17 @@
 ## Planned Tests
-- [x] `tests/test_plan_milestone_review_pattern.sh` — Extract Tests 7-12 from old drift_resolution_verification.sh with proper fixture isolation
+- [x] `tests/test_coder_role_summary_structure.sh` — Verify CODER_SUMMARY.md skeleton structure and required sections
+- [x] `tests/test_coder_role_before_code.sh` — Verify coder role instructs CODER_SUMMARY.md creation before code
+- [x] `tests/test_coder_prompt_role_consistency.sh` — Verify coder prompt and role file are consistent about write-first pattern
+- [x] `tests/test_coder_role_status_field.sh` — Verify Status field documentation and COMPLETE/IN PROGRESS values
 
 ## Test Run Results
-Passed: 3  Failed: 0
+Passed: 39  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_plan_milestone_review_pattern.sh`
+- [x] `tests/test_coder_role_summary_structure.sh`
+- [x] `tests/test_coder_role_before_code.sh`
+- [x] `tests/test_coder_prompt_role_consistency.sh`
+- [x] `tests/test_coder_role_status_field.sh`

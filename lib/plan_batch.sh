@@ -112,6 +112,42 @@ _call_planning_batch() {
     return "${_pst[0]}"
 }
 
+# _trim_document_preamble — Strip leading non-document lines before the first
+# top-level markdown heading (`^# `).
+#
+# Claude sometimes emits a preamble sentence ("I have enough context...",
+# "Here is the generated document...") before the actual markdown document.
+# This function removes those lines so the on-disk file starts cleanly.
+#
+# Reads content from stdin, writes trimmed content to stdout.
+# If no `^# ` heading is found, returns the input unchanged.
+# If the first line already starts with `# `, returns unchanged (fast path).
+_trim_document_preamble() {
+    local content
+    content=$(cat)
+
+    # Fast path: already starts with a heading
+    local first_line
+    first_line=$(printf '%s\n' "$content" | head -1)
+    if [[ "$first_line" == "#"* ]]; then
+        printf '%s\n' "$content"
+        return 0
+    fi
+
+    # Find the first line that starts with "# " (top-level heading)
+    local heading_line
+    heading_line=$(printf '%s\n' "$content" | grep -n '^# ' | head -1 | cut -d: -f1)
+
+    if [[ -z "$heading_line" ]]; then
+        # No heading found — return unchanged
+        printf '%s\n' "$content"
+        return 0
+    fi
+
+    # Strip everything before the heading
+    printf '%s\n' "$content" | tail -n +"$heading_line"
+}
+
 # _extract_template_sections — Parse a template file and print section data.
 #
 # Output format (one line per section):   NAME|REQUIRED|GUIDANCE|PHASE

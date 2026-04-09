@@ -166,8 +166,8 @@ For EACH milestone, include ALL of the following:
 ## Output Rules
 
 1. **Output CLAUDE.md content directly to stdout.** Do NOT use any tools to
-   write files. Start directly with `# [ProjectName]` title. Do not wrap the
-   output in code fences.
+   write files. No preamble, no explanation, no commentary — start directly
+   with `# [ProjectName]` title. Do not wrap the output in code fences.
 
 2. **Be specific.** Every rule, milestone, and guideline must be specific to
    THIS project.

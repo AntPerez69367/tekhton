@@ -45,6 +45,9 @@ source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
+# Source plan_batch.sh for _trim_document_preamble helper used by plan_generate.sh
+source "${TEKHTON_HOME}/lib/plan_batch.sh"
+
 # Source plan_generate.sh itself (defines run_plan_generate and _insert_milestone_pointer)
 source "${TEKHTON_HOME}/stages/plan_generate.sh"
 

@@ -86,6 +86,11 @@ _synthesize_design() {
 
     echo
 
+    # Trim preamble lines before the first top-level heading.
+    if [[ -n "$design_content" ]]; then
+        design_content=$(printf '%s' "$design_content" | _trim_document_preamble)
+    fi
+
     if [[ -n "$design_content" ]]; then
         local design_file="${project_dir}/DESIGN.md"
         printf '%s\n' "$design_content" > "$design_file"
@@ -160,6 +165,11 @@ _synthesize_claude() {
     } >> "$log_file"
 
     echo
+
+    # Trim preamble lines before the first top-level heading.
+    if [[ -n "$claude_content" ]]; then
+        claude_content=$(printf '%s' "$claude_content" | _trim_document_preamble)
+    fi
 
     if [[ -n "$claude_content" ]]; then
         local claude_file="${project_dir}/CLAUDE.md"

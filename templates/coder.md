@@ -34,11 +34,13 @@ Create `CODER_SUMMARY.md` **before writing any code** with this IN PROGRESS skel
 # Coder Summary
 ## Status: IN PROGRESS
 ## What Was Implemented
-(update as you go)
-## Files Created or Modified
-(update as you go)
-## Remaining Work
-(update as you go)
+(fill in as you go)
+## Root Cause (bugs only)
+(fill in after diagnosis)
+## Files Modified
+(fill in as you go)
+## Human Notes Status
+(fill in for EVERY note listed in the Human Notes section — COMPLETED or NOT_ADDRESSED)
 ```
 
 Update the file throughout your work as you complete items. As your **final act**,
@@ -46,8 +48,10 @@ set `## Status` to `COMPLETE` (or leave `IN PROGRESS` if work remains) and ensur
 all sections reflect what was actually done. Required sections:
 - `## Status`: either `COMPLETE` or `IN PROGRESS`
 - `## What Was Implemented`: bullet list of changes
-- `## Files Created or Modified`: paths and brief descriptions
+- `## Root Cause (bugs only)`: diagnosis for bug-fix tasks (omit for features)
+- `## Files Modified`: paths and brief descriptions
 - `## Remaining Work`: anything unfinished (only if IN PROGRESS)
+- `## Human Notes Status`: completion status of each human note (when notes are present)
 - `## Architecture Change Proposals`: (if applicable, see below)
 
 Do NOT set COMPLETE if any planned work is unfinished.

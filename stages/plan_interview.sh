@@ -183,6 +183,12 @@ run_plan_interview() {
         fi
     fi
 
+    # Trim preamble lines before the first top-level heading, unless we
+    # already rescued the on-disk version.
+    if [[ -n "$design_content" ]] && [[ "$_disk_rescued" == "false" ]]; then
+        design_content=$(printf '%s' "$design_content" | _trim_document_preamble)
+    fi
+
     local design_status="not created"
     if [[ -n "$design_content" ]]; then
         if [[ "$_disk_rescued" == "false" ]]; then
