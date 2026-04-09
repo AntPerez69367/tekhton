@@ -28,7 +28,22 @@ the project rules file and architecture docs before writing a single line of cod
 
 ## Required Output
 
-When finished, write or update `CODER_SUMMARY.md` with:
+Create `CODER_SUMMARY.md` **before writing any code** with this IN PROGRESS skeleton:
+
+```
+# Coder Summary
+## Status: IN PROGRESS
+## What Was Implemented
+(update as you go)
+## Files Created or Modified
+(update as you go)
+## Remaining Work
+(update as you go)
+```
+
+Update the file throughout your work as you complete items. As your **final act**,
+set `## Status` to `COMPLETE` (or leave `IN PROGRESS` if work remains) and ensure
+all sections reflect what was actually done. Required sections:
 - `## Status`: either `COMPLETE` or `IN PROGRESS`
 - `## What Was Implemented`: bullet list of changes
 - `## Files Created or Modified`: paths and brief descriptions

@@ -122,10 +122,10 @@ echo "=== Test 4: Coder stage has coder-specific instructions ==="
 
 result=$(build_continuation_context "coder" "1" "3" "50" "50")
 
-if echo "$result" | grep -q "Read CODER_SUMMARY.md first"; then
-    pass "4.1: Coder instruction to read CODER_SUMMARY.md"
+if echo "$result" | grep -q "CODER_SUMMARY.md is missing"; then
+    pass "4.1: Coder instruction to recreate missing CODER_SUMMARY.md"
 else
-    fail "4.1: Should instruct to read CODER_SUMMARY.md"
+    fail "4.1: Should instruct to recreate missing CODER_SUMMARY.md"
 fi
 
 if echo "$result" | grep -q "REMAINING items"; then

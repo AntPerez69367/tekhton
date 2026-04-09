@@ -762,6 +762,16 @@ ${nb_notes}"
         fi
     fi
 
+    # Detect un-updated skeleton: coder wrote the IN PROGRESS skeleton at Step 1
+    # but never filled it in (placeholders still present). Treat the same as a
+    # missing file — reconstruct from git state so the pipeline can proceed.
+    if [[ -f "CODER_SUMMARY.md" ]] && grep -q 'fill in as you go\|update as you go' "CODER_SUMMARY.md" 2>/dev/null; then
+        if is_substantive_work; then
+            warn "CODER_SUMMARY.md contains unfilled placeholders — reconstructing from git state."
+            _reconstruct_coder_summary
+        fi
+    fi
+
     # Resolve human notes based on coder's structured reporting
     # Only resolve if notes were actually claimed (marked [~]) for this run.
     # In --human (single-note) mode, _hook_resolve_notes in finalize.sh handles
