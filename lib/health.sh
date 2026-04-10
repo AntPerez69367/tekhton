@@ -20,6 +20,8 @@ set -euo pipefail
 source "${TEKHTON_HOME:?}/lib/health_checks_infra.sh"
 # shellcheck source=lib/health_checks.sh
 source "${TEKHTON_HOME:?}/lib/health_checks.sh"
+# shellcheck source=lib/health_checks_hygiene.sh
+source "${TEKHTON_HOME:?}/lib/health_checks_hygiene.sh"
 
 # --- Belt system --------------------------------------------------------------
 
@@ -271,10 +273,18 @@ _write_health_report() {
     local report_file="${proj_dir}/${HEALTH_REPORT_FILE:-HEALTH_REPORT.md}"
     local show_belt="${HEALTH_SHOW_BELT:-true}"
 
+    # Extract source_files from test_detail JSON for greenfield detection
+    local src_files_count=""
+    src_files_count=$(echo "$test_detail" | grep -oE '"source_files":[0-9]+' | grep -oE '[0-9]+' || true)
+
     local tmpfile="${report_file}.tmp.$$"
     {
         echo "# Project Health Report"
         echo
+        if [[ "${src_files_count:-0}" -eq 0 ]]; then
+            echo "> **Pre-code baseline** — scores reflect project setup only, not code quality."
+            echo
+        fi
         echo "## Composite Score: ${composite}/100"
         if [[ -n "$d_composite" ]]; then
             echo "Delta: $(_trend_arrow "$d_composite") (${d_composite:+${d_composite}})"

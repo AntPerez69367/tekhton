@@ -136,7 +136,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.66.0"
+TEKHTON_VERSION="3.71.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -333,6 +333,8 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
     source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
     source "${TEKHTON_HOME}/lib/crawler.sh"
+    source "${TEKHTON_HOME}/lib/index_reader.sh"
+    source "${TEKHTON_HOME}/lib/index_view.sh"
     source "${TEKHTON_HOME}/lib/init.sh"
 
     local_reinit=""
@@ -416,6 +418,11 @@ if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--plan-browser" ] || [ "${1:-}" = "-
     source "${TEKHTON_HOME}/lib/plan_browser.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    # DAG defaults needed by milestone_dag.sh (config_defaults.sh is not
+    # sourced in --plan mode because it depends on _clamp_config_value)
+    : "${MILESTONE_DAG_ENABLED:=true}"
+    : "${MILESTONE_DIR:=.claude/milestones}"
+    : "${MILESTONE_MANIFEST:=MANIFEST.cfg}"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
@@ -427,6 +434,8 @@ if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--plan-browser" ] || [ "${1:-}" = "-
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     run_plan || true
+    # Ensure .gitignore has Tekhton runtime entries after planning creates .claude/
+    [[ -d "${PROJECT_DIR}/.claude" ]] && _ensure_gitignore_entries "$PROJECT_DIR"
     exit 0
 fi
 
@@ -468,13 +477,14 @@ if [ "${1:-}" = "--rescan" ]; then
     source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
     source "${TEKHTON_HOME}/lib/crawler.sh"
     source "${TEKHTON_HOME}/lib/rescan.sh"
+    source "${TEKHTON_HOME}/lib/index_view.sh"
 
     local_full=""
     if [ "${2:-}" = "--full" ]; then
         local_full="full"
     fi
 
-    rescan_project "$PROJECT_DIR" 120000 "$local_full"
+    rescan_project "$PROJECT_DIR" "${PROJECT_INDEX_BUDGET:-120000}" "$local_full"
     exit 0
 fi
 
@@ -503,6 +513,8 @@ if [ "${1:-}" = "--plan-from-index" ]; then
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     run_project_synthesis "$PROJECT_DIR" || true
+    # Ensure .gitignore has Tekhton runtime entries after synthesis creates .claude/
+    [[ -d "${PROJECT_DIR}/.claude" ]] && _ensure_gitignore_entries "$PROJECT_DIR"
     exit 0
 fi
 
@@ -769,7 +781,9 @@ source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
 source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
 # shellcheck disable=SC1091
 source "${TEKHTON_HOME}/platforms/_base.sh"    # UI platform adapter framework (Milestone 57)
-source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_deps.sh (via crawler_content.sh)
+source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_emit.sh
+source "${TEKHTON_HOME}/lib/index_reader.sh"  # structured index reader API (M68)
+source "${TEKHTON_HOME}/lib/index_view.sh"   # markdown view generator (M69)
 source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # helpers only; full rescan.sh sourced in --rescan block
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/specialists_helpers.sh"

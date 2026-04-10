@@ -145,3 +145,82 @@ _read_sampled_file() {
 
     printf '%s' "$content"
 }
+
+# --- Structured emitter — moved here from crawler_emit.sh (size management; -------
+# --- M67 spec originally placed this in crawler_emit.sh) -----------------------
+
+# _emit_sampled_files — Writes individual sample files and a manifest.
+# Args: $1=project_dir, $2=file_list, $3=index_dir, $4=budget_chars
+_emit_sampled_files() {
+    local project_dir="$1" file_list="$2" index_dir="$3" budget_chars="$4"
+    local samples_dir="${index_dir}/samples"
+    mkdir -p "$samples_dir"
+
+    # Clean stale sample files from prior crawl
+    rm -f "${samples_dir}"/*.txt
+
+    local budget=$(( budget_chars * 55 / 100 ))
+    local used=0 total_chars=0
+
+    # Temp file for manifest entries — avoids O(n) string concatenation
+    local manifest_tmp
+    manifest_tmp=$(mktemp "${index_dir}/manifest_entries_XXXXXXXX")
+
+    # Build priority-ordered candidate list (same as _crawl_sample_files)
+    local -a candidates=()
+    _add_candidate candidates "$file_list" "README.md" "README.rst" "README" "README.txt"
+    _add_candidate candidates "$file_list" "main.py" "app.py" "index.ts" "index.js" \
+        "main.ts" "main.go" "main.rs" "lib.rs" "src/main.rs" "src/lib.rs" \
+        "src/index.ts" "src/index.js" "src/app.ts" "src/app.js" "src/main.py" "cmd/main.go"
+    _add_candidate candidates "$file_list" "package.json" "Cargo.toml" "pyproject.toml" \
+        "go.mod" "Gemfile" "pubspec.yaml" "composer.json"
+    _add_candidate candidates "$file_list" "ARCHITECTURE.md" "CONTRIBUTING.md" \
+        "DESIGN.md" "docs/ARCHITECTURE.md" "docs/design.md"
+    local test_file
+    test_file=$(echo "$file_list" | grep -E '\.(test|spec)\.[^.]+$|_test\.[^.]+$' | head -1 || true)
+    [[ -n "$test_file" ]] && candidates+=("$test_file")
+    local src_file
+    src_file=$(echo "$file_list" | grep -E '^src/.*\.(py|ts|js|go|rs|java|rb)$' | head -1 || true)
+    [[ -n "$src_file" ]] && candidates+=("$src_file")
+
+    local f
+    for f in "${candidates[@]+"${candidates[@]}"}"; do
+        [[ "$used" -ge "$budget" ]] && break
+        local full_path="${project_dir}/${f}"
+        [[ ! -f "$full_path" ]] && continue
+        _is_binary_file "$full_path" && continue
+
+        local remaining=$(( budget - used ))
+        local content
+        content=$(_read_sampled_file "$full_path" "$remaining")
+        local content_size=${#content}
+        [[ "$content_size" -eq 0 ]] && continue
+
+        local stored_name="${f//\//__}.txt"
+        printf '%s' "$content" > "${samples_dir}/${stored_name}"
+
+        # Write entry to temp file (one JSON object per line)
+        printf '{"original":"%s","stored":"%s","chars":%d}\n' \
+            "$(_json_escape "$f")" "$(_json_escape "$stored_name")" "$content_size" >> "$manifest_tmp"
+        used=$(( used + content_size + ${#f} + 20 ))
+        total_chars=$(( total_chars + content_size ))
+    done
+
+    # Assemble samples manifest from temp file
+    local tmp_file
+    tmp_file=$(mktemp "${index_dir}/samples_m_XXXXXXXX")
+    {
+        printf '{\n  "samples": ['
+        local first=true
+        while IFS= read -r entry; do
+            [[ -z "$entry" ]] && continue
+            [[ "$first" != true ]] && printf ','
+            printf '\n    %s' "$entry"
+            first=false
+        done < "$manifest_tmp"
+        printf '\n  ],\n  "total_chars": %d,\n  "budget_chars": %d\n}\n' \
+            "$total_chars" "$budget"
+    } > "$tmp_file"
+    rm -f "$manifest_tmp"
+    mv "$tmp_file" "${samples_dir}/manifest.json"
+}

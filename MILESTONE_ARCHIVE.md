@@ -11877,3 +11877,1598 @@ Watch For:
 Seeds Forward:
 - Tool-aware agents should show reduced grep/find usage in future runs
 - M62 timing data can measure before/after impact on tester stage duration
+
+---
+
+## Archived: 2026-04-09 — Unknown Initiative
+
+# Milestone 67: Structured Project Index Data Layer
+<!-- milestone-meta
+id: "67"
+status: "done"
+-->
+
+## Overview
+
+PROJECT_INDEX.md is a single markdown file trying to serve three incompatible
+roles simultaneously:
+
+1. **Human-readable project map** — needs to be bounded and browsable
+2. **Programmatic project index** — needs to be complete and queryable
+3. **LLM prompt context** — needs to be bounded and compressible
+
+The current architecture (introduced in M18, refined in M20) generates this
+single file with a hard character budget (120,000 chars), then truncates sections
+that exceed their allocation with a `... (truncated to fit budget)` marker. For
+brownfield projects of any significant size, this means the index is lossy from
+the moment it's created — file inventories are cut mid-table, dependency graphs
+are incomplete, and sampled content is arbitrarily shortened.
+
+Every downstream consumer then applies additional lossy transformations:
+- `_safe_read_file` in intake rejects the entire file if it exceeds 8KB
+- `compress_context` with `summarize_headings` drops all non-heading lines
+  (destroying the entire inventory table)
+- `_replace_section` passes full section bodies through awk ENVIRON (ARG_MAX risk)
+
+**This milestone replaces the monolithic markdown producer with a structured data
+layer.** Individual data files in `.claude/index/` store the complete, unbounded
+project data. A separate milestone (M69) generates the bounded human-readable
+PROJECT_INDEX.md view from this data.
+
+Depends on M66 (last completed V3 milestone) for stable pipeline baseline.
+
+## Scope
+
+### 1. Directory Schema: `.claude/index/`
+
+**New directory:** `.claude/index/` (already partially used by tree-sitter repo
+map cache from M07 — `task_history.jsonl` lives here).
+
+Create the following files during a crawl:
+
+| File | Format | Content | Bounded? |
+|------|--------|---------|----------|
+| `meta.json` | JSON | Scan metadata (date, commit, file count, total lines, doc quality score) | Yes (~500B) |
+| `tree.txt` | Plain text | Directory tree output (no markdown wrapper) | Soft cap at depth 6, no hard truncation |
+| `inventory.jsonl` | JSONL | One record per tracked file: path, lines, size category, directory | No — complete |
+| `dependencies.json` | JSON | Dependency graph (same data as current `## Key Dependencies`) | No — complete |
+| `configs.json` | JSON | Config file inventory with purpose annotations | No — complete |
+| `tests.json` | JSON | Test infrastructure: directories, frameworks, coverage | No — complete |
+| `samples/` | Directory | One file per sampled source file, plain text content | Budget-aware per file |
+
+**Why JSONL for inventory:** The file inventory is the section most likely to
+blow the budget on large projects (a 5,000-file repo produces ~300KB of markdown
+table). JSONL is append-friendly, line-grep-friendly, and can be streamed without
+loading the entire dataset. This follows the precedent set by M07's
+`task_history.jsonl` in the same directory.
+
+**Why JSON (not JSONL) for deps/configs/tests:** These are small, self-contained
+structures that benefit from being a single parseable unit. They rarely exceed
+a few KB even for large projects.
+
+### 2. Rewrite `crawl_project()` as Structured Emitter
+
+**File:** `lib/crawler.sh`
+
+Replace the current `crawl_project()` (lines 31-109) with a new implementation
+that writes to `.claude/index/` instead of assembling a single markdown string.
+
+**New flow:**
+
+```
+crawl_project()
+  ├─ _ensure_index_dir()          # mkdir -p .claude/index/samples
+  ├─ file_list=$(_list_tracked_files)  # ONCE — cached for all phases
+  ├─ _emit_meta_json()            # writes meta.json
+  ├─ _emit_tree_txt()             # writes tree.txt
+  ├─ _emit_inventory_jsonl()      # writes inventory.jsonl
+  ├─ _emit_dependencies_json()    # writes dependencies.json
+  ├─ _emit_configs_json()         # writes configs.json
+  ├─ _emit_tests_json()           # writes tests.json
+  └─ _emit_sampled_files()        # writes samples/<filename>.txt
+```
+
+**Critical: single `_list_tracked_files` call.** The current code calls
+`_list_tracked_files` independently in `crawl_project` (line 62),
+`_crawl_file_inventory` (crawler_inventory.sh:28), `_crawl_config_inventory`
+(crawler_inventory.sh:98), and `_crawl_test_structure` (crawler_inventory.sh:178).
+The new implementation passes the file list as a parameter to all sub-functions.
+
+**All writes are atomic.** Each emitter writes to a temp file in the same
+directory (via `mktemp`), then `mv` to the final path. This prevents partial
+writes if the crawl is interrupted.
+
+### 3. `_emit_meta_json()` — Scan Metadata
+
+**File:** `lib/crawler.sh` (new function, replaces `_build_index_header`)
+
+Writes `.claude/index/meta.json`:
+
+```json
+{
+  "schema_version": 1,
+  "project_name": "my-project",
+  "scan_date": "2026-04-09T12:00:00Z",
+  "scan_commit": "abc1234",
+  "file_count": 342,
+  "total_lines": 48291,
+  "doc_quality_score": 65
+}
+```
+
+**Fix for issue #10 (wc -l per file in header):** The current `_build_index_header`
+at crawler.sh:233-271 counts total lines by running `wc -l` per file in a
+while-read loop — O(n) process spawns. Replace with a single `xargs wc -l`
+batch (same pattern already used in `_crawl_file_inventory` at
+crawler_inventory.sh:37-43). Compute `file_count` and `total_lines` from the
+inventory JSONL after it's emitted (read the file, count lines for file_count,
+sum the lines field for total_lines).
+
+### 4. `_emit_tree_txt()` — Directory Tree
+
+**File:** `lib/crawler.sh` (new function, replaces `_crawl_directory_tree`)
+
+Writes `.claude/index/tree.txt` as plain text (no markdown fences).
+
+**Fix for issue #9 (hardcoded `head -500` truncation):** The current
+`_crawl_directory_tree` at crawler.sh:154 pipes through `head -500`, silently
+dropping directories beyond line 500 with no indicator. The new emitter:
+- Writes the full tree output to `tree.txt` (no truncation)
+- Records the line count in `meta.json` as `"tree_lines": N`
+- The M69 markdown view generator applies display truncation with a proper
+  indicator when rendering the human-readable view
+
+The `_find_based_tree` fallback (crawler.sh:166-181) also gets the same treatment
+— remove `head -500`, write complete output.
+
+### 5. `_emit_inventory_jsonl()` — File Inventory
+
+**File:** `lib/crawler_inventory.sh` (rewrite of `_crawl_file_inventory`)
+
+Writes `.claude/index/inventory.jsonl`, one JSON record per line:
+
+```jsonl
+{"path":"src/main.ts","dir":"src","lines":142,"size":"small"}
+{"path":"src/utils/helpers.ts","dir":"src/utils","lines":89,"size":"small"}
+{"path":"tests/main.test.ts","dir":"tests","lines":203,"size":"medium"}
+```
+
+**Fix for issue #4 (O(n^2) bash string concatenation):** The current
+`_crawl_file_inventory` at crawler_inventory.sh:25-88 builds an `$output`
+string via `+=` in a while loop. Each append copies the entire accumulated
+string — O(n^2) for n files. The new emitter writes each record directly to
+the temp file via `>>` — O(n) total.
+
+**Batched line counting preserved:** Keep the `xargs wc -l` batch pattern from
+crawler_inventory.sh:37-43 for efficiency. Parse results into an associative
+array, then emit one JSONL record per file with the pre-computed line count.
+
+**Size categories:** Same thresholds as current code (tiny <50, small <200,
+medium <500, large <1000, huge >=1000).
+
+### 6. `_emit_dependencies_json()` — Dependency Graph
+
+**File:** `lib/crawler_deps.sh` (add new emitter alongside existing
+`_crawl_dependency_graph`)
+
+Writes `.claude/index/dependencies.json`:
+
+```json
+{
+  "manifests": [
+    {"file": "package.json", "manager": "npm", "deps": 12, "dev_deps": 8},
+    {"file": "pyproject.toml", "manager": "pip", "deps": 5, "dev_deps": 3}
+  ],
+  "key_dependencies": [
+    {"name": "react", "version": "^18.2.0", "manifest": "package.json"},
+    {"name": "fastapi", "version": ">=0.100", "manifest": "pyproject.toml"}
+  ]
+}
+```
+
+The existing `_crawl_dependency_graph` function's markdown output is preserved
+as-is for backward compatibility during M69 view generation. The new
+`_emit_dependencies_json` extracts the same data into structured JSON.
+
+### 7. `_emit_configs_json()` — Configuration Inventory
+
+**File:** `lib/crawler_inventory.sh` (add new emitter alongside existing
+`_crawl_config_inventory`)
+
+Writes `.claude/index/configs.json`:
+
+```json
+{
+  "configs": [
+    {"path": ".eslintrc.json", "purpose": "ESLint configuration"},
+    {"path": "tsconfig.json", "purpose": "TypeScript configuration"},
+    {"path": "Dockerfile", "purpose": "Docker container definition"}
+  ]
+}
+```
+
+Reuses the same case-match purpose detection from `_crawl_config_inventory`
+(crawler_inventory.sh:108-162).
+
+### 8. `_emit_tests_json()` — Test Infrastructure
+
+**File:** `lib/crawler_inventory.sh` (add new emitter alongside existing
+`_crawl_test_structure`)
+
+Writes `.claude/index/tests.json`:
+
+```json
+{
+  "test_dirs": [
+    {"path": "tests/", "file_count": 24},
+    {"path": "e2e/", "file_count": 8}
+  ],
+  "test_file_count": 32,
+  "frameworks": ["jest", "playwright"],
+  "coverage": ["nyc"]
+}
+```
+
+### 9. `_emit_sampled_files()` — File Content Samples
+
+**File:** `lib/crawler_content.sh` (rewrite of `_crawl_sample_files`)
+
+Writes individual files to `.claude/index/samples/<sanitized_path>.txt`.
+
+Path sanitization: replace `/` with `__` (e.g., `src/main.ts` becomes
+`src__main.ts.txt`). This avoids creating nested directories in the samples
+folder while preserving readability.
+
+**Budget-aware sampling preserved:** The priority ordering (README > entry
+points > config > architecture docs > tests > source) and per-file char budget
+from `_read_sampled_file` remain unchanged. The difference is that each sample
+is written to its own file instead of concatenated into a single string.
+
+Also write `.claude/index/samples/manifest.json` listing which files were
+sampled, their original paths, and their sizes:
+
+```json
+{
+  "samples": [
+    {"original": "README.md", "stored": "README.md.txt", "chars": 2400},
+    {"original": "src/main.ts", "stored": "src__main.ts.txt", "chars": 1800}
+  ],
+  "total_chars": 4200,
+  "budget_chars": 66000
+}
+```
+
+### 10. Budget Constant Consolidation
+
+**Files:** `lib/crawler.sh`, `lib/rescan.sh`, `lib/init.sh`, `tekhton.sh`
+
+**Fix for issue #6 (hardcoded 120000 magic numbers):** The value `120000` appears
+at four call sites:
+- `lib/init.sh:121` — `crawl_project "$project_dir" 120000`
+- `tekhton.sh:482` — `rescan_project "$PROJECT_DIR" 120000 "$local_full"`
+- `lib/rescan.sh:39,46,53,63,71,96` — passthrough to `crawl_project`
+- `lib/crawler.sh:33` — default parameter `${2:-120000}`
+
+Introduce a config key in `lib/config_defaults.sh`:
+
+```bash
+: "${PROJECT_INDEX_BUDGET:=120000}"
+```
+
+Replace all hardcoded `120000` references with `"${PROJECT_INDEX_BUDGET}"`.
+The default remains 120000 for backward compatibility, but users with very
+large codebases can increase it.
+
+**Note:** In the new structured architecture, this budget primarily governs the
+markdown view generation (M69) and sample file budgets — not the structured data
+files themselves, which are unbounded.
+
+### 11. Backward Compatibility Bridge
+
+**File:** `lib/crawler.sh`
+
+After emitting all structured files, the new `crawl_project()` ALSO generates
+PROJECT_INDEX.md using the existing assembly logic (reading from structured
+files instead of in-memory strings). This ensures all existing consumers
+continue to work unchanged until they are migrated in M68.
+
+This bridge is temporary — M69 replaces it with the proper view generator.
+
+Implementation: after all `_emit_*` calls complete, call a
+`_generate_legacy_index()` function that reads the structured files and
+assembles the markdown. This function uses `_truncate_section` for now —
+the truncation markers will still appear in the legacy view, but the underlying
+data in `.claude/index/` is complete.
+
+### 12. Fix `_record_scan_metadata()` Duplicate Work
+
+**File:** `lib/rescan_helpers.sh`
+
+**Fix for issue #10 (duplicate wc -l per file):** `_record_scan_metadata`
+at rescan_helpers.sh:154-184 recomputes file count and total lines from
+scratch using `_list_tracked_files` + per-file `wc -l`. After M67, this
+data is already in `meta.json` and `inventory.jsonl`.
+
+Rewrite `_record_scan_metadata` to:
+1. Read `file_count` and `total_lines` from `.claude/index/meta.json`
+2. Update only the scan-specific fields (date, commit) in both `meta.json`
+   and the PROJECT_INDEX.md header comments
+3. Remove the per-file `wc -l` loop entirely
+
+## Migration Impact
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `PROJECT_INDEX_BUDGET` | `120000` | Governs markdown view size, not structured data |
+
+No breaking changes. The new `crawl_project()` produces both structured files
+AND the legacy PROJECT_INDEX.md. Existing consumers see no difference until
+M68 migrates them.
+
+The `.claude/index/` directory already exists in projects that use the
+tree-sitter indexer (M03-M08). The new files coexist with the existing
+`tag_cache.json`, `task_history.jsonl`, and repo map cache.
+
+## Acceptance Criteria
+
+- `crawl_project()` writes all 7 structured files to `.claude/index/`
+- `meta.json` contains correct scan metadata including schema_version
+- `tree.txt` contains complete directory tree (no `head -500` truncation)
+- `inventory.jsonl` has one record per tracked file with correct line counts
+- `dependencies.json` captures all detected package manifests and key deps
+- `configs.json` lists all config files with purpose annotations
+- `tests.json` records test directories, frameworks, and coverage
+- `samples/` directory contains individual sample files with manifest
+- `_list_tracked_files` is called exactly once per crawl (not 4 times)
+- All file writes are atomic (mktemp + mv pattern)
+- `PROJECT_INDEX_BUDGET` config key replaces hardcoded `120000` at all call sites
+- Legacy PROJECT_INDEX.md is still generated for backward compatibility
+- `_record_scan_metadata` reads from structured data instead of recomputing
+- All existing tests pass (backward compatibility bridge ensures this)
+
+Tests:
+- `crawl_project` creates `.claude/index/` directory with all expected files
+- `meta.json` is valid JSON with all required fields
+- `inventory.jsonl` line count matches `meta.json` file_count
+- `inventory.jsonl` lines field sum matches `meta.json` total_lines
+- `dependencies.json` is valid JSON, captures manifests found in test fixture
+- `configs.json` is valid JSON, lists config files from test fixture
+- `tests.json` is valid JSON, detects test directories from test fixture
+- `samples/manifest.json` lists sampled files with correct stored paths
+- Sample files exist on disk and contain expected content
+- `tree.txt` is not truncated for test fixture (fixture is small)
+- Atomic write: interrupted crawl leaves no partial files
+- `PROJECT_INDEX_BUDGET` config key is respected when set
+- Legacy PROJECT_INDEX.md is generated and matches prior format
+- Existing `test_crawler_budget.sh` tests still pass
+
+Watch For:
+- **`.claude/index/` permissions:** The directory is created by `mkdir -p`. On
+  shared systems, ensure it inherits the project directory's umask. Do not
+  chmod explicitly — let the system default handle it.
+- **JSONL newline discipline:** Every JSONL record must end with exactly one
+  newline (`\n`). Use `printf '%s\n' "$record"` not `echo` (which may add
+  trailing newlines on some platforms). Empty inventory (zero files) should
+  produce an empty file, not a file with a blank line.
+- **JSON generation in bash:** Use `printf` with explicit escaping for JSON
+  string values. File paths may contain characters that need JSON escaping
+  (quotes, backslashes). Use a helper function `_json_escape()` that handles
+  `"`, `\`, and control characters.
+- **Associative array size limits:** Bash associative arrays can handle tens of
+  thousands of entries on modern systems. The `file_lines` array from
+  `_crawl_file_inventory` already uses this pattern — no change needed.
+- **`samples/` cleanup:** When re-crawling, remove stale sample files from
+  a prior crawl before writing new ones. `rm -f .claude/index/samples/*.txt`
+  at the start of `_emit_sampled_files()` handles this. Do NOT rm the entire
+  `samples/` directory (it might contain other files in future milestones).
+- **ARG_MAX safety:** The `_emit_inventory_jsonl` function writes records one
+  at a time via `>>` append. It never accumulates the full inventory in a
+  shell variable. This sidesteps the ARG_MAX concern entirely.
+- **schema_version field:** Set to `1` in this milestone. If the schema
+  changes in future milestones, consumers check this field and can handle
+  migration. Do not over-engineer versioning — a simple integer is sufficient.
+
+Seeds Forward:
+- M68 migrates consumers to read structured data directly
+- M69 generates the bounded markdown view from structured data
+- Complete structured data enables future features: incremental diffing,
+  cross-project comparison, programmatic queries
+- JSONL inventory enables `jq` one-liners for ad-hoc project analysis
+
+---
+
+## Archived: 2026-04-09 — Unknown Initiative
+
+# Milestone 68: Consumer Migration to Structured Index
+<!-- milestone-meta
+id: "68"
+status: "done"
+-->
+
+## Overview
+
+M67 produces structured project data in `.claude/index/` but all consumers
+still read the legacy PROJECT_INDEX.md markdown file. This milestone migrates
+every consumer to read structured data directly, fixing multiple pre-existing
+bugs in the process.
+
+Three consumers read PROJECT_INDEX.md today:
+
+1. **Intake agent** (`stages/intake.sh:97-98`) — Uses `_safe_read_file` with
+   an 8KB cap, which silently **rejects the entire file** (returns empty string)
+   for any project where the index exceeds 8KB. This means intake has been
+   running blind on most brownfield projects since M10.
+
+2. **Synthesis** (`lib/init_synthesize_helpers.sh:50-51`) — Loads via bare
+   `cat`, then applies `compress_context "summarize_headings"` when over budget,
+   which strips all non-heading lines — destroying the entire file inventory
+   table, dependency details, and sampled content.
+
+3. **Replan** (`lib/replan_brownfield.sh:39`) — Loads via bare `cat` with no
+   size gate at all. For a 500KB PROJECT_INDEX.md on a large project, this
+   injects the entire thing into the replan prompt, potentially blowing the
+   context window.
+
+Each consumer needs different data at different granularity levels. A shared
+reader API lets each consumer request exactly what it needs from the structured
+files.
+
+Depends on M67 for the structured data layer.
+
+## Scope
+
+### 1. Structured Index Reader API
+
+**New file:** `lib/index_reader.sh`
+
+Provides functions that read from `.claude/index/` and return formatted content
+suitable for prompt injection. All functions accept a project directory argument
+and gracefully fall back to legacy PROJECT_INDEX.md parsing when structured
+files don't exist (pre-M67 projects).
+
+#### Core functions:
+
+```bash
+# read_index_meta — Returns metadata as key=value pairs
+# Args: $1 = project directory
+# Output: "project_name=foo\nfile_count=342\ntotal_lines=48291\n..."
+read_index_meta()
+
+# read_index_tree — Returns directory tree text
+# Args: $1 = project directory, $2 = max_lines (optional, 0=unlimited)
+# Output: Plain text tree (truncated to max_lines if specified)
+read_index_tree()
+
+# read_index_inventory — Returns file inventory as formatted text
+# Args: $1 = project directory, $2 = max_records (optional, 0=unlimited)
+#        $3 = filter (optional: "dir:src" or "size:large,huge")
+# Output: Formatted table or record list
+read_index_inventory()
+
+# read_index_dependencies — Returns dependency summary
+# Args: $1 = project directory
+# Output: Formatted dependency text
+read_index_dependencies()
+
+# read_index_configs — Returns config file list
+# Args: $1 = project directory
+# Output: Formatted config table
+read_index_configs()
+
+# read_index_tests — Returns test infrastructure summary
+# Args: $1 = project directory
+# Output: Formatted test summary
+read_index_tests()
+
+# read_index_samples — Returns sampled file content
+# Args: $1 = project directory, $2 = max_total_chars (optional)
+# Output: Formatted sample blocks (markdown fenced)
+read_index_samples()
+
+# read_index_summary — Returns a bounded summary for prompt injection
+# Args: $1 = project directory, $2 = max_chars (total budget)
+# Output: Abbreviated project summary within budget
+read_index_summary()
+```
+
+**`read_index_summary()` is the key function.** It assembles a prompt-ready
+project summary within a caller-specified character budget. Internal allocation:
+
+1. Always include: meta header (~200 chars), tree (first 100 lines), test
+   summary (~500 chars)
+2. Priority fill: dependencies, configs, top-50 inventory records by size
+   (large/huge first), then samples with remaining budget
+3. No truncation markers — content is selected, not truncated
+
+This replaces the current pattern where consumers load the full file and then
+apply lossy compression.
+
+#### Legacy fallback:
+
+When `.claude/index/meta.json` doesn't exist (pre-M67 project that hasn't
+been re-crawled), all reader functions fall back to parsing PROJECT_INDEX.md
+using section extraction:
+
+```bash
+read_index_meta() {
+    local project_dir="$1"
+    local meta_file="${project_dir}/.claude/index/meta.json"
+    if [[ -f "$meta_file" ]]; then
+        # Parse JSON
+        ...
+    elif [[ -f "${project_dir}/PROJECT_INDEX.md" ]]; then
+        # Legacy: extract from HTML comments
+        ...
+    fi
+}
+```
+
+This ensures backward compatibility for projects that haven't re-scanned.
+
+### 2. Fix Intake Consumer (Issue #1 — CRITICAL)
+
+**Files:** `stages/intake.sh`, `prompts/intake_scan.prompt.md`
+
+**Current bug:** Lines 93-98 use `_safe_read_file` with `8192` byte cap.
+`_safe_read_file` (prompts.sh:51-73) is a **rejection gate**, not a truncating
+reader. If the file exceeds 8192 bytes, it returns an empty string and logs a
+warning. The comment says "capped to 8KB" but the behavior is "skip entirely
+if > 8KB". Any brownfield project with more than ~100 files produces an index
+larger than 8KB, so intake has been running blind.
+
+**Fix:** Replace the `_safe_read_file` call with `read_index_summary`:
+
+```bash
+# OLD (broken):
+# INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 8192)
+
+# NEW:
+export INTAKE_PROJECT_INDEX=""
+if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
+    INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
+fi
+```
+
+The intake agent gets an 8KB summary that includes metadata, tree overview,
+test infrastructure, and the most important inventory records — instead of
+either the full 120KB file or nothing at all.
+
+Also fix the identical pattern in `run_intake_create` at intake.sh:238-239.
+
+### 3. Fix Synthesis Consumer (Issue #2 — CRITICAL)
+
+**Files:** `lib/init_synthesize_helpers.sh`
+
+**Current bug:** `_assemble_synthesis_context` at line 50-51 loads via bare
+`cat`. When the context exceeds the model's budget, `_compress_synthesis_context`
+at line 145 calls `compress_context "$PROJECT_INDEX_CONTENT" "summarize_headings"`
+which runs:
+
+```bash
+echo "$content" | grep -E '^#{1,3} ' || true
+```
+
+This keeps only markdown headings, destroying:
+- The entire file inventory table (every `| path | lines | size |` row)
+- All dependency details (only `## Key Dependencies` heading survives)
+- All config details
+- All sampled file content
+
+The compressed result is nearly useless for synthesis — the agent gets headings
+like `## File Inventory` with no actual inventory data.
+
+**Fix:** Replace the `cat` load with `read_index_summary`, and update the
+existence guard at line 42 to also accept structured data:
+
+```bash
+# OLD guard:
+# if [[ ! -f "$index_file" ]]; then error "..."; return 1; fi
+
+# NEW guard:
+if [[ ! -f "$index_file" ]] && [[ ! -f "${project_dir}/.claude/index/meta.json" ]]; then
+    error "PROJECT_INDEX.md not found at ${index_file}"
+    error "Run 'tekhton --init' first to generate the project index."
+    return 1
+fi
+
+# OLD load:
+# PROJECT_INDEX_CONTENT=$(cat "$index_file")
+
+# NEW load:
+PROJECT_INDEX_CONTENT=$(read_index_summary "$project_dir" 60000)
+```
+
+The 60KB budget gives synthesis a rich but bounded view. The reader's internal
+prioritization ensures the most valuable data (large files, key deps,
+frameworks) is included first.
+
+Also update `_compress_synthesis_context` to handle the new format:
+- Remove the `compress_context "$PROJECT_INDEX_CONTENT" "summarize_headings"`
+  call entirely — the reader already produces bounded output
+- Keep the README, ARCHITECTURE.md, and git log compression steps as-is
+  (they operate on different content)
+
+### 4. Fix Replan Consumer (Issue #7)
+
+**File:** `lib/replan_brownfield.sh`
+
+**Current behavior:** `_generate_codebase_summary` at line 39 uses bare
+`cat "$index_file"` when PROJECT_INDEX.md exists and is recent. For large
+projects, this injects 120KB+ of raw markdown into the replan prompt with
+zero budget awareness.
+
+**Fix:** Replace `cat` with `read_index_summary`:
+
+```bash
+# OLD:
+# cat "$index_file"
+
+# NEW:
+read_index_summary "$PROJECT_DIR" 40000
+```
+
+The 40KB budget is appropriate for replan context — the agent needs enough
+to understand project structure but doesn't need every file listed.
+
+Also keep the staleness check (lines 20-36) but adapt it to read the scan
+commit from `meta.json` via `read_index_meta` instead of parsing HTML comments
+from the markdown file.
+
+### 5. Fix `_safe_read_file` Future Foot-Gun (Issue #8)
+
+**File:** `lib/prompts.sh`
+
+**Current risk:** `_safe_read_file` has a 1MB default cap (line 54). As
+PROJECT_INDEX.md grows, it will silently reject the file when consumed by
+other callers using the default cap. This is not a current bug but will
+become one as structured data grows.
+
+**Fix:** After M68, no consumer should be using `_safe_read_file` for
+PROJECT_INDEX.md. Add a comment documenting this:
+
+```bash
+# NOTE: Do not use _safe_read_file for PROJECT_INDEX.md.
+# Use read_index_summary() or read_index_*() from lib/index_reader.sh
+# which provide bounded, structured access to project index data.
+```
+
+This is a documentation fix, not a code change. The function itself is correct
+for its intended use (reading role files, design docs, etc.) — it's the
+*misuse* on PROJECT_INDEX.md that was the bug.
+
+### 6. Fix `_extract_scan_metadata` to Prefer Structured Data
+
+**File:** `lib/rescan_helpers.sh`
+
+`_extract_scan_metadata` at lines 143-150 parses HTML comments from
+PROJECT_INDEX.md using grep+sed. After M67, the canonical source for this
+data is `meta.json`.
+
+**Fix:** Check for `meta.json` first, fall back to HTML comment parsing:
+
+```bash
+_extract_scan_metadata() {
+    local index_file="$1"
+    local field="$2"
+    local project_dir
+    project_dir=$(dirname "$index_file")
+    local meta_file="${project_dir}/.claude/index/meta.json"
+
+    # Prefer structured data
+    if [[ -f "$meta_file" ]]; then
+        local json_field
+        # Map field names: "Scan-Commit" -> "scan_commit", "Last-Scan" -> "scan_date"
+        case "$field" in
+            Scan-Commit) json_field="scan_commit" ;;
+            Last-Scan)   json_field="scan_date" ;;
+            File-Count)  json_field="file_count" ;;
+            Total-Lines) json_field="total_lines" ;;
+            *) json_field="" ;;
+        esac
+        if [[ -n "$json_field" ]]; then
+            # Extract without jq dependency — simple grep+sed on formatted JSON
+            grep "\"${json_field}\"" "$meta_file" 2>/dev/null | \
+                sed 's/.*: *"\?\([^",}]*\)"\?.*/\1/' | tr -d '[:space:]' || true
+            return
+        fi
+    fi
+
+    # Legacy fallback: parse HTML comments from markdown
+    grep "<!-- ${field}:" "$index_file" 2>/dev/null | \
+        sed "s/.*<!-- ${field}: *\(.*\) *-->.*/\1/" | \
+        tr -d '[:space:]' || true
+}
+```
+
+### 7. Fix `_extract_sampled_files` Latent Bug
+
+**File:** `lib/rescan_helpers.sh`
+
+**Current bug:** `_extract_sampled_files` at line 225 uses regex `^### \``
+to find sampled file headings. But the crawler emits headings as `### filename`
+(without backticks — see crawler_content.sh:72: `output+="### ${f}"`). The
+regex pattern `^### \`` with backtick never matches, so `_extract_sampled_files`
+always returns empty, meaning the rescan never detects when sampled files
+have been modified.
+
+**Fix:** After M67, sampled files are tracked in
+`.claude/index/samples/manifest.json`. Rewrite `_extract_sampled_files` to
+read from the manifest:
+
+```bash
+_extract_sampled_files() {
+    local index_file="$1"
+    local project_dir
+    project_dir=$(dirname "$index_file")
+    local manifest="${project_dir}/.claude/index/samples/manifest.json"
+
+    if [[ -f "$manifest" ]]; then
+        # Extract "original" field values from manifest JSON
+        grep '"original"' "$manifest" 2>/dev/null | \
+            sed 's/.*"original": *"\([^"]*\)".*/\1/' || true
+        return
+    fi
+
+    # Legacy fallback (fixed regex — no backtick)
+    grep '^### ' "$index_file" 2>/dev/null | \
+        sed 's/^### //' | sed 's/`//g' || true
+}
+```
+
+## Migration Impact
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| (none) | | No new config keys. Reader API respects existing `PROJECT_INDEX_BUDGET` from M67 |
+
+**New source file:** `lib/index_reader.sh` — must be sourced in `tekhton.sh`
+alongside `crawler.sh`. Add the source line after the crawler source:
+
+```bash
+source "${TEKHTON_HOME}/lib/index_reader.sh"
+```
+
+**Backward compatibility:** All reader functions fall back to legacy
+PROJECT_INDEX.md parsing when `.claude/index/meta.json` doesn't exist. Projects
+that haven't re-crawled since M67 continue to work.
+
+## Acceptance Criteria
+
+- `read_index_summary()` returns bounded project overview within caller's budget
+- Intake agent receives project context for all project sizes (not empty for >8KB)
+- Synthesis context uses structured reader instead of `cat` + lossy compression
+- Replan context is budget-bounded via structured reader
+- `_extract_scan_metadata` reads from `meta.json` when available
+- `_extract_sampled_files` correctly identifies sampled files (manifest-based)
+- All reader functions gracefully fall back for pre-M67 projects
+- No consumer uses `_safe_read_file` for PROJECT_INDEX.md
+- `summarize_headings` compression strategy is no longer applied to index data
+- All existing tests pass
+
+Tests:
+- `read_index_meta` returns correct fields from `.claude/index/meta.json`
+- `read_index_meta` falls back to HTML comment parsing for legacy projects
+- `read_index_inventory` returns formatted records from JSONL
+- `read_index_inventory` with filter returns only matching records
+- `read_index_inventory` with max_records limits output correctly
+- `read_index_summary` respects character budget (output <= budget)
+- `read_index_summary` includes metadata, tree, tests in all budgets
+- `read_index_summary` fills with deps and inventory when budget allows
+- Intake receives non-empty project context for fixture project
+- Intake receives non-empty project context for legacy (pre-M67) fixture
+- Synthesis context is bounded without `summarize_headings` compression
+- Replan context is bounded without raw `cat` injection
+- `_extract_scan_metadata` reads "scan_commit" from meta.json
+- `_extract_scan_metadata` falls back for legacy project
+- `_extract_sampled_files` reads from samples/manifest.json
+- `_extract_sampled_files` falls back for legacy project (fixed regex)
+
+Watch For:
+- **JSON parsing without jq:** Tekhton has no `jq` dependency. All JSON
+  parsing uses grep+sed on formatted (pretty-printed) JSON. This is fragile
+  but acceptable for the simple, controlled schemas we emit. The `_emit_*`
+  functions in M67 MUST emit formatted JSON (one key per line) to make this
+  parsing reliable. Never minify the JSON output.
+- **Budget arithmetic in read_index_summary:** The function must track
+  accumulated chars as it adds sections, stopping when the budget is reached.
+  Use the same `used` + `remaining` pattern from `_crawl_sample_files`
+  (crawler_content.sh:28-29).
+- **JSONL streaming for inventory:** `read_index_inventory` should use
+  `while IFS= read -r line` to process JSONL line by line, not load the
+  entire file into a variable. For a 5,000-file project, the JSONL is ~300KB
+  — manageable in memory but better streamed for consistency.
+- **Fallback testing:** The legacy fallback paths must be tested explicitly.
+  Create a test fixture that has PROJECT_INDEX.md but no `.claude/index/`
+  directory. Every reader function should produce meaningful output from the
+  legacy format.
+- **Source ordering in tekhton.sh:** `lib/index_reader.sh` must be sourced
+  AFTER `lib/crawler.sh` (it may reference `_CRAWL_EXCLUDE_DIRS` or other
+  crawler globals). Place the source line immediately after the crawler
+  source block.
+
+Seeds Forward:
+- M69 uses the reader API to generate the markdown view
+- Structured reader enables future context-compiler integration (per-stage
+  inventory slicing based on task relevance)
+- `read_index_inventory` with filters enables targeted file discovery
+  (e.g., "show me all large files in src/") for future interactive features
+
+---
+
+## Archived: 2026-04-09 — Unknown Initiative
+
+# Milestone 69: Markdown View Generator, Rescan Rewrite & Legacy Migration
+<!-- milestone-meta
+id: "69"
+status: "done"
+-->
+
+## Overview
+
+M67 creates the structured data layer. M68 migrates consumers to read from it.
+This milestone completes the trilogy:
+
+1. **Markdown view generator** — Replaces the backward-compatibility bridge from
+   M67 with a proper, bounded PROJECT_INDEX.md renderer that assembles the human
+   view from structured data. No truncation markers, no lossy compression — just
+   intelligent record selection within budget.
+
+2. **Rescan rewrite** — The current incremental rescan (`lib/rescan.sh`,
+   `lib/rescan_helpers.sh`) performs surgical section replacement on the markdown
+   file using `_replace_section` and re-applies `_truncate_section` per section.
+   This approach has multiple issues:
+   - `_replace_section` passes section bodies through awk's ENVIRON (ARG_MAX
+     risk for large sections on macOS — issue #3)
+   - Orphaned truncation markers from deleted files persist (issue #11)
+   - The incremental complexity is no longer worth the maintenance cost when
+     the underlying data is structured (issue #12)
+   
+   Replace incremental markdown patching with structured data updates + markdown
+   view regeneration.
+
+3. **Legacy cleanup** — Remove `_truncate_section`, the compression cascade in
+   `_compress_synthesis_context`, and other code that only existed because of the
+   monolithic markdown architecture.
+
+4. **Test rewrite** — Update `tests/test_crawler_budget.sh` and add new tests
+   for the view generator and rescan rewrite.
+
+Depends on M68 for the consumer migration (no consumer reads raw markdown after M68).
+
+## Scope
+
+### 1. Markdown View Generator
+
+**New file:** `lib/index_view.sh`
+
+Provides `generate_project_index_view()` — reads from `.claude/index/` and
+writes a bounded, human-readable `PROJECT_INDEX.md`.
+
+```bash
+# generate_project_index_view — Assembles PROJECT_INDEX.md from structured data.
+# Args: $1 = project directory, $2 = budget in chars (default: PROJECT_INDEX_BUDGET)
+# Output: Writes PROJECT_INDEX.md to project directory
+generate_project_index_view()
+```
+
+**Internal structure:**
+
+```
+generate_project_index_view()
+  ├─ _render_header()         # From meta.json → markdown header with HTML comments
+  ├─ _render_tree()           # From tree.txt → ## Directory Tree (capped at 300 lines)
+  ├─ _render_inventory()      # From inventory.jsonl → ## File Inventory (smart selection)
+  ├─ _render_dependencies()   # From dependencies.json → ## Key Dependencies
+  ├─ _render_configs()        # From configs.json → ## Configuration Files
+  ├─ _render_tests()          # From tests.json → ## Test Infrastructure
+  └─ _render_samples()        # From samples/ → ## Sampled File Content
+```
+
+**Budget allocation (same percentages as M18):**
+
+| Section | % | Purpose |
+|---------|---|---------|
+| Tree | 10% | Directory structure |
+| Inventory | 15% | File listing |
+| Dependencies | 10% | Package manifests |
+| Configs | 5% | Config files |
+| Tests | 5% | Test infrastructure |
+| Samples | 55% | File content |
+
+**Key difference from old approach:** When a section's data fits within its
+allocation, it's included in full (no truncation). When data exceeds the
+allocation, the renderer **selects** records instead of truncating:
+
+- **Inventory:** Sort by size category (huge > large > medium > small > tiny),
+  then by directory breadth. Include records until budget is reached. Append a
+  count line: `... and 2,847 more files (see .claude/index/inventory.jsonl for
+  complete listing)`. This is a **selection** indicator, not a truncation marker
+  — the underlying data is complete.
+- **Tree:** Include first N lines (cap at 300 for very deep trees). Append:
+  `... (N more directories — see .claude/index/tree.txt for full tree)`.
+- **Samples:** Include highest-priority samples that fit. No truncation of
+  individual sample content — either a sample file fits or it's skipped.
+- **Deps/Configs/Tests:** These are typically small enough to fit in full.
+  If they somehow exceed budget, include the first N records.
+
+**Atomic write:** Write to temp file, then `mv` to `PROJECT_INDEX.md`.
+
+### 2. Update `crawl_project()` to Use View Generator
+
+**File:** `lib/crawler.sh`
+
+Replace the M67 backward-compatibility bridge (`_generate_legacy_index()`) with
+a call to `generate_project_index_view()`:
+
+```bash
+crawl_project() {
+    local project_dir="${1:-.}"
+    local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
+
+    # Phase 1: Emit structured data (M67)
+    _ensure_index_dir "$project_dir"
+    local file_list
+    file_list=$(_list_tracked_files "$project_dir")
+    _emit_meta_json "$project_dir" "$file_list"
+    _emit_tree_txt "$project_dir"
+    _emit_inventory_jsonl "$project_dir" "$file_list"
+    _emit_dependencies_json "$project_dir" "$file_list"
+    _emit_configs_json "$project_dir" "$file_list"
+    _emit_tests_json "$project_dir" "$file_list"
+    _emit_sampled_files "$project_dir" "$file_list" "$budget_chars"
+
+    # Phase 2: Generate human-readable view (M69)
+    generate_project_index_view "$project_dir" "$budget_chars"
+}
+```
+
+### 3. Rescan Rewrite — Structured Updates
+
+**File:** `lib/rescan.sh` (rewrite of `_update_index_sections`)
+
+The current `_update_index_sections` (rescan.sh:117-232) regenerates individual
+markdown sections and patches them into the file using `_replace_section`. This
+is replaced with a simpler flow:
+
+```bash
+_update_index_sections() {
+    local project_dir="$1"
+    local changed_files="$2"
+    local budget_chars="$3"
+
+    local file_list
+    file_list=$(_list_tracked_files "$project_dir")
+
+    # Determine which structured files need regeneration
+    local regen_tree=false regen_inventory=false
+    local regen_deps=false regen_configs=false regen_samples=false
+
+    # ... same detection logic as current code (lines 124-180) ...
+
+    # Regenerate only affected structured files
+    [[ "$regen_tree" == true ]]      && _emit_tree_txt "$project_dir"
+    [[ "$regen_inventory" == true ]] && _emit_inventory_jsonl "$project_dir" "$file_list"
+    [[ "$regen_deps" == true ]]      && _emit_dependencies_json "$project_dir" "$file_list"
+    [[ "$regen_configs" == true ]]   && _emit_configs_json "$project_dir" "$file_list"
+    [[ "$regen_samples" == true ]]   && _emit_sampled_files "$project_dir" "$file_list" "$budget_chars"
+
+    # Always update meta (scan date, commit, file count)
+    _emit_meta_json "$project_dir" "$file_list"
+
+    # Regenerate the markdown view from updated structured data
+    generate_project_index_view "$project_dir" "$budget_chars"
+}
+```
+
+**What this fixes:**
+
+- **Issue #3 (ARG_MAX risk):** `_replace_section` is no longer called. The old
+  function passed section bodies through awk's ENVIRON variable, which is subject
+  to `execve` ARG_MAX limits (~1MB on macOS). Large inventory sections could
+  silently fail. With structured updates, each emitter writes directly to files
+  — no shell variable accumulation of section bodies.
+
+- **Issue #11 (orphaned truncation markers):** No longer possible. The markdown
+  view is regenerated from scratch each time — there are no "old" markers to
+  become orphaned. If a file is deleted, it disappears from `inventory.jsonl`
+  on the next `_emit_inventory_jsonl` call, and the view generator never sees it.
+
+- **Issue #12 (incremental complexity not worth it):** The rescan still
+  performs incremental *detection* (which sections changed), but the *update*
+  is now a simple re-emit of affected structured files followed by a full view
+  regeneration. The view generator is fast (it reads files and formats text —
+  no `tree` command, no `wc -l`, no git calls). This gives us the performance
+  benefit of incremental detection without the complexity of surgical markdown
+  patching.
+
+### 4. Remove `_replace_section` and `_truncate_section`
+
+**Files:** `lib/rescan_helpers.sh`, `lib/crawler.sh`
+
+After M69, no code calls `_replace_section` or `_truncate_section`. Remove them:
+
+- **`_replace_section`** (rescan_helpers.sh:112-136) — DELETE. Was the ARG_MAX
+  risk vector. No longer needed when rescan regenerates views from structured data.
+
+- **`_truncate_section`** (crawler.sh:219-230) — DELETE. Was the function that
+  produced the `... (truncated to fit budget)` marker that triggered this entire
+  initiative. No longer needed when the view generator uses record selection
+  instead of string truncation.
+
+### 5. Remove Synthesis Compression Cascade (Issue #14)
+
+**File:** `lib/init_synthesize_helpers.sh`
+
+After M68 migrates synthesis to use `read_index_summary()`, the
+`_compress_synthesis_context` function's PROJECT_INDEX compression step is dead
+code. The function at lines 127-189 has a 4-step cascade:
+
+1. Compress index with `summarize_headings` ← **remove (M68 made this unnecessary)**
+2. Truncate README to 50 lines ← **keep**
+3. Truncate ARCHITECTURE.md to 50 lines ← **keep**
+4. Truncate git log to 10 entries ← **keep**
+
+Remove step 1 and its associated re-check block (lines 145-161). The README,
+ARCHITECTURE.md, and git log compression steps remain — they operate on
+different content that is NOT part of the structured index.
+
+Verify that `compress_context "summarize_headings"` in `lib/context_compiler.sh`
+is not called from anywhere else after this removal. If it is, keep the function
+but remove the call site in synthesis. If `summarize_headings` has no remaining
+callers, add a deprecation comment but don't remove the function yet (it may
+be useful for other contexts).
+
+### 6. Remove Old Crawler Section Assembly
+
+**File:** `lib/crawler.sh`
+
+After M69, the Phase 4 (truncation) and Phase 6 (assembly) blocks in
+`crawl_project()` are replaced by the view generator call. Remove:
+
+- Lines 65-77: Phase 4 truncation block (all `_truncate_section` calls)
+- Lines 91-103: Phase 6 assembly block (the `{ printf ... } > "$index_file"`)
+
+These are replaced by the single `generate_project_index_view()` call.
+
+### 7. Rescan `_record_scan_metadata` Simplification
+
+**File:** `lib/rescan_helpers.sh`
+
+M67 already rewrites `_record_scan_metadata` to read from structured data.
+M69 goes further: since the view is now regenerated from `meta.json` data,
+`_record_scan_metadata` only needs to update `meta.json`. The HTML comment
+updates in PROJECT_INDEX.md (`sed -i` calls at lines 176-183) are no longer
+needed — the view generator reads `meta.json` and emits fresh HTML comments.
+
+Simplify to:
+
+```bash
+_record_scan_metadata() {
+    local project_dir="$1"
+    # Update meta.json with current scan info
+    _emit_meta_json "$project_dir" "$(_list_tracked_files "$project_dir")"
+    # View will be regenerated by caller
+}
+```
+
+The `sed -i` calls that patch HTML comments in PROJECT_INDEX.md and the
+visible `**Scanned:**` line are removed. The view generator handles all of this.
+
+### 8. Test Rewrite
+
+**File:** `tests/test_crawler_budget.sh` (rewrite)
+
+The existing test file tests `_budget_allocator` and `_truncate_section`.
+After M69:
+
+- `_truncate_section` is deleted → remove those tests
+- `_budget_allocator` is still used by the view generator → keep those tests
+- Add new tests for the view generator
+
+**New test file:** `tests/test_index_structured.sh`
+
+Tests for the complete M67-M69 pipeline:
+
+```bash
+# Test: Structured index emission
+# - crawl_project writes all structured files
+# - meta.json has correct schema_version
+# - inventory.jsonl records match file count
+# - samples/manifest.json lists sampled files
+
+# Test: View generator produces valid markdown
+# - Output contains all 6 section headings
+# - Output fits within budget
+# - No truncation markers in output
+# - Selection indicators present when data exceeds section budget
+
+# Test: View generator budget compliance
+# - With 10000-char budget: output <= 10000 chars
+# - With 1000-char budget: output <= 1000 chars, still has header
+# - With large budget: output includes all data (no selection needed)
+
+# Test: Rescan structured update
+# - After adding a file, rescan updates inventory.jsonl
+# - After deleting a file, it disappears from inventory.jsonl
+# - After modifying a manifest, dependencies.json is regenerated
+# - View is regenerated with updated data
+
+# Test: Reader API (from M68)
+# - read_index_summary respects budget
+# - read_index_inventory with filter returns subset
+# - read_index_meta returns correct fields
+# - Legacy fallback works when .claude/index/ doesn't exist
+
+# Test: No truncation markers
+# - After crawl, PROJECT_INDEX.md does not contain "truncated to fit budget"
+# - After rescan, PROJECT_INDEX.md does not contain "truncated to fit budget"
+```
+
+**Update `tests/test_crawler_budget.sh`:**
+
+- Remove `_truncate_section` tests (function deleted)
+- Keep `_budget_allocator` tests (function still exists in view generator)
+- Add view generator budget compliance tests
+- Rename file to `tests/test_index_budget.sh` for clarity
+
+### 9. Migration: One-Time Upgrade from Legacy Format
+
+**File:** `lib/crawler.sh` (or `lib/rescan.sh`)
+
+When `rescan_project` or `crawl_project` is called on a project that has
+`PROJECT_INDEX.md` but no `.claude/index/` directory:
+
+1. Log: `"Upgrading to structured project index (one-time migration)..."`
+2. Run a full crawl (which now produces structured files + view)
+3. The old PROJECT_INDEX.md is overwritten by the new view
+
+This is not a parsing migration (we don't try to extract structured data from
+the old markdown). It's simply a full re-crawl. Given that `--reinit` and
+`--rescan --full` already trigger full crawls, the migration path is natural.
+
+For incremental rescan (without `--full`), if `.claude/index/meta.json` doesn't
+exist, force a full crawl:
+
+```bash
+# In rescan_project(), after the existing index check:
+if [[ ! -f "${project_dir}/.claude/index/meta.json" ]]; then
+    log "No structured index found — running full crawl for migration..."
+    crawl_project "$project_dir" "$budget_chars"
+    return $?
+fi
+```
+
+### 10. `.gitignore` Considerations
+
+**File:** Project's `.gitignore` (documentation only — Tekhton doesn't modify it)
+
+The `.claude/index/` directory contains generated data that should not be
+committed. Most projects already have `.claude/` in their `.gitignore` (added
+by `--init`). Document in the milestone that:
+
+- `.claude/index/` is gitignored by the existing `.claude/` pattern
+- If a project gitignores only specific `.claude/` subdirectories, they may
+  need to add `.claude/index/` explicitly
+- PROJECT_INDEX.md at the project root is intentionally NOT gitignored — it's
+  the human-readable view meant to be browsable
+
+## Migration Impact
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| (none) | | No new config keys |
+
+**Removed functions:**
+- `_truncate_section` (crawler.sh) — deleted
+- `_replace_section` (rescan_helpers.sh) — deleted
+- `_generate_legacy_index` (crawler.sh, M67 bridge) — deleted
+
+**New source file:** `lib/index_view.sh` — must be sourced in `tekhton.sh`
+alongside `lib/index_reader.sh` (M68). Add after the M68 source line.
+
+**Behavioral change:** PROJECT_INDEX.md no longer contains `... (truncated to
+fit budget)` markers. Instead, sections that exceed their budget show
+selection indicators like `... and N more files (see .claude/index/inventory.jsonl
+for complete listing)`. The underlying data in `.claude/index/` is always
+complete.
+
+## Acceptance Criteria
+
+- `generate_project_index_view()` produces valid markdown from structured data
+- PROJECT_INDEX.md output fits within `PROJECT_INDEX_BUDGET` chars
+- No `... (truncated to fit budget)` markers appear anywhere in the output
+- Selection indicators show when data exceeds section budget
+- Rescan uses structured file updates + view regeneration (no `_replace_section`)
+- `_truncate_section` and `_replace_section` are deleted
+- Synthesis compression cascade no longer compresses index content
+- Incremental rescan correctly detects and updates affected structured files
+- Legacy projects auto-migrate on first rescan or crawl
+- `test_crawler_budget.sh` updated (truncation tests removed, view tests added)
+- New `test_index_structured.sh` covers the full pipeline
+- All existing tests pass
+
+Tests:
+- View generator output contains all 6 section headings (## Directory Tree, etc.)
+- View generator output size <= budget for budgets 1000, 10000, 50000, 120000
+- View generator inventory section uses selection (not truncation) for large data
+- View generator tree section capped at 300 lines with indicator
+- View generator samples section includes only complete samples (no mid-file cuts)
+- Rescan with file addition updates inventory.jsonl and regenerates view
+- Rescan with file deletion removes from inventory.jsonl and regenerates view
+- Rescan with manifest change regenerates dependencies.json and view
+- Rescan forced full crawl produces identical result to fresh crawl
+- Legacy migration: project with old PROJECT_INDEX.md but no .claude/index/
+  triggers full crawl and creates structured files
+- No truncation markers in any output (grep -r "truncated to fit budget")
+- `_budget_allocator` tests still pass (function preserved for view generator)
+- `_truncate_section` is not callable (function removed)
+
+Watch For:
+- **View generator performance:** The generator reads multiple files from
+  `.claude/index/`. For typical projects this is fast (< 100ms). For very
+  large projects with thousands of inventory records, reading and sorting
+  the JSONL may take noticeable time. Monitor this and consider caching the
+  sorted inventory if it becomes a bottleneck.
+- **Selection indicator wording:** The indicators should guide users to the
+  complete data. Use consistent phrasing:
+  - Inventory: `... and N more files (see .claude/index/inventory.jsonl)`
+  - Tree: `... (N more lines — see .claude/index/tree.txt)`
+  - Samples: `... (N more files available — sampled M of N candidates)`
+- **Rescan atomicity:** The rescan now writes multiple structured files and
+  then regenerates the view. If interrupted between structured writes and
+  view generation, the structured data is updated but the view is stale.
+  This is acceptable — the next rescan or crawl will regenerate the view.
+  Do NOT try to make the entire rescan atomic (it would require writing all
+  files to a temp directory and then moving them all at once, which is
+  complex and fragile).
+- **Empty sections:** If a project has no dependencies (no package.json,
+  Cargo.toml, etc.), `dependencies.json` should contain `{"manifests":[],"key_dependencies":[]}`.
+  The view generator should render this as `(no package manifests detected)`
+  — the same text as the current fallback.
+- **Test fixture updates:** The existing test fixture at
+  `tests/fixtures/indexer_project/` may need additional files to exercise
+  the new structured output. Add a few config files and a test file to
+  ensure all emitters produce non-empty output.
+- **The `_budget_allocator` function stays.** It's still used by the view
+  generator to distribute budget across sections. Only `_truncate_section`
+  is removed. Update the test file name but keep the allocator tests.
+- **Don't remove `compress_context` itself.** Only remove the specific
+  call site in `_compress_synthesis_context` that applies `summarize_headings`
+  to PROJECT_INDEX_CONTENT. The `compress_context` function and its strategies
+  are used elsewhere and must remain.
+
+Seeds Forward:
+- Complete structured index is the foundation for V4 features: cross-project
+  analysis, programmatic codebase queries, AI-driven architecture review
+- The view generator pattern (structured data -> bounded human view) can be
+  applied to other artifacts (MILESTONE_ARCHIVE.md, RUN_SUMMARY.json)
+- With structured data, future rescans can produce a precise diff showing
+  exactly what changed since the last scan (new files, removed files,
+  size changes) — useful for drift detection
+
+---
+
+## Archived: 2026-04-09 — Unknown Initiative
+
+# Milestone 70: Coder Pre-Completion Self-Check
+<!-- milestone-meta
+id: "70"
+status: "done"
+-->
+
+## Overview
+
+Analysis of 14 historical REVIEWER_REPORT.md files shows that ~60% of all
+non-blocking reviewer findings are issues the coder could have caught itself
+before completing. File length violations alone account for ~38% of all
+non-blockers — the same files (tester.sh, gates.sh, metrics.sh) get flagged
+repeatedly across runs because the coder reads the 300-line rule at the start,
+implements for 30–80 turns, and forgets the rule by completion time.
+
+This milestone adds a mandatory pre-completion self-check step to the coder
+prompt's Execution Order and strengthens the 300-line rule in the default role
+template. No new template variables. No pipeline infrastructure. Pure prompt
+engineering targeting the dominant non-blocker categories.
+
+Depends on M66 (V3 Final Polish complete) as the stable baseline.
+
+## Files to Modify
+
+### 1. `prompts/coder.prompt.md` — Add Step 5 Self-Check and Strengthen Scope
+
+**Change A: Strengthen the Scope Adherence section (~line 122)**
+
+After the existing scope paragraph, append guidance for out-of-scope issues.
+The current text says "Do not expand scope" but gives the coder no outlet —
+so it either ignores problems (unlikely) or fixes them (creating scope-creep
+non-blockers). The new text gives an explicit recording mechanism.
+
+Add after the existing "Scope Adherence" paragraph (do NOT replace it):
+
+```markdown
+**Do NOT fix problems you discover outside your task scope.** If you notice bugs,
+style issues, missing error handling, or improvement opportunities in files you are
+reading that are unrelated to your task, record them in CODER_SUMMARY.md under
+`## Observed Issues (out of scope)` — one bullet per item with file path and brief
+description. The pipeline routes these to the appropriate cleanup mechanism. Fixing
+out-of-scope issues wastes review cycles and creates unnecessary non-blocking findings.
+```
+
+**Change B: Insert Step 5 self-check into the Execution Order section (~line 127)**
+
+The current Execution Order has 5 steps. Insert a new Step 5 between the current
+Step 4 (run analyze/test) and Step 5 (update CODER_SUMMARY.md). Renumber the
+old Step 5 to Step 6.
+
+Insert after `**Step 4:** Run \`{{ANALYZE_CMD}}\` and \`{{TEST_CMD}}\`.`:
+
+```markdown
+**Step 5: Pre-Completion Self-Check (mandatory before setting COMPLETE).**
+Before updating CODER_SUMMARY.md to COMPLETE, verify each item. Fix violations
+NOW — do not leave them for the reviewer:
+- **File length:** Every file you created or modified must be under 300 lines
+  (`wc -l`). If any file exceeds 300 lines, extract functions into a new file
+  until it is under 300. Do not leave a file at 310 or 320 lines — the ceiling
+  is 300.
+- **Stale references:** If you renamed a function, variable, config key, or
+  constant, grep the project for the OLD name. Update any remaining references
+  in comments, docs, log messages, and error strings.
+- **Dead code:** Remove any variables you declared but never read, functions
+  you wrote but never call, and conditional branches that are unreachable.
+- **Consistency:** If you added a new file, verify it appears in
+  CODER_SUMMARY.md under `## Files Modified` with the annotation `(NEW)`.
+  If the project has a repository layout section in CLAUDE.md or
+  ARCHITECTURE.md, add the new file there.
+```
+
+Renumber the current Step 5 to:
+
+```markdown
+**Step 6:** Update `CODER_SUMMARY.md` with final status, root cause, and files modified.
+```
+
+### 2. `templates/coder.md` — Strengthen 300-Line Rule and Fix Summary Conflict
+
+**Change C: Strengthen the 300-line rule in Code Quality section**
+
+Replace the current bullet:
+```
+- Keep files under 300 lines. Split if longer.
+```
+
+With:
+```markdown
+- **300-line hard ceiling.** Every file you create or modify must be under 300
+  lines after your changes. If a file exceeds 300 lines, extract helper
+  functions into a new file immediately — do not leave it for a future cleanup.
+  Run `wc -l` on every file you touched before finishing. The reviewer treats
+  this as a recurring finding; prevent it by checking before you finish.
+```
+
+**Change D: Fix the CODER_SUMMARY.md instruction conflict in Required Output section**
+
+The current text says "Create CODER_SUMMARY.md **before writing any code**" but
+the phrasing is easy to misinterpret. The coder failed to produce CODER_SUMMARY.md
+at all in ~6% of runs. Replace the Required Output section header and first
+paragraph with emphatic write-first language that aligns with the prompt's Step 1.
+
+Replace from `## Required Output` through the paragraph before the skeleton with:
+
+```markdown
+## Required Output
+
+`CODER_SUMMARY.md` is your primary deliverable alongside your code changes.
+
+**Write-first rule:** Create `CODER_SUMMARY.md` with the IN PROGRESS skeleton as
+your VERY FIRST action — before reading files, before writing any code. The
+execution order in the prompt controls this. If CODER_SUMMARY.md does not exist
+on disk after your run, the pipeline classifies your run as a failure regardless
+of what code you produced.
+```
+
+Then replace the post-skeleton paragraph (the paragraph starting with "Update the
+file throughout your work..." through "Required sections:") with:
+
+```markdown
+**Update continuously:** Update the file throughout your work as you complete items.
+As you implement, update `## What Was Implemented` and `## Files Modified` after each
+logical change. Do not batch updates to the end.
+
+**Finalize last:** As your final act, set `## Status` to `COMPLETE` (or leave
+`IN PROGRESS` if work remains) after passing the pre-completion self-check. Ensure
+all sections reflect what was actually done. Required sections:
+```
+
+Keep the skeleton block between these two paragraphs unchanged. Keep the
+required-sections bullet list that follows the post-skeleton paragraph unchanged.
+The key phrases `before writing any code`, `IN PROGRESS skeleton`,
+`Update the file throughout your work`, `As your.*final act`,
+`set.*## Status.*to.*COMPLETE`, and `Do NOT set COMPLETE if any planned work is
+unfinished` must all be preserved — existing tests grep for them.
+
+Add to the required sections list:
+```
+- `## Observed Issues (out of scope)`: problems noticed but not fixed (when applicable)
+```
+
+### 3. `tests/test_coder_role_before_code.sh` — Verify tests still pass
+
+This test greps `templates/coder.md` for exact phrases. All of these phrases
+MUST appear in the new text (see "preserved phrases" note in Change D above):
+- `'before writing any code'`
+- `'IN PROGRESS skeleton'`
+- `'Update the file throughout your work'`
+- `'As your.*final act'` (regex)
+- `'set.*## Status.*to.*COMPLETE'` (regex)
+- `'Do NOT set COMPLETE if any planned work is unfinished'`
+
+Run `bash tests/test_coder_role_before_code.sh` and
+`bash tests/test_coder_role_summary_structure.sh` to verify no regressions.
+
+## Acceptance Criteria
+
+- [ ] `prompts/coder.prompt.md` has a 6-step Execution Order (was 5)
+- [ ] Step 5 contains file-length, stale-references, dead-code, and consistency checks
+- [ ] Scope Adherence section includes the "record, don't fix" paragraph with
+      `## Observed Issues (out of scope)` guidance
+- [ ] `templates/coder.md` Code Quality section has the strengthened 300-line rule
+      with `wc -l` instruction
+- [ ] `templates/coder.md` Required Output section has write-first emphasis and
+      pipeline-failure consequence language
+- [ ] All 6 key phrases from `test_coder_role_before_code.sh` are present in
+      the new `templates/coder.md` text
+- [ ] `bash tests/test_coder_role_before_code.sh` passes (8/8)
+- [ ] `bash tests/test_coder_role_summary_structure.sh` passes (11/11)
+- [ ] `bash tests/test_coder_role_status_field.sh` passes (10/10)
+- [ ] `bash tests/run_tests.sh` passes with no new failures
+- [ ] `shellcheck` clean on any `.sh` files modified
+- [ ] No new template variables introduced
+- [ ] No changes to pipeline infrastructure (`lib/`, `stages/`) — prompt-only changes
+
+## Watch For
+
+- The self-check step must say "Every file you **created or modified**" — not
+  "every file in the project." The coder should only check files it touched,
+  not audit the entire codebase for 300-line violations.
+- The phrase `Update the file throughout your work` must appear verbatim in
+  `templates/coder.md` — `test_coder_role_before_code.sh` Test 3 greps for it.
+- Do NOT change the CODER_SUMMARY.md skeleton block (the ``` section with
+  `## Status: IN PROGRESS`, `(fill in as you go)` placeholders). Multiple
+  tests and the unfilled-skeleton detector in `stages/coder.sh:768` grep for
+  these exact placeholder strings.
+- The `## Observed Issues (out of scope)` section in CODER_SUMMARY.md is
+  informational only — no pipeline parser reads it. If a downstream consumer
+  is added later (e.g., to auto-feed cleanup), that's a separate milestone.
+- The reviewer agent DOES read CODER_SUMMARY.md in full. Without guidance it
+  may flag items in `## Observed Issues` as things the coder should have fixed,
+  creating the exact non-blocker findings this milestone aims to prevent. A
+  follow-up milestone should add a one-liner to `prompts/reviewer.prompt.md`
+  telling the reviewer to ignore this section (it's routed to cleanup, not
+  review). Not in scope here — the section is new and the reviewer won't
+  encounter it until M70 ships.
+
+## Seeds Forward
+
+- M71 adds bash-specific hygiene rules to Tekhton's own project role file,
+  building on the self-check approach established here.
+- The `## Observed Issues` section creates a structured channel that could
+  feed the cleanup agent in a future milestone.
+- The self-check step lives in `coder.prompt.md` only. `coder_rework.prompt.md`
+  and `jr_coder.prompt.md` have no execution order and don't inherit it. A
+  future milestone could add a lightweight "verify your rework didn't introduce
+  file-length violations" step to the rework prompt.
+- A follow-up should add a one-liner to `prompts/reviewer.prompt.md` telling
+  the reviewer to ignore `## Observed Issues (out of scope)` in CODER_SUMMARY.md.
+
+---
+
+## Archived: 2026-04-09 — Unknown Initiative
+
+# Milestone 71: Tekhton Shell Hygiene Rules
+<!-- milestone-meta
+id: "71"
+status: "done"
+-->
+
+## Overview
+
+~11% of all non-blocking reviewer findings are defensive-coding gaps specific
+to bash: missing `|| true` on grep under `set -e`, `local var=$(cmd)` masking
+exit codes (shellcheck SC2155), missing `--` before variable arguments. These
+are mechanical, predictable rules that the coder would follow if told explicitly.
+
+The current coder role file says "Follow the project's style guide and linting
+rules" — too generic. This milestone adds explicit shell hygiene rules to
+Tekhton's own project-level coder role file (`.claude/agents/coder.md`). This
+is the correct location: project-specific rules live in the role file, not in
+the reusable prompt template.
+
+No new template variables. No pipeline changes. No changes to the reusable
+`templates/coder.md` or `prompts/coder.prompt.md`. This is a single-file change
+to the project's own agent configuration.
+
+Depends on M70 so the self-check mechanism is already in place — the hygiene
+rules give the coder concrete things to verify during that self-check step.
+
+## Files to Modify
+
+### 1. `.claude/agents/coder.md` — Add Shell Hygiene Section
+
+Add a new section after the existing `### Shell Standards` section (which covers
+`set -euo pipefail`, shellcheck, bash 4+, quoting, and `[[ ]]`). The new section
+covers the specific patterns that reviewers catch repeatedly.
+
+Add this section:
+
+```markdown
+### Shell Hygiene (prevents recurring reviewer findings)
+These rules address the most common non-blocking findings from code review.
+Follow them to produce cleaner output that passes review without notes.
+
+- **grep under set -e:** `grep` returns exit code 1 when zero lines match,
+  which kills `set -e`. Every `grep` call where zero matches is a valid
+  (non-error) outcome must end with `|| true`. Pattern:
+  `count=$(grep -c 'pat' file || true)`. Note: `sed` and `awk` return 0 on
+  zero matches — they do NOT need `|| true` for this reason. Only add
+  `|| true` to sed/awk when the command itself may fail (e.g., missing file).
+- **Local variable assignment:** Never combine `local` with command substitution
+  on the same line — `local var=$(cmd)` masks the exit code (shellcheck SC2155).
+  Use two lines: `local var; var=$(cmd)`.
+- **Option terminator:** Use `--` before arguments derived from variables in
+  `grep`, `sed`, `rm`, and `find` to prevent flag injection.
+  Pattern: `grep -- "$pattern" "$file"`
+- **Sourced files:** `.sh` files sourced into the pipeline (`lib/`, `stages/`)
+  must NOT have their own `set -euo pipefail` — they inherit the caller's
+  settings. Only standalone entry-point scripts need it.
+- **Stale references after rename:** When renaming a function or variable, use
+  `grep -rn 'old_name'` across the project to find all references — including
+  comments, log messages, error strings, and test fixtures. Update them all.
+- **File length:** After your changes, run `wc -l` on every file you created or
+  modified. If any exceeds 300 lines, extract functions into a new `_helpers.sh`
+  or similar companion file. Do not leave files at 310–320 lines.
+```
+
+### 2. Verify existing test integrity
+
+Run `bash tests/run_tests.sh` to confirm no test regressions. Since this
+milestone only modifies `.claude/agents/coder.md` (a project role file, not
+a template or library), no tests should be affected.
+
+## Acceptance Criteria
+
+- [ ] `.claude/agents/coder.md` has a `### Shell Hygiene` section
+- [ ] Section contains rules for: grep `|| true`, SC2155 two-line local, `--`
+      option terminator, sourced file `set -euo`, stale references, file length
+- [ ] Each rule includes a concrete pattern/example
+- [ ] No changes to `templates/coder.md` (the reusable template)
+- [ ] No changes to `prompts/coder.prompt.md` (the prompt template)
+- [ ] No changes to any `lib/` or `stages/` files
+- [ ] `bash tests/run_tests.sh` passes with no new failures
+
+## Watch For
+
+- The sourced-file rule (`lib/` and `stages/` files must NOT have their own
+  `set -euo pipefail`) is specific to Tekhton's architecture where all library
+  files are sourced into `tekhton.sh`. This rule would be wrong for projects
+  with standalone scripts. This is why it belongs in the project role file,
+  not the reusable template.
+- The file-length rule here is deliberately redundant with the strengthened rule
+  in `templates/coder.md` (M70) and the self-check step in `coder.prompt.md`
+  (M70). Triple reinforcement is intentional — this is the #1 non-blocker
+  category and historically the coder has ignored single mentions.
+- Do NOT add rules that are already covered by shellcheck (e.g., unquoted
+  variables, `[ ]` vs `[[ ]]`). The existing "Shellcheck clean" rule handles
+  those. The hygiene rules target patterns that shellcheck does NOT catch well
+  or at all (like `|| true` on grep, or stale references after rename).
+- The `|| true` rule is specific to `grep`. Do NOT extend it to `sed` or `awk`
+  — those return 0 on zero matches. Blanket `|| true` on sed/awk masks real
+  errors (malformed expressions, missing files).
+- Keep the section concise. The role file is read at prompt start — excessive
+  length reduces the coder's ability to retain later instructions.
+
+## Seeds Forward
+
+- If other bash projects adopt Tekhton, this section serves as a template for
+  their own `.claude/agents/coder.md` shell hygiene section.
+- The patterns documented here could eventually feed an automated pre-commit
+  check in `lib/gates.sh`, but that is out of scope for this milestone.

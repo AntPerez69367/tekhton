@@ -28,7 +28,7 @@ set -euo pipefail
 # Shows existing section content before each question so the user can see
 # what was already written and add what's missing.
 # Calls Claude in batch mode to produce an updated complete DESIGN.md.
-# The shell writes the file. No --dangerously-skip-permissions.
+# The shell writes the file.
 #
 # Returns 0 if DESIGN.md was updated, 1 otherwise.
 run_plan_followup_interview() {
@@ -179,6 +179,11 @@ run_plan_followup_interview() {
         "${PLAN_INTERVIEW_MAX_TURNS:-5}" \
         "$followup_prompt" \
         "$log_file") || batch_exit=$?
+
+    # Trim preamble lines before the first top-level heading.
+    if [[ -n "$updated_content" ]]; then
+        updated_content=$(printf '%s' "$updated_content" | _trim_document_preamble)
+    fi
 
     local design_status="not created"
     if [[ -n "$updated_content" ]]; then

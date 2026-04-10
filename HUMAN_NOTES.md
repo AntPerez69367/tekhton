@@ -12,10 +12,8 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 - `[FEAT]` — new mechanic or system, architectural work
 - `[POLISH]` — visual/UX improvement, no logic changes
 
-
 ## Features
 
 ## Bugs
-
 
 ## Polish

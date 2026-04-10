@@ -86,6 +86,11 @@ _synthesize_design() {
 
     echo
 
+    # Trim preamble lines before the first top-level heading.
+    if [[ -n "$design_content" ]]; then
+        design_content=$(printf '%s' "$design_content" | _trim_document_preamble)
+    fi
+
     if [[ -n "$design_content" ]]; then
         local design_file="${project_dir}/DESIGN.md"
         printf '%s\n' "$design_content" > "$design_file"
@@ -161,9 +166,18 @@ _synthesize_claude() {
 
     echo
 
+    # Trim preamble lines before the first top-level heading.
+    if [[ -n "$claude_content" ]]; then
+        claude_content=$(printf '%s' "$claude_content" | _trim_document_preamble)
+    fi
+
     if [[ -n "$claude_content" ]]; then
         local claude_file="${project_dir}/CLAUDE.md"
         printf '%s\n' "$claude_content" > "$claude_file"
+        # Append tekhton-managed marker for artifact detection (idempotency guard)
+        if ! grep -q '<!-- tekhton-managed -->' "$claude_file"; then
+            echo "<!-- tekhton-managed -->" >> "$claude_file"
+        fi
         local line_count
         line_count=$(wc -l < "$claude_file" | tr -d '[:space:]')
         success "CLAUDE.md synthesized (${line_count} lines)."

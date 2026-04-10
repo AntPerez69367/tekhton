@@ -72,18 +72,33 @@ emit_init_summary() {
     local attention_items=0
     local attention_lines=""
 
-    # Check ARCHITECTURE_FILE
-    if [[ ! -f "${project_dir}/ARCHITECTURE.md" ]]; then
-        attention_lines+="    ARCHITECTURE_FILE not detected — create one or set to \"\" to skip\n"
-        attention_items=$((attention_items + 1))
+    # Code evidence: true when file-based language detection found something (not just
+    # the CLAUDE.md fallback). A project with only planning docs (post --plan, pre-code)
+    # has file_count > 0 but no actual source files, so brownfield checks should skip.
+    local _code_evidence=false
+    if [[ -z "$languages" ]] || echo "$languages" | grep -qvF '|CLAUDE.md'; then
+        _code_evidence=true
     fi
 
-    # Check for pre-existing tests
-    local test_cmd
-    test_cmd=$(_best_command "$commands" "test" 2>/dev/null || true)
-    if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
-        attention_lines+="    No test command detected — tester will generate from scratch\n"
-        attention_items=$((attention_items + 1))
+    # Check ARCHITECTURE_FILE — only warn if explicitly set to a path that doesn't exist
+    # (broken reference). Empty/unset is the normal default; agents create the file organically.
+    if [[ -f "${project_dir}/.claude/pipeline.conf" ]]; then
+        local _conf_arch=""
+        _conf_arch=$(grep '^ARCHITECTURE_FILE=' "${project_dir}/.claude/pipeline.conf" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+        if [[ -n "$_conf_arch" ]] && [[ ! -f "${project_dir}/${_conf_arch}" ]]; then
+            attention_lines+="    ARCHITECTURE_FILE=\"${_conf_arch}\" not found — create it or set to \"\" in pipeline.conf\n"
+            attention_items=$((attention_items + 1))
+        fi
+    fi
+
+    # Check for pre-existing tests (skip on greenfield — no tests expected yet)
+    if [[ "$file_count" -gt 0 ]] && [[ "$_code_evidence" == "true" ]]; then
+        local test_cmd
+        test_cmd=$(_best_command "$commands" "test" 2>/dev/null || true)
+        if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
+            attention_lines+="    No test command detected — tester will generate from scratch\n"
+            attention_items=$((attention_items + 1))
+        fi
     fi
 
     # Check for low-confidence commands
@@ -231,7 +246,7 @@ emit_init_report_file() {
         # Attention items
         echo "## Items Needing Review"
         echo ""
-        _report_attention_items "$project_dir" "$commands"
+        _report_attention_items "$project_dir" "$commands" "$file_count" "$languages"
 
         # Summary stats
         echo "## Project Summary"
@@ -336,18 +351,35 @@ _report_config_decisions() {
 _report_attention_items() {
     local project_dir="$1"
     local commands="$2"
+    local file_count="${3:-0}"
+    local languages="${4:-}"
     local has_items=false
 
-    if [[ ! -f "${project_dir}/ARCHITECTURE.md" ]]; then
-        echo "- ARCHITECTURE_FILE not detected — create one or set to \"\" in pipeline.conf"
-        has_items=true
+    # Same code-evidence logic as emit_init_summary: skip brownfield checks when
+    # all language detection came from CLAUDE.md (plan-only, no source files yet).
+    local _code_evidence=false
+    if [[ -z "$languages" ]] || echo "$languages" | grep -qvF '|CLAUDE.md'; then
+        _code_evidence=true
     fi
 
-    local test_cmd
-    test_cmd=$(echo "$commands" | grep "^test|" | head -1 | cut -d'|' -f2 || true)
-    if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
-        echo "- No test command detected — set TEST_CMD in pipeline.conf"
-        has_items=true
+    # Check ARCHITECTURE_FILE — only warn if explicitly set to a path that doesn't exist
+    # (broken reference). Empty/unset is the normal default; agents create the file organically.
+    if [[ -f "${project_dir}/.claude/pipeline.conf" ]]; then
+        local _conf_arch=""
+        _conf_arch=$(grep '^ARCHITECTURE_FILE=' "${project_dir}/.claude/pipeline.conf" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+        if [[ -n "$_conf_arch" ]] && [[ ! -f "${project_dir}/${_conf_arch}" ]]; then
+            echo "- ARCHITECTURE_FILE=\"${_conf_arch}\" not found — create it or set to \"\" in pipeline.conf"
+            has_items=true
+        fi
+    fi
+
+    if [[ "$file_count" -gt 0 ]] && [[ "$_code_evidence" == "true" ]]; then
+        local test_cmd
+        test_cmd=$(echo "$commands" | grep "^test|" | head -1 | cut -d'|' -f2 || true)
+        if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
+            echo "- No test command detected — set TEST_CMD in pipeline.conf"
+            has_items=true
+        fi
     fi
 
     if [[ -n "$commands" ]]; then

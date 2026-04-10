@@ -14,7 +14,8 @@ set -euo pipefail
 # =============================================================================
 
 # _display_milestone_summary — Show the milestone review screen.
-# Reads the file once and extracts both project name and milestones.
+# Checks DAG milestone directory first (when MILESTONE_DAG_ENABLED=true),
+# then falls back to reading inline milestone headings from CLAUDE.md.
 _display_milestone_summary() {
     local claude_file="$1"
     local file_content
@@ -26,10 +27,35 @@ _display_milestone_summary() {
         project_name=$(basename "$PROJECT_DIR")
     fi
 
-    local milestones
-    milestones=$(echo "$file_content" | grep -E '^#{2,4} Milestone [0-9]+' | sed 's/^#* //' || true)
-    local milestone_count
-    milestone_count=$(echo "$milestones" | grep -c '.' || true)
+    local milestones=""
+    local milestone_count=0
+
+    # Try DAG directory first when enabled
+    if [[ "${MILESTONE_DAG_ENABLED:-false}" == "true" ]] \
+        && has_milestone_manifest 2>/dev/null; then
+        load_manifest || true
+        milestone_count=$(dag_get_count)
+        if [[ "$milestone_count" -gt 0 ]]; then
+            local i
+            for (( i = 0; i < milestone_count; i++ )); do
+                local id
+                id=$(dag_get_id_at_index "$i")
+                local title
+                title=$(dag_get_title "$id")
+                if [[ -n "$milestones" ]]; then
+                    milestones="${milestones}"$'\n'"Milestone ${id}: ${title}"
+                else
+                    milestones="Milestone ${id}: ${title}"
+                fi
+            done
+        fi
+    fi
+
+    # Fall back to inline CLAUDE.md headings
+    if [[ "$milestone_count" -eq 0 ]]; then
+        milestones=$(echo "$file_content" | grep -E '^#{2,4} Milestone [0-9]+' | sed 's/^#* //' || true)
+        milestone_count=$(echo "$milestones" | grep -c '.' || true)
+    fi
 
     header "Tekhton Plan — Milestone Summary"
     echo "  Project: ${project_name}"
@@ -41,7 +67,7 @@ _display_milestone_summary() {
             echo "  ${line}"
         done
     else
-        warn "  No milestone headings found in CLAUDE.md."
+        warn "  No milestones found in milestone directory or CLAUDE.md."
         warn "  The file may use a different heading format."
     fi
 

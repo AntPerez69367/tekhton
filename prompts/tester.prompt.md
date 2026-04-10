@@ -68,6 +68,13 @@ Task implemented: {{TASK}}
   removed (per CODER_SUMMARY.md), mark it for removal: `- ORPHAN: [file] reason`
 - Your tests WILL be independently audited. Write them as if a skeptical
   senior engineer will review every assertion.
+- NEVER read live repo artifact files (build reports, logs, pipeline state,
+  config state) directly in tests. Always create controlled fixtures in a temp
+  directory that your test owns. Tests must be deterministic — depending on
+  mutable project files makes them flaky and order-dependent.
+- Tests that validate specific run outcomes (e.g., "the last pipeline run
+  produced X") belong in the commit message or CODER_SUMMARY.md, not the
+  test suite. Tests must verify code behavior, not pipeline state.
 
 ## Critical: Read Before You Write
 Before writing any test that instantiates a model or calls a method, read the

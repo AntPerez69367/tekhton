@@ -13,8 +13,10 @@ set -euo pipefail
 # _call_planning_batch — Call claude in batch mode and print text content to stdout.
 #
 # Uses --output-format text so the response is plain text with no JSON parsing.
-# Does NOT use --dangerously-skip-permissions — planning agents generate text
-# only; the caller (shell) is responsible for writing any files.
+# Uses --dangerously-skip-permissions to prevent Claude's permission system from
+# intercepting the prompt and returning a permission request message instead of
+# content. The caller (shell) is responsible for writing any files — Claude only
+# generates text output here.
 #
 # The response is tee'd to the log file and also passed through to stdout so
 # the caller can capture it with output=$(_call_planning_batch ...).
@@ -79,6 +81,7 @@ _call_planning_batch() {
         --model "$model" \
         --max-turns "$max_turns" \
         --output-format text \
+        --dangerously-skip-permissions \
         -p \
         < "$_prompt_file" \
         2>&1 | tee -a "$log_file"
@@ -107,6 +110,42 @@ _call_planning_batch() {
     fi
 
     return "${_pst[0]}"
+}
+
+# _trim_document_preamble — Strip leading non-document lines before the first
+# top-level markdown heading (`^# `).
+#
+# Claude sometimes emits a preamble sentence ("I have enough context...",
+# "Here is the generated document...") before the actual markdown document.
+# This function removes those lines so the on-disk file starts cleanly.
+#
+# Reads content from stdin, writes trimmed content to stdout.
+# If no `^# ` heading is found, returns the input unchanged.
+# If the first line already starts with `# `, returns unchanged (fast path).
+_trim_document_preamble() {
+    local content
+    content=$(cat)
+
+    # Fast path: already starts with a heading
+    local first_line
+    first_line=$(printf '%s\n' "$content" | head -1)
+    if [[ "$first_line" == "#"* ]]; then
+        printf '%s\n' "$content"
+        return 0
+    fi
+
+    # Find the first line that starts with "# " (top-level heading)
+    local heading_line
+    heading_line=$(printf '%s\n' "$content" | grep -n '^# ' | head -1 | cut -d: -f1)
+
+    if [[ -z "$heading_line" ]]; then
+        # No heading found — return unchanged
+        printf '%s\n' "$content"
+        return 0
+    fi
+
+    # Strip everything before the heading
+    printf '%s\n' "$content" | tail -n +"$heading_line"
 }
 
 # _extract_template_sections — Parse a template file and print section data.

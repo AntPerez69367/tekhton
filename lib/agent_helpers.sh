@@ -219,13 +219,31 @@ ${git_diff_stat}
     fi
 
     if [[ "$stage" = "coder" ]]; then
+        # Detect missing or placeholder-only summary
+        local _summary_state="exists"
+        if [[ ! -f "$summary_file" ]]; then
+            _summary_state="missing"
+        elif grep -q 'fill in as you go\|update as you go' "$summary_file" 2>/dev/null; then
+            _summary_state="placeholder"
+        fi
+
         context="${context}
-### Instructions
+### Instructions"
+        if [[ "$_summary_state" != "exists" ]]; then
+            context="${context}
+1. CODER_SUMMARY.md is ${_summary_state} — recreate it NOW with actual content from your work so far before doing anything else
+2. Read the modified files listed above to understand current state
+3. Continue implementing only the REMAINING items
+4. Update CODER_SUMMARY.md with your additional progress
+5. Set Status to COMPLETE when all work is done, or IN PROGRESS if more remains"
+        else
+            context="${context}
 1. Read CODER_SUMMARY.md first to see what was already implemented
 2. Read the modified files listed above to understand current state
 3. Continue implementing only the REMAINING items
 4. Update CODER_SUMMARY.md with your additional progress
 5. Set Status to COMPLETE when all work is done, or IN PROGRESS if more remains"
+        fi
     elif [[ "$stage" = "tester" ]]; then
         context="${context}
 ### Instructions

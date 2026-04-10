@@ -118,7 +118,7 @@ run_smart_init() {
     local tracked_file_count
     tracked_file_count=$(_count_tracked_files "$project_dir")
     log "Crawling project (${tracked_file_count} files)..."
-    crawl_project "$project_dir" 120000
+    crawl_project "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
 
     # Phase 4: Config generation
     log "Generating pipeline.conf..."
@@ -141,6 +141,7 @@ run_smart_init() {
 
     # Phase 5: Agent role customization
     _install_agent_roles "$project_dir" "$tekhton_home" "$languages"
+    _ensure_init_gitignore "$project_dir" "$languages"
 
     # Phase 6: Stub CLAUDE.md
     if [[ ! -f "${project_dir}/CLAUDE.md" ]]; then
