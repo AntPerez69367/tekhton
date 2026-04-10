@@ -1,100 +1,136 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 52 test assertions
+Tests audited: 4 files, 43 test functions
 Verdict: PASS
+
+### Implementation Baseline Note
+`CODER_SUMMARY.md` is absent. The audit context states "Implementation Files Changed: none."
+Git history confirms `lib/detect.sh` was last modified in commit `4ce901d` (the immediately
+prior pipeline session, labeled as a health-scoring fix) — that commit added the CLAUDE.md
+fallback to `detect_languages()` at lines 107–126. The 4 new test files test that already-
+committed implementation. `tests/test_detect_languages.sh` (the committed baseline file)
+already contains a basic CLAUDE.md fallback test at lines 222–250.
+
+---
 
 ### Findings
 
-#### NAMING: Inaccurate comment misrepresents what Test 9 exercises
-- File: tests/test_health_greenfield_fix_coverage.sh:262
-- Issue: The comment reads "Code quality should increase when we add a source file" but
-  `src/main.js` has already been committed to `$PROGRESSING_DIR` by line 255. The variable
-  named `quality_before` is actually computed *after* the source file exists. What the test
-  actually exercises is: adding `.eslintrc.json` to a project that already has source code
-  raises the code quality score. The final assertion message on line 273 ("code_quality with
-  linter should be higher than without") correctly describes the comparison, but the block
-  comment above it creates false expectations about what changed between the two calls.
-  The assertion is valid and will correctly pass/fail for the right reason.
-- Severity: LOW
-- Action: Replace the comment on line 262 with "# Compare: same source, with vs. without
-  linter config" and rename `quality_before` → `quality_no_linter` (line 263) and
-  `quality_score_before` → `quality_score_no_linter` (line 271) to match the assert message.
+#### SCOPE: Tester created 4 new files instead of adding to the specified file
+- File: tests/test_detect_languages_fallback_guard.sh, tests/test_detect_languages_multiple_langs.sh, tests/test_detect_languages_fallback_prose.sh, tests/test_detect_languages_edge_cases.sh
+- Issue: The task specification explicitly instructs: "Add a test case to
+  `tests/test_detect_languages.sh` (the existing language detection test file)." The tester
+  instead created 4 separate new files and did not touch `tests/test_detect_languages.sh`.
+  That existing file already contains a CLAUDE.md fallback section at lines 222–250 (committed
+  in a prior session) which satisfies the task's minimal requirement. The 4 new files provide
+  supplementary depth coverage and are not orphaned — they test real, committed behavior —
+  but the prescribed approach was not followed.
+- Severity: MEDIUM
+- Action: No changes required to the 4 new files; their content is valid. For future audit
+  traceability, add a comment to `tests/test_detect_languages.sh` pointing to the supplementary
+  files, e.g. `# Extended CLAUDE.md fallback coverage: see test_detect_languages_fallback_*.sh`
 
-#### ISOLATION: Test 13 implicitly depends on Test 2 having created the report file
-- File: tests/test_health_scoring.sh:332
-- Issue: Test 13 (`grep -q "Pre-code baseline" "$EMPTY_DIR/HEALTH_REPORT.md"`) reads a
-  report file written as a side effect of `assess_project_health` in Test 2 (line 88). No
-  fixture setup creates the file independently for Test 13. If Test 2 fails or is reorganized
-  out of order, Test 13 fails with a confusing "no such file" result rather than a meaningful
-  assertion failure. The file is in a temp directory (not a live pipeline artifact), so this
-  is not a full isolation violation, but the implicit dependency makes failure diagnosis
-  harder.
-- Severity: LOW
-- Action: Before the grep on line 332, add a guarding check:
-  `[[ -f "$EMPTY_DIR/HEALTH_REPORT.md" ]] || { echo "FAIL: report not found (Test 2 prerequisite)" >&2; FAIL=$((FAIL+1)); }`.
-  This makes the dependency explicit and the failure message actionable.
+#### NAMING: Misleading test name and mismatched fixture in prose fallback Test 4
+- File: tests/test_detect_languages_fallback_prose.sh:183
+- Issue: The test is titled "Case-insensitive extraction doesn't match partial words" and its
+  inline comment says "This section mentions 'python' in context but shouldn't match
+  'typescript' in 'typescript-like'" — but the CLAUDE.md fixture contains neither `python`
+  as a standalone word in prose nor the compound `typescript-like`. The actual fixture tests
+  that Go and Kotlin are detected from plain prose with no false positives from other language
+  names. The intent the name describes (partial-word guard) is untested. The assertions that
+  exist are correct against the actual fixture, but the test is misdescribed.
+- Severity: MEDIUM
+- Action: Either (a) rename to "prose_fallback_no_false_positives" and remove the misleading
+  comment, or (b) add a fixture line like "Uses a TypeScript-like syntax for macros." and
+  verify that TypeScript is or is not detected, to actually test the stated partial-word
+  scenario.
 
-#### COVERAGE: Untested edge case — manifest + source files + dep:src ratio ≤ 50
-- File: tests/test_health_greenfield_fix_coverage.sh (gap), lib/health_checks_infra.sh:131
-- Issue: The post-manifest guard at `health_checks_infra.sh:131–134` awards
-  `dep_ratio_score=25` whenever `manifest_score > 0 && dep_ratio_score == 0`. The ratio
-  block (lines 103–108) only sets `dep_ratio_score` to a non-zero value when `ratio > 50`.
-  A project with a manifest, committed source files, AND a very lean dep:src ratio (≤ 50)
-  exits the ratio block with `dep_ratio_score=0`, then the post-manifest guard awards 25 —
-  the same as a manifest-only greenfield project with no code. This edge case is not covered
-  by any test. It is outside the stated bug scope; noted for completeness.
+#### COVERAGE: Dead `else` branch in prose fallback Test 4 false-positive check
+- File: tests/test_detect_languages_fallback_prose.sh:220–230
+- Issue: The false-positive assertion uses a two-layer conditional:
+    if grep -qE "^(typescript|python|...)"; then
+        unexpected=$(echo "$word_langs" | grep -vE "^(go|kotlin)")
+        if [[ -n "$unexpected" ]]; then fail; else pass; fi
+    else
+        pass
+    fi
+  The outer `grep` returns true only if an unexpected language is present. In that case, the
+  inner `$unexpected` will always be non-empty (the outer match is a subset of what `grep -v`
+  preserves). The inner `else pass` branch is dead code. The assertion is not wrong in
+  practice — the outer `else pass` is where real coverage lives — but the structure is
+  misleading about what is actually being checked.
 - Severity: LOW
-- Action: Add a fixture with `package.json` + several committed source files + few deps
-  and assert `dep_ratio == 25`. This documents the intended "not over-dependent" semantic
-  and guards against unintended future changes to the post-manifest guard.
+- Action: Simplify to a single-layer check:
+    if echo "$word_langs" | grep -qE "^(typescript|python|ruby|php|haskell|elixir|dart|swift|rust|java|javascript)\|"; then
+        fail "Unexpected language detection: $word_langs"
+    else
+        pass "No false positive language detection"
+    fi
+
+#### NAMING: Hardcoded expected language count without cross-reference
+- File: tests/test_detect_languages_edge_cases.sh:231
+- Issue: `expected_count=14` is asserted against `wc -l` output with no connection to the
+  implementation. The comment (line 201) correctly lists all 14 languages from `_known_langs`
+  in `detect.sh`, but if the implementation ever adds or removes a language, this test fails
+  with "Expected 14 languages, got N" with no indication of which language changed.
+- Severity: LOW
+- Action: Add a comment on the `expected_count` line:
+  `expected_count=14  # sync with _known_langs at lib/detect.sh:111`
+  and consider listing the expected language names in a variable for a diff-friendly failure
+  message.
+
+---
+
+### Per-File Integrity Summary
+
+| File | Assertions Honest | Fixtures Isolated | Calls Real Code | No Weakening | Verdict |
+|------|-------------------|-------------------|-----------------|--------------|---------|
+| test_detect_languages_fallback_guard.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS |
+| test_detect_languages_multiple_langs.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS |
+| test_detect_languages_fallback_prose.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS with notes |
+| test_detect_languages_edge_cases.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS |
+
+None of the 4 files read live project files, pipeline logs, or mutable state artifacts.
+All fixtures are constructed in temp directories with `trap 'rm -rf "$TEST_TMPDIR"' EXIT`.
+All assertions verify outputs from real `detect_languages()` calls against controlled inputs.
+No existing tests were modified.
 
 ### Implementation Verification Summary
 
-All assertions were traced against the current implementation.
+All assertions were traced against `lib/detect.sh` (lines 107–126, the CLAUDE.md fallback).
 
-**lib/health_checks.sh — `_check_code_quality`**
-- `todo_score`, `magic_score`, `length_score` initialize to `0` (lines 175, 202, 259).
-- Each is assigned its max (20, 20, 15) as the *first* statement inside the
-  `[[ -n "$sample_files" ]]` guard, then reduced by analysis if needed.
-- With an empty project, `_health_sample_files` returns nothing → `sample_files` is empty
-  → all three stay `0`. Total score = 0. ✓
-- Test assertions of `0` for all six sub-scores on greenfield inputs are correct.
+**Fallback guard** (`test_detect_languages_fallback_guard.sh`): The guard condition
+`[[ -z "$_detected_output" ]]` at line 107 correctly suppresses the CLAUDE.md path when
+file-based detection produces output. The TypeScript detection in Test 1 is driven by
+`package.json` + `tsconfig.json` presence (lines 28–30) producing `lang_manifest[typescript]`,
+combined with `touch`-created `.ts` files counted by `_count_source_files`. With
+`has_manifest="package.json"` and `source_count=2`, the confidence formula at lines 89–90
+resolves to `high`. All assertions are derivable from implementation logic. ✓
 
-**lib/health_checks_infra.sh — `_check_dependency_health`**
-- `dep_ratio_score` defaults to `0` (line 85).
-- Post-manifest guard (lines 131–134): `dep_ratio_score=25` only when `manifest_score > 0`
-  and `dep_ratio_score` is still `0` after the ratio block.
-- Pure greenfield (no manifest): `manifest_score=0` → guard false → `dep_ratio_score=0`.
-  Total = 0. ✓
-- Manifest-only greenfield (`package.json`, no code, no lock): `manifest_score=25`, ratio
-  block skips (`src_count=0`), guard fires → `dep_ratio_score=25`. Total = 50. ✓
-- Test assertions of `0` (no manifest) and `50` (manifest, no code) are both derivable
-  from the implementation and correct.
+**Multiple languages** (`test_detect_languages_multiple_langs.sh`): The bullet grep
+`grep -ioE "^[[:space:]]*-[[:space:]]+(${_known_langs})"` with `-o` outputs only the matching
+portion, correctly stripping parenthetical descriptions like `- TypeScript (tools)` down to
+`- TypeScript`. The subsequent `sed` strips the `- ` prefix. Case normalization via `tr` is
+applied after extraction. All assertions about output format (`lang|low|CLAUDE.md`) and
+case normalization are correct. ✓
 
-**lib/health.sh — `_write_health_report`**
-- Extracts `source_files` from `test_detail` JSON via
-  `grep -oE '"source_files":[0-9]+'` (line 276).
-- Prepends `> **Pre-code baseline**` callout when `${_src_files_count:-0} -eq 0`
-  (lines 282–285). The `:-0` default safely handles empty parse results.
-- Callout text `"scores reflect project setup only, not code quality"` is present verbatim
-  in both the implementation and the test assertions. ✓
-- Assertions in both test files that check for the callout in HEALTH_REPORT.md are correct
-  for greenfield and manifest-only-greenfield inputs (source_files=0 in both).
+**Prose fallback** (`test_detect_languages_fallback_prose.sh`): The secondary grep
+`grep -oiE "(${_known_langs})" | sort -u` fires only when the bullet grep yields nothing.
+The `sort -u` correctly deduplicates repeated mentions (Test 3). The prose fallback in the
+mixed-format test (Test 2) is suppressed because the bullet grep succeeds on `- Kotlin for
+Android app` (the `-o` match stops at `Kotlin`, not the full bullet text). ✓
 
-**Assertion honesty (PASS):** All expected values (0, 50, 25, <20, <35) are derived by
-tracing the implementation against specific fixture state. No hard-coded values bypass
-actual function execution. No identity assertions or always-true checks found.
+**Edge cases** (`test_detect_languages_edge_cases.sh`): The `sed` range
+`/^### 1\. Project Identity/,/^###/` produces an empty `_identity_block` when the heading
+is absent (Test 2) or the section contains no language keywords (Tests 1, 3). The `C#`
+normalization test (Test 4) is correct: `grep -ioE` matches `C#` case-insensitively, `tr`
+lowercases it to `c#`, and the output is `c#|low|CLAUDE.md`. The 14-language fixture
+(Test 6) correctly exercises all entries in `_known_langs`. ✓
 
-**Test weakening (PASS):** The pre-existing `assert_range 0 35` at
-`test_health_scoring.sh:90` was not changed. The range accommodates the post-fix composite
-of ~4 for an empty project. No assertions were removed or broadened.
+**Assertion honesty (PASS):** No hard-coded values bypass actual function execution.
+No identity assertions or always-true checks found.
 
-**Scope alignment (PASS):** No references to `INTAKE_REPORT.md` (deleted) in either test
-file. All sourced functions (`_check_code_quality`, `_check_dependency_health`,
-`assess_project_health`, `_check_test_health`, `_check_project_hygiene`, `_check_doc_quality`,
-`get_health_belt`, `format_health_summary`, `reassess_project_health`, `_read_json_int`)
-exist in the current implementation and behave as the tests expect.
+**Test weakening (PASS):** No existing tests were modified. All 4 files are new.
 
-**Implementation exercise (PASS):** Both files source `lib/health.sh` and call real functions
-with real fixture directories. No mocking of the dimension checks or report writer.
+**Test isolation (PASS):** No test reads live pipeline artifacts, build reports, or
+project-state files outside the per-test temp directory.
