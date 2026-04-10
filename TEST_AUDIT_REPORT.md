@@ -1,54 +1,67 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 16 test functions
-Verdict: PASS
+Tests audited: 2 files, 6 test cases
+Verdict: CONCERNS
 
 ---
 
 ### Findings
 
-#### COVERAGE: Brownfield INIT_REPORT.md check verifies only one of two expected warnings
-- File: tests/test_init_report_greenfield_suppression.sh:204
-- Issue: `test_emit_init_report_file_brownfield_shows_warnings` only asserts that "ARCHITECTURE_FILE not detected" appears in INIT_REPORT.md when `file_count=10` and no architecture file exists. It does not assert that "No test command detected" also appears (the parallel path at `lib/init_report.sh:373–379` inside `_report_attention_items`). Test 7 (`test_emit_init_report_file_greenfield_no_warnings`) correctly checks that BOTH warnings are suppressed on greenfield, so the asymmetry is notable — suppress is fully tested, appear is half-tested for the report file path.
+#### INTEGRITY: Idempotency guard at plan_generate.sh:124–126 is never reached — tests pass regardless of guard correctness
+- File: tests/test_plan_generate_marker_idempotency.sh:71 (Test 1), :200 (Test 3)
+- Issue: Both tests pre-seed CLAUDE.md with `<!-- tekhton-managed -->` to exercise the guard that prevents duplicate marker insertion. The guard at `plan_generate.sh:124–126` is conditional on the file already containing the marker — but the guard only matters along two code paths: (a) `_disk_rescued=true` (captured output was non-heading, so on-disk file is reused without overwriting), or (b) captured output already contains the marker. The mock `_call_planning_batch` in both tests returns content beginning with `# Tekhton CLAUDE.md` (a heading), so `_captured_first == "#"*` → `_disk_rescued` stays `false`. The `if [[ "$_disk_rescued" == "false" ]]` branch at line 120 overwrites CLAUDE.md entirely before the guard runs, discarding the pre-seeded marker. The guard at line 124 then evaluates the freshly written content (no marker), appends once, and the tests pass. Removing the guard entirely and replacing it with an unconditional `echo "<!-- tekhton-managed -->" >> "$claude_md"` would not change the outcome of any of the 3 tests in this file. The guard is unprotected.
+- Severity: HIGH
+- Action: Redesign Tests 1 and 3 to reach the guard. Two scenarios require separate tests:
+  1. `_disk_rescued=true` path — make `_call_planning_batch` return a non-heading summary string (e.g., `"I have generated the requested file."`) while CLAUDE.md already exists on disk with >20 substantive lines AND already contains `<!-- tekhton-managed -->`. The guard should prevent a second marker from being appended to the preserved on-disk content.
+  2. Captured-output-already-has-marker — make `_call_planning_batch` return content that includes `<!-- tekhton-managed -->` inline. The guard should prevent a second marker after writing.
+
+#### INTEGRITY: Test 3 "marker in middle" pre-condition is unreachable in the code path the mock triggers
+- File: tests/test_plan_generate_marker_idempotency.sh:200
+- Issue: Test 3 frames itself as an edge case where a "malformed" CLAUDE.md has the marker embedded mid-file. Because the mock always returns heading-first output, `_disk_rescued` is always `false`, and `plan_generate.sh:121` overwrites the file unconditionally before any deduplication logic can observe it. The pre-seeded "malformed" file is irrelevant — its content never enters the code path. The resulting assertions (marker count == 1, marker at end of file) are trivially true after a fresh write and provide no signal about deduplication behavior.
+- Severity: HIGH
+- Action: Remove Test 3 or replace it with a reachable scenario. A valid replacement: `_disk_rescued=true` with on-disk CLAUDE.md containing a mid-file marker (not at the last line). This would test whether the idempotency grep catches a marker that is not at EOF, verifying the guard does not fire even when the marker is mid-file.
+
+#### NAMING: File and test case names promise "idempotency" but tests only exercise fresh-write appending
+- File: tests/test_plan_generate_marker_idempotency.sh:1
+- Issue: The file name, and the headings for Tests 1 and 3, use "idempotency" and "preexisting marker" — language that implies the deduplication guard is under test. In reality, all three tests exercise only the trivially-correct fresh-write path. A developer reviewing coverage would incorrectly believe the guard at `plan_generate.sh:124–126` is regression-protected. It is not.
+- Severity: MEDIUM
+- Action: Either (a) rename to `test_plan_generate_marker_appending.sh` and update test headings to reflect "marker appended on fresh write" (if Tests 1 and 3 are not redesigned), OR (b) keep the name and fix the tests as recommended under the INTEGRITY findings so the name accurately describes what is tested.
+
+#### EXERCISE: `_trim_document_preamble` mock comment references wrong source file
+- File: tests/test_init_synthesize_marker_appending.sh:55, :218, :320
+- Issue: All three inner scripts have the comment `# Mock _trim_document_preamble (from lib/plan.sh)`. The function is actually defined in `lib/plan_batch.sh:125`, which `lib/plan.sh` sources at line 100. The mock is defined after `source lib/plan.sh` and before `source stages/init_synthesize.sh`, so the override is correctly ordered and the test behavior is unaffected — this is a stale comment only. However, it could mislead a maintainer searching for the real definition.
 - Severity: LOW
-- Action: Add a second `grep -q "No test command detected"` check in `test_emit_init_report_file_brownfield_shows_warnings` after the existing ARCHITECTURE_FILE assertion.
-
----
-
-### Prior Audit Rework Verification
-
-All three findings from the prior audit cycle were addressed and verified:
-
-| Prior Finding | Status | Evidence |
-|---------------|--------|----------|
-| INTEGRITY: Test 8 (arch_config) had unconditional `pass` with no assertions | **FIXED** | Lines 277–295 now check `emit_init_summary` output for "ARCHITECTURE_FILE not detected" and separately call `_report_attention_items` with its own assertion. Both use conditional pass/fail, not unconditional pass. |
-| EXERCISE: `_best_command` not in scope when `emit_init_summary` is tested | **FIXED** | Both test files add `source "${TEKHTON_HOME}/lib/init_config.sh"` at line 10, placing `_best_command` (defined at `lib/init_config.sh:121`) in the test environment before any test function runs. |
-| COVERAGE: `_report_attention_items` not called for empty ARCHITECTURE_FILE case | **FIXED** | Test 8 of arch_config now calls `_report_attention_items "$project_dir" "" 10` at line 286 and asserts the warning appears in output (lines 289–295). |
+- Action: Update all three instances to `# Mock _trim_document_preamble (from lib/plan_batch.sh)`.
 
 ---
 
 ### Per-File Integrity Summary
 
-| File | Assertions Honest | Fixtures Isolated | Calls Real Code | No Weakening | Verdict |
-|------|-------------------|-------------------|-----------------|--------------|---------|
-| test_init_report_greenfield_suppression.sh | PASS | PASS (mktemp + trap in Test 1; manual rm in Tests 7–8) | PASS (sources init_report.sh + init_config.sh) | n/a (new file) | PASS |
-| test_init_report_architecture_config.sh | PASS | PASS (mktemp + manual cleanup before every fail path) | PASS (sources init_report.sh + init_config.sh) | n/a (new file) | PASS |
-
-Neither file reads live pipeline artifacts, CODER_SUMMARY.md, REVIEWER_REPORT.md,
-BUILD_ERRORS.md, or any mutable project state. All fixtures are constructed in `mktemp -d`
-temp directories scoped to each test function.
+| File | Assertions Honest | Fixtures Isolated | Calls Real Code | Idempotency Guard Exercised | Verdict |
+|------|-------------------|-------------------|-----------------|-----------------------------|---------|
+| test_plan_generate_marker_idempotency.sh | Partially (values are correct for fresh-write, not for guard) | PASS (mktemp + trap) | PASS (sources stages/plan_generate.sh) | NO — mock prevents guard code path | CONCERNS |
+| test_init_synthesize_marker_appending.sh | PASS | PASS (mktemp + trap) | PASS (sources stages/init_synthesize.sh) | n/a (_synthesize_claude has no guard by design) | PASS |
 
 ---
 
 ### Implementation Verification
 
-All assertions were traced against `lib/init_report.sh` (last modified commit `4ce901d`):
+**`stages/plan_generate.sh` — idempotency guard (lines 119–126):**
+```
+if [[ -n "$claude_md_content" ]]; then
+    if [[ "$_disk_rescued" == "false" ]]; then
+        printf '%s\n' "$claude_md_content" > "$claude_md"   # line 121 — unconditional overwrite
+    fi
+    if ! grep -q '<!-- tekhton-managed -->' "$claude_md" 2>/dev/null; then  # line 124
+        echo "<!-- tekhton-managed -->" >> "$claude_md"
+    fi
+```
+The guard at line 124 evaluates AFTER the possible overwrite at line 121. When `_disk_rescued=false` (the only path the tests exercise), line 121 always runs first, making the pre-seeded marker irrelevant. The guard only has meaningful work to do when `_disk_rescued=true` (overwrite skipped) and the on-disk file already carries the marker.
 
-**Greenfield suppression (`test_init_report_greenfield_suppression.sh`):**
-The gate `[[ "$file_count" -gt 0 ]]` at lines 76 and 94 correctly suppresses both the ARCHITECTURE_FILE and test-command checks when `file_count=0`. Tests 1–2 (greenfield, suppress) and Tests 3–4 (brownfield, emit) are consistent with this implementation. Tests 5–6 target `_report_attention_items` directly and match the same gate at line 356. Tests 7–8 target `emit_init_report_file` and verify the `file_count` argument is correctly threaded through to `_report_attention_items` at line 248. The exact warning strings checked ("ARCHITECTURE_FILE not detected", "No test command detected") appear at lines 88, 98, 368, and 377 of the implementation. All 8 assertions are honest. ✓
-
-**ARCHITECTURE_FILE config check (`test_init_report_architecture_config.sh`):**
-Tests 1–7 exercise the dual-check logic at lines 78–86: default `ARCHITECTURE.md` first, then `pipeline.conf` parsing. Quote stripping via `tr -d '"' | tr -d "'"` at line 82 is exercised by Tests 3 (single quotes) and 4 (double quotes). Test 5 (configured path doesn't exist) correctly expects the warning because the `[[ -f "${project_dir}/${_conf_arch}" ]]` check at line 83 fails. Test 6 targets `_report_attention_items` with the same dual-check logic at lines 357–366. Test 7 targets `emit_init_report_file`. Test 8 covers empty-string config: `[[ -n "" ]]` at line 83 is false so `_arch_found` stays false, causing the warning — both `emit_init_summary` and `_report_attention_items` paths are asserted. All 9 assertions across 8 test functions are honest. ✓
-
-**Test weakening:** No existing tests were modified. TESTER_REPORT confirms all 312 pre-existing tests pass alongside the 16 new ones.
+**`stages/init_synthesize.sh` — `_synthesize_claude()` (lines 174–178):**
+```
+printf '%s\n' "$claude_content" > "$claude_file"   # always overwrites
+echo "<!-- tekhton-managed -->" >> "$claude_file"   # always appends, no guard
+```
+No idempotency guard present — correct by design, since `_synthesize_claude` always writes a fresh file. The tests in `test_init_synthesize_marker_appending.sh` correctly verify appending behavior without claiming to test a non-existent guard.
