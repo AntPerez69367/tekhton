@@ -9,7 +9,8 @@ set -euo pipefail
 #             prompts_interactive.sh (prompt_confirm, prompt_choice)
 # Provides: _display_detection_results(), _offer_monorepo_choice(),
 #           _correct_project_type(), _count_tracked_files(),
-#           _install_agent_roles(), _append_addenda(), _seed_claude_md()
+#           _install_agent_roles(), _append_addenda(), _seed_claude_md(),
+#           _ensure_gitignore_entries()
 # =============================================================================
 
 # --- Display detection results -----------------------------------------------
@@ -252,4 +253,34 @@ MERGE_EOF
 <!-- TODO: Add milestones here, or run tekhton --plan to generate them -->
 
 STUB_EOF
+}
+
+# _ensure_gitignore_entries — Adds Tekhton runtime artifact patterns to .gitignore.
+# Creates .gitignore if absent. Skips entries already present.
+_ensure_gitignore_entries() {
+    local project_dir="${1:-${PROJECT_DIR:-.}}"
+    local gitignore="${project_dir}/.gitignore"
+    local -a entries=(
+        ".claude/PIPELINE.lock" ".claude/PIPELINE_STATE.md"
+        ".claude/MILESTONE_STATE.md" ".claude/CHECKPOINT_META.json"
+        ".claude/LAST_FAILURE_CONTEXT.json" ".claude/TEST_BASELINE.json"
+        ".claude/TEST_BASELINE_OUTPUT.txt" ".claude/test_acceptance_output.tmp"
+        ".claude/dashboard/data/" ".claude/logs/" ".claude/indexer-venv/"
+        ".claude/index/" ".claude/serena/" ".claude/dry_run_cache/"
+        ".claude/migration-backups/" ".claude/watchtower_inbox/"
+    )
+    [[ ! -f "$gitignore" ]] && touch "$gitignore"
+    local added=0
+    for entry in "${entries[@]}"; do
+        grep -qF "$entry" "$gitignore" 2>/dev/null && continue
+        if (( added == 0 )) && ! grep -qF "# Tekhton runtime artifacts" "$gitignore" 2>/dev/null; then
+            if [[ -s "$gitignore" ]] && [[ "$(tail -c1 "$gitignore" | wc -l)" -eq 0 ]]; then
+                printf '\n' >> "$gitignore"
+            fi
+            printf '\n# Tekhton runtime artifacts\n' >> "$gitignore"
+        fi
+        printf '%s\n' "$entry" >> "$gitignore"
+        added=$(( added + 1 ))
+    done
+    (( added > 0 )) && success "Added ${added} Tekhton runtime artifact pattern(s) to .gitignore"
 }
