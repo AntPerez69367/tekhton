@@ -4,7 +4,7 @@
 
 Before installing Tekhton, you need:
 
-1. **Bash 4.0 or later** — Tekhton uses associative arrays and other bash 4+ features
+1. **Bash 4.3 or later** — Tekhton uses `declare -g`, associative arrays, and other bash 4.3+ features
 2. **Claude CLI** — Installed and authenticated ([Claude CLI docs](https://docs.anthropic.com/en/docs/claude-cli))
 3. **Git** — For version control integration
 
@@ -35,7 +35,7 @@ You should see output like `Tekhton 3.18.0`.
 
 ### macOS
 
-macOS ships with bash 3.2, which is too old for Tekhton. Install bash 4+ via Homebrew:
+macOS ships with bash 3.2, which is too old for Tekhton (Tekhton requires bash 4.3+). Install a modern bash via Homebrew:
 
 ```bash
 brew install bash

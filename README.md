@@ -5,7 +5,7 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v3.66 — Context-Aware Pipeline</em></p>
+  <p><em>v3.71 — Context-Aware Pipeline</em></p>
 </div>
 
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
@@ -99,7 +99,7 @@ met, e.g. UI specialist on UI projects), and existing v2 workflows remain unchan
 
 ## Requirements
 
-- **Bash 4+** — Linux, macOS, or WSL2
+- **Bash 4.3+** — Linux, WSL2, or macOS (macOS ships with bash 3.2 — run `brew install bash` first, see [installation notes](docs/getting-started/installation.md#macos))
 - **Claude CLI** — authenticated and on `PATH` (`claude --version` should work)
 - **Git** — used for commit integration
 - **Python 3** — used for JSON parsing of agent output
@@ -111,6 +111,8 @@ met, e.g. UI specialist on UI projects), and existing v2 workflows remain unchan
 - **shellcheck** — for development on Tekhton itself
 
 ## Quick Start
+
+> **macOS users:** macOS ships with bash 3.2 which is too old for Tekhton. Run `brew install bash` first and ensure `/opt/homebrew/bin` (Apple Silicon) or `/usr/local/bin` (Intel) is on your `PATH` ahead of `/bin`. See [Installation → macOS](docs/getting-started/installation.md#macos) for details.
 
 ```bash
 # Clone Tekhton
