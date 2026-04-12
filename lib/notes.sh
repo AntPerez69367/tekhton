@@ -166,6 +166,7 @@ clear_completed_human_notes() {
         printf '%s\n' "$line"
     done < "$notes_file" > "$tmpfile"
     mv "$tmpfile" "$notes_file"
+    _normalize_markdown_blank_runs "$notes_file"
 
     # Safety: verify unchecked count unchanged
     local unchecked_after

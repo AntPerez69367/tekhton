@@ -136,7 +136,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.72.0"
+TEKHTON_VERSION="3.73.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -719,6 +719,7 @@ _check_pipeline_lock
 source "${TEKHTON_HOME}/lib/common.sh"
 _phase_start "startup"
 source "${TEKHTON_HOME}/lib/config.sh"
+source "${TEKHTON_HOME}/lib/notes_core_normalize.sh"
 source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes_rollback.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
@@ -1736,7 +1737,7 @@ fi
 if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
     for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ${INTAKE_REPORT_FILE}; do
         if [ -f "$f" ]; then
-            ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_${f}"
+            ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_$(basename "$f")"
             mkdir -p "${LOG_DIR}/archive"
             mv "$f" "$ARCHIVE_NAME"
             log "Archived previous ${f}"
@@ -1745,14 +1746,14 @@ if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
 elif [ "$START_AT" = "review" ]; then
     for f in ${REVIEWER_REPORT_FILE} ${TESTER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE}; do
         if [ -f "$f" ]; then
-            mv "$f" "${LOG_DIR}/${TIMESTAMP}_prev_${f}"
+            mv "$f" "${LOG_DIR}/${TIMESTAMP}_prev_$(basename "$f")"
             log "Archived previous $f"
         fi
     done
     log "Resuming with existing ${CODER_SUMMARY_FILE}"
 elif [ "$START_AT" = "test" ]; then
     if [ -f "${TESTER_REPORT_FILE}" ]; then
-        mv "${TESTER_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_${TESTER_REPORT_FILE}"
+        mv "${TESTER_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_$(basename "${TESTER_REPORT_FILE}")"
         log "Archived previous ${TESTER_REPORT_FILE}"
     fi
     log "Resuming with existing ${CODER_SUMMARY_FILE} and ${REVIEWER_REPORT_FILE}"

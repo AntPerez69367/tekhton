@@ -16,16 +16,12 @@ set -euo pipefail
 #   list_human_notes_cli — display unchecked notes, color-coded by tag
 # =============================================================================
 
-# --- Constants ---------------------------------------------------------------
-
-_NOTES_FILE="${HUMAN_NOTES_FILE}"
-
 # --- Helpers -----------------------------------------------------------------
 
 # _ensure_notes_file — Creates ${HUMAN_NOTES_FILE} with standard header if missing.
 # M40: Uses tag registry to generate section headings.
 _ensure_notes_file() {
-    if [[ -f "$_NOTES_FILE" ]]; then
+    if [[ -f "${HUMAN_NOTES_FILE}" ]]; then
         return 0
     fi
 
@@ -50,7 +46,7 @@ _ensure_notes_file() {
             printf '<!-- - [ ] [%s] Example: describe a %s -->\n' "$tag" "$(echo "$tag" | tr '[:upper:]' '[:lower:]')"
             printf '\n'
         done
-    } > "$_NOTES_FILE"
+    } > "${HUMAN_NOTES_FILE}"
 }
 
 # _tag_to_section — Maps a tag to its ${HUMAN_NOTES_FILE} section heading.
@@ -108,7 +104,7 @@ add_human_note() {
                 return 0
             fi
         fi
-    done < "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}"
 
     local nid
     nid=$(_next_note_id)
@@ -140,7 +136,7 @@ add_human_note() {
         if [[ "$inserted" = false ]] && [[ "$line" = "$section_heading" ]]; then
             found_section=true
         fi
-    done < "$_NOTES_FILE" > "$tmpfile"
+    done < "${HUMAN_NOTES_FILE}" > "$tmpfile"
 
     # If section was found but no next section (end of file), append
     if [[ "$found_section" = true ]] && [[ "$inserted" = false ]]; then
@@ -150,7 +146,7 @@ add_human_note() {
         fi
     fi
 
-    mv "$tmpfile" "$_NOTES_FILE"
+    mv "$tmpfile" "${HUMAN_NOTES_FILE}"
     success "Added [${tag}] note (${nid}): ${text}"
 }
 
@@ -160,7 +156,7 @@ add_human_note() {
 list_human_notes_cli() {
     local filter="${1:-}"
 
-    if [[ ! -f "$_NOTES_FILE" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
         log "No ${HUMAN_NOTES_FILE} found. Create notes with: tekhton note \"description\""
         return 0
     fi
@@ -203,7 +199,7 @@ list_human_notes_cli() {
         else
             printf '  %s\n' "$line"
         fi
-    done < "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}"
 
     if [[ "$total" -eq 0 ]]; then
         if [[ -n "$filter" ]]; then

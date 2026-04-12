@@ -6,7 +6,7 @@ set -euo pipefail
 # Sourced by tekhton.sh — do not run directly.
 # Extracted from notes_cli.sh to keep it under the 300-line ceiling.
 # Depends on: common.sh (error, warn, success, log, color codes),
-#             notes_cli.sh (_NOTES_FILE)
+#             notes_cli.sh, config.sh (HUMAN_NOTES_FILE)
 # Provides: complete_human_note(), clear_completed_notes(), get_notes_summary()
 # =============================================================================
 
@@ -21,7 +21,7 @@ complete_human_note() {
         return 1
     fi
 
-    if [[ ! -f "$_NOTES_FILE" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
         error "No ${HUMAN_NOTES_FILE} found."
         return 1
     fi
@@ -47,7 +47,7 @@ _complete_by_number() {
             target_line="$line"
             break
         fi
-    done < "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}"
 
     if [[ -z "$target_line" ]]; then
         error "Note #${num} not found. Only ${count} unchecked note(s) exist."
@@ -71,7 +71,7 @@ _complete_by_text() {
         if [[ "$lower_line" == *"$lower_search"* ]]; then
             matches+=("$line")
         fi
-    done < "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}"
 
     if [[ ${#matches[@]} -eq 0 ]]; then
         error "No unchecked note matching '${search}'."
@@ -107,8 +107,8 @@ _mark_note_done() {
         else
             printf '%s\n' "$line"
         fi
-    done < "$_NOTES_FILE" > "$tmpfile"
-    mv "$tmpfile" "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}" > "$tmpfile"
+    mv "$tmpfile" "${HUMAN_NOTES_FILE}"
 
     if [[ "$found" -eq 1 ]]; then
         # Extract tag and text for display
@@ -123,13 +123,13 @@ _mark_note_done() {
 # clear_completed_notes
 # Removes all checked items from ${HUMAN_NOTES_FILE}. Requires confirmation.
 clear_completed_notes() {
-    if [[ ! -f "$_NOTES_FILE" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
         log "No ${HUMAN_NOTES_FILE} found."
         return 0
     fi
 
     local checked_count
-    checked_count=$(grep -c '^- \[x\] ' "$_NOTES_FILE" || true)
+    checked_count=$(grep -c '^- \[x\] ' "${HUMAN_NOTES_FILE}" || true)
 
     if [[ "$checked_count" -eq 0 ]]; then
         log "No completed notes to clear."
@@ -138,7 +138,7 @@ clear_completed_notes() {
 
     # Safety: count unchecked before
     local unchecked_before
-    unchecked_before=$(grep -c '^- \[ \] ' "$_NOTES_FILE" || true)
+    unchecked_before=$(grep -c '^- \[ \] ' "${HUMAN_NOTES_FILE}" || true)
 
     printf '%b' "${YELLOW}Remove ${checked_count} completed note(s)?${NC} [y/N] "
     read -r confirm
@@ -149,12 +149,12 @@ clear_completed_notes() {
 
     local tmpfile
     tmpfile=$(mktemp)
-    grep -v '^- \[x\] ' "$_NOTES_FILE" > "$tmpfile"
-    mv "$tmpfile" "$_NOTES_FILE"
+    grep -v '^- \[x\] ' "${HUMAN_NOTES_FILE}" > "$tmpfile"
+    mv "$tmpfile" "${HUMAN_NOTES_FILE}"
 
     # Safety: verify unchecked count unchanged
     local unchecked_after
-    unchecked_after=$(grep -c '^- \[ \] ' "$_NOTES_FILE" || true)
+    unchecked_after=$(grep -c '^- \[ \] ' "${HUMAN_NOTES_FILE}" || true)
     if [[ "$unchecked_after" -ne "$unchecked_before" ]]; then
         warn "Unchecked note count changed unexpectedly (${unchecked_before} → ${unchecked_after})"
     fi
@@ -167,7 +167,7 @@ clear_completed_notes() {
 # Usage: local summary; summary=$(get_notes_summary)
 #        IFS='|' read -r total bug feat polish checked unchecked <<< "$summary"
 get_notes_summary() {
-    if [[ ! -f "$_NOTES_FILE" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
         echo "0|0|0|0|0|0"
         return 0
     fi
@@ -187,7 +187,7 @@ get_notes_summary() {
                 polish=$((polish + 1))
             fi
         fi
-    done < "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}"
 
     local total=$((checked + unchecked))
     echo "${total}|${bug}|${feat}|${polish}|${checked}|${unchecked}"

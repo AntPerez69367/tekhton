@@ -21,6 +21,7 @@ NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
 TEKHTON_SESSION_DIR="$TMPDIR"
 
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core_normalize.sh"
 source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
 
 FAIL=0
@@ -237,6 +238,34 @@ echo "$output" | grep -q "test_\*\.sh" || {
     echo "FAIL: 8.2 glob patterns should be in output"
     FAIL=1
 }
+
+# =============================================================================
+# Test 9: Blank-line count stability after clearing resolved items (M73)
+# =============================================================================
+
+cat > "$NB_FILE" << 'EOF'
+## Open
+- [ ] `lib/foo.sh:10` — open item
+
+
+## Resolved
+- [x] `lib/bar.sh:20` — resolved item 1
+
+- [x] `lib/baz.sh:30` — resolved item 2
+
+EOF
+
+clear_resolved_nonblocking_notes > /dev/null
+
+# After clearing + normalization, no runs of >= 2 blank lines should remain
+double_blank=$(awk '/^[[:space:]]*$/{b++; if(b>=2){found=1}} /[^[:space:]]/{b=0} END{print found+0}' "$NB_FILE")
+if [ "$double_blank" -eq 0 ]; then
+    echo "PASS: 9.1 no double-blank runs after clearing resolved"
+else
+    echo "FAIL: 9.1 found consecutive blank lines after clear_resolved_nonblocking_notes"
+    cat "$NB_FILE" | sed 's/^/  /'
+    FAIL=1
+fi
 
 # =============================================================================
 

@@ -116,6 +116,7 @@ mark_note_resolved() {
     if grep -q "^- \[ \].*${escaped}" "$nb_file" 2>/dev/null; then
         # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
         sed -i "0,/^- \[ \]\(.*${escaped}\)/s//- [x]\1/" "$nb_file"
+        _normalize_markdown_blank_runs "$nb_file"
         return 0
     fi
     return 1
@@ -140,6 +141,7 @@ mark_note_deferred() {
     if grep -q "^- \[ \].*${escaped}" "$nb_file" 2>/dev/null; then
         # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
         sed -i "0,/^- \[ \]\(.*${escaped}\)/s//- [DEFERRED]\1/" "$nb_file"
+        _normalize_markdown_blank_runs "$nb_file"
         return 0
     fi
     return 1

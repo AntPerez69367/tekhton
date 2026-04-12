@@ -100,6 +100,7 @@ tekhton/
 │   ├── migrate.sh          # Version migration framework
 │   ├── migrate_cli.sh      # Migration CLI interface
 │   ├── notes_core.sh       # Notes core rewrite
+│   ├── notes_core_normalize.sh # Markdown blank-line normalization helper
 │   ├── notes_cli.sh        # Notes CLI subcommand
 │   ├── notes_cli_write.sh  # Notes CLI write operations
 │   ├── notes_cleanup.sh    # Notes cleanup operations

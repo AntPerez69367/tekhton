@@ -1,7 +1,7 @@
 # Milestone 73: Notes Tidying — Real Line Deletion + Section Normalization
 <!-- milestone-meta
 id: "73"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
