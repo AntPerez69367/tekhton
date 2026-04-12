@@ -1,15 +1,13 @@
-# Tester Report
-
 ## Planned Tests
-None — this is a documentation-only fix. No functional code changes require test coverage.
+- [x] `tests/test_plan_docs_section.sh` — verify new docs section in all 7 templates and config defaults
+- [x] `tests/test_plan_templates.sh` — verify updated REQUIRED marker counts pass
 
 ## Test Run Results
-Passed: 421  Failed: 0
-
-(338 shell tests + 83 Python tool tests; all passing)
+Passed: 339  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-— (documentation only; no test files modified)
+- [x] `tests/test_plan_docs_section.sh`
+- [x] `tests/test_plan_templates.sh`

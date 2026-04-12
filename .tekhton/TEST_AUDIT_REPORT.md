@@ -1,41 +1,33 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 10 test functions (12 total assertions)
-Verdict: CONCERNS
+Tests audited: 2 files, ~339 total assertions (14 in test_plan_docs_section.sh; remainder in test_plan_templates.sh)
+Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: test_no_dead_code else-branch is always-pass — dead code cannot be detected
-- File: tests/test_install_bash_version_check.sh:155-164
-- Issue: The else-branch of `test_no_dead_code` checks whether `}` appears in the last 5 lines of the extracted function body. Because the `sed` range `/^check_bash_version()/,/^}/p` always ends at the bare closing `}` on its own line, `}` is always present in `tail -5`. Any future `exit 1` reinstated in the last 5 lines (exactly the dead-code scenario under test) would enter the else-branch, find `}`, and call `pass "No dead code after fail() - function ends cleanly"`. The call to `fail "Function has unreachable code after fail()"` on line 163 is unreachable by construction. The test can never detect the regression it was written to guard against.
-- Severity: HIGH
-- Action: Remove the inner else/if and call `fail` directly when `exit 1` is found:
-  ```bash
-  if ! echo "$after_fail" | grep -q "exit 1"; then
-      pass "No dead code (unreachable exit) after fail()"
-  else
-      fail "Function has unreachable code (exit 1 after fail()) at end of function"
-  fi
-  ```
-
-#### ISOLATION: Hardcoded absolute path breaks portability
-- File: tests/test_install_bash_version_check.sh:18
-- Issue: `INSTALL_SH` is set to the literal path `/home/geoff/workspace/geoffgodwin/tekhton/install.sh`. Every test in the file reads from this path. The tests will abort immediately on any other machine, in CI, or when the repo is cloned elsewhere — with `set -euo pipefail` active, a missing file causes `grep` to return non-zero, which kills the runner before any result is printed.
-- Severity: HIGH
-- Action: Derive the path relative to the test file's location:
-  ```bash
-  INSTALL_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/install.sh"
-  ```
-
-#### EXERCISE: All coverage is static source analysis; no behavioral tests
-- File: tests/test_install_bash_version_check.sh (all tests)
-- Issue: Every test extracts the `check_bash_version()` body with `sed` and greps for text patterns. No test actually executes the function to verify runtime behavior: exit code 1 when major < 4, stdout/stderr content at runtime, or the happy path (major >= 4 returns 0 silently). A syntax error in the function body, a wrong variable expansion, or a quoting mistake would pass all 10 tests. While sourcing `install.sh` wholesale is problematic (top-level argument parsing executes immediately), the function and its three dependencies (`fail`, color vars, `PLATFORM`) can be isolated with a short heredoc or by sourcing just the relevant lines.
+#### ISOLATION: test_plan_docs_section.sh implicitly depends on DESIGN_FILE from test runner
+- File: tests/test_plan_docs_section.sh:126,156
+- Issue: `check_design_completeness` resolves `design_file` as `"${PROJECT_DIR}/${DESIGN_FILE:-}"`. The test sets `PROJECT_DIR` to a temp dir and writes `DESIGN.md` there, but never explicitly sets `DESIGN_FILE`. When run via `run_tests.sh`, `DESIGN_FILE="DESIGN.md"` is exported (run_tests.sh:36), so the path resolves correctly. When run standalone, `DESIGN_FILE` is unset → `design_file` becomes `"${TEST_TMPDIR}/"` (a directory, not a file) → `check_design_completeness` returns 1 for "file not found" (not "missing section") → `PLAN_INCOMPLETE_SECTIONS` stays empty → the assertion at line 132 ("Documentation Strategy should be listed as incomplete") FAILS. The test only works correctly when invoked through the test runner.
 - Severity: MEDIUM
-- Action: Add at minimum two behavioral tests: (1) define the helpers inline, set `BASH_VERSINFO[0]=3 PLATFORM=linux`, call `check_bash_version`, assert exit code 1 and that stderr contains "4.3+"; (2) set `BASH_VERSINFO[0]=5`, call `check_bash_version`, assert exit code 0.
+- Action: Add `export DESIGN_FILE="${DESIGN_FILE:-DESIGN.md}"` immediately after line 15 (`export PROJECT_DIR="$TEST_TMPDIR"`) so the test is self-contained when run standalone, consistent with how run_tests.sh already handles this variable.
 
-#### ISOLATION: TEST_DIR created but never used
-- File: tests/test_install_bash_version_check.sh:13-14
-- Issue: `TEST_DIR=$(mktemp -d)` and its `trap "rm -rf '$TEST_DIR'" EXIT` are present but `$TEST_DIR` is never referenced by any test. The directory is created, then immediately discarded. This is dead setup code that misleads readers into thinking tests run in isolation when they do not.
+#### COVERAGE: milestone_acceptance.sh DOCS_STRICT_MODE acceptance check has no test coverage
+- File: tests/test_plan_docs_section.sh (absent)
+- Issue: The new check 4 in `check_milestone_acceptance` (`lib/milestone_acceptance.sh:149–158`) — which blocks milestone completion when `DOCS_STRICT_MODE=true` and the reviewer flagged missing doc updates — has no test coverage. This is the most operationally significant behavioral change in M74 (a pipeline-blocking gate), and a regression there would be invisible to the test suite.
 - Severity: LOW
-- Action: Either remove the `TEST_DIR` / `trap` lines entirely, or repurpose `TEST_DIR` to hold an isolated copy of `install.sh` that all tests read from (which would also resolve the ISOLATION finding above).
+- Action: Add test cases to `test_plan_docs_section.sh` that stub the relevant globals, create a fake reviewer report containing "Docs Updated missing", set `DOCS_STRICT_MODE=true`, source `milestone_acceptance.sh` helpers, and assert the blocking grep returns > 0. Also verify the check is skipped when `DOCS_STRICT_MODE=false`.
+
+#### COVERAGE: grep -P (Perl regex) in test_plan_templates.sh is non-portable
+- File: tests/test_plan_templates.sh:171
+- Issue: `grep -oP '<!-- PHASE:\K[0-9]+'` uses PCRE syntax (`-P` flag + `\K` lookbehind). GNU grep on Linux supports this, but BSD/macOS grep does not. On macOS, the command silently produces empty output, `phases_found` is empty, and all 7 real-template PHASE-presence assertions (lines 172–176) would fail with misleading error messages. Since CLAUDE.md documents Linux as the target platform this is non-blocking in practice, but is a latent fragility.
+- Severity: LOW
+- Action: Replace with a POSIX-portable pipeline: `grep -o '<!-- PHASE:[0-9][0-9]* -->' "$tmpl" | grep -o '[0-9][0-9]*' | sort -u | tr '\n' ','`.
+
+#### None (other rubric categories)
+- Assertion Honesty: All assertions test real behavior. REQUIRED marker counts (cli-tool=11, web-app=10, api-service=10, mobile-app=10, web-game=11, custom=9, library=9) were verified against live `grep -c '<!-- REQUIRED -->'` output and match exactly. Config defaults (DOCS_ENFORCEMENT_ENABLED=true, DOCS_STRICT_MODE=false, DOCS_DIRS=docs/, DOCS_README_FILE=README.md) match lib/config_defaults.sh:412–415 exactly. No assertions use hard-coded values detached from implementation.
+- Implementation Exercise: Tests call real implementations — `_extract_required_sections` and `check_design_completeness` from lib/plan_completeness.sh, `_extract_template_sections` from lib/plan_batch.sh (via plan.sh), config defaults from lib/config_defaults.sh — with non-trivial fixture inputs. No excessive mocking.
+- Test Weakening: The REQUIRED marker count updates in test_plan_templates.sh (+1 per template) correctly reflect the new Documentation Strategy REQUIRED section added by M74. Prior counts are superseded, not weakened — the new values are strictly more accurate.
+- Test Naming: Descriptive and scenario-plus-outcome throughout (e.g., "Documentation Strategy is REQUIRED", "DESIGN.md missing Documentation Strategy fails completeness", "DOCS_ENFORCEMENT_ENABLED defaults to true", "_extract_template_sections outputs 4-field format").
+- Scope Alignment: All referenced symbols exist in the current codebase. `_extract_required_sections` is in lib/plan_completeness.sh; `_extract_template_sections` is in lib/plan_batch.sh (sourced via plan.sh); DOCS_* defaults are in lib/config_defaults.sh:412–415. No orphaned, stale, or renamed references detected.
+- Test Isolation: test_plan_docs_section.sh creates `TEST_TMPDIR=$(mktemp -d)` and writes all DESIGN.md fixture content there; trap cleans up on exit. test_plan_templates.sh reads checked-in source files (templates, lib/*.sh) — not mutable runtime artifacts. Neither test reads .tekhton/ run artifacts.
