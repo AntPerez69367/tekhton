@@ -34,7 +34,7 @@ the fix can land cleanly and get dedicated regression coverage.
 
 ## Design Decisions
 
-### 1. Normalization helper in `lib/notes_core.sh`
+### 1. Normalization helper in new `lib/notes_core_normalize.sh`
 
 Add one helper — `_normalize_markdown_blank_runs <file>` — that reads a file
 and rewrites it with:
@@ -43,8 +43,10 @@ and rewrites it with:
 - Trailing blank lines stripped (but keep a single trailing newline).
 - Interior runs of ≥ 2 blank lines collapsed to a single blank line.
 
-Shared by both fix sites. Small enough (≤ 20 lines) that a new `_helpers.sh`
-file is not warranted — it lives next to the notes logic in `notes_core.sh`.
+Shared by both fix sites. The helper is ≤ 25 lines but `lib/notes_core.sh`
+is already at 332 lines (over M71's 300-line cap), so the helper lives in
+a new sibling file `lib/notes_core_normalize.sh` that is sourced alongside
+`notes_core.sh`. This keeps both files comfortably under the cap.
 
 ### 2. Why normalization instead of smarter skip logic
 
@@ -84,19 +86,20 @@ count matches expectation — not a one-less-than-before stagger.
 | Area | Count | Notes |
 |------|-------|-------|
 | Functions fixed | 2 | `clear_completed_human_notes`, `clear_resolved_nonblocking_notes` |
-| New shared helper | 1 | `_normalize_markdown_blank_runs` in `lib/notes_core.sh` |
+| New lib file | 1 | `lib/notes_core_normalize.sh` — hosts `_normalize_markdown_blank_runs` |
 | Tests added | 2 | Line-count stability + inter-item blank handling |
 | Existing tests touched | 2 | `tests/test_clear_resolved_nonblocking_notes.sh`, `tests/test_cleanup_notes.sh` — add blank-line assertions |
 | New config variables | 0 | Pure bug fix; no config surface change |
 | New template variables | 0 | — |
-| Files modified (lib) | 3 | `lib/notes.sh`, `lib/drift_cleanup.sh`, `lib/notes_core.sh` |
+| Files modified (lib) | 3 | `lib/notes.sh`, `lib/drift_cleanup.sh`, `tekhton.sh` (source new file) |
 
 ## Implementation Plan
 
 ### Step 1 — Add the normalization helper
 
-Edit `lib/notes_core.sh` — add near the top of the file (before any functions
-that will call it):
+Create **`lib/notes_core_normalize.sh`** (new file — `lib/notes_core.sh` is
+already 332 lines, over M71's 300-line threshold, so do NOT add to it).
+Content:
 
 ```bash
 # _normalize_markdown_blank_runs FILE
@@ -133,7 +136,11 @@ _normalize_markdown_blank_runs() {
 }
 ```
 
-Validate: source `lib/notes_core.sh` and run
+Source the new file from `tekhton.sh` BEFORE `lib/notes_core.sh`,
+`lib/drift_cleanup.sh`, and `lib/notes_cleanup.sh` so the helper is
+defined when those files' functions execute.
+
+Validate: source the new file and run
 `bash tests/run_tests.sh` — zero behavior change so far (no caller invokes
 the helper yet).
 
@@ -213,7 +220,7 @@ Edit `tests/test_cleanup_notes.sh` similarly.
 ### Step 7 — Shellcheck + full test suite
 
 ```bash
-shellcheck lib/notes.sh lib/notes_core.sh lib/drift_cleanup.sh lib/notes_cleanup.sh
+shellcheck lib/notes.sh lib/notes_core_normalize.sh lib/drift_cleanup.sh lib/notes_cleanup.sh
 bash tests/run_tests.sh
 ```
 
@@ -226,15 +233,17 @@ Edit `tekhton.sh` — bump `TEKHTON_VERSION` to `3.73.0`.
 ## Files Touched
 
 ### Added
+- `lib/notes_core_normalize.sh` — hosts `_normalize_markdown_blank_runs`
 - `tests/test_notes_normalization.sh` — new regression test suite
 - `.claude/milestones/m73-notes-tidying-line-deletion.md` — this file
 
 ### Modified
-- `lib/notes_core.sh` — add `_normalize_markdown_blank_runs` helper
 - `lib/notes.sh` — call helper from `clear_completed_human_notes`
 - `lib/drift_cleanup.sh` — call helper from `clear_resolved_nonblocking_notes`
 - `lib/notes_cleanup.sh` — call helper after `mark_note_resolved` /
   `mark_note_deferred` rewrites (if audit confirms they're needed)
+- `tekhton.sh` — source `lib/notes_core_normalize.sh` BEFORE
+  `lib/notes_core.sh`, `lib/drift_cleanup.sh`, and `lib/notes_cleanup.sh`
 - `tests/test_clear_resolved_nonblocking_notes.sh` — add blank-line assertions
 - `tests/test_cleanup_notes.sh` — add blank-line assertions
 - `tests/run_tests.sh` — register `test_notes_normalization.sh`
@@ -243,7 +252,7 @@ Edit `tekhton.sh` — bump `TEKHTON_VERSION` to `3.73.0`.
 
 ## Acceptance Criteria
 
-- [ ] `lib/notes_core.sh` exports `_normalize_markdown_blank_runs` helper
+- [ ] `lib/notes_core_normalize.sh` exports `_normalize_markdown_blank_runs` helper
 - [ ] Helper strips leading blank lines, trailing blank lines, and collapses
       interior runs of ≥ 2 blanks to exactly one
 - [ ] Helper preserves blank lines inside fenced code blocks
@@ -263,7 +272,7 @@ Edit `tekhton.sh` — bump `TEKHTON_VERSION` to `3.73.0`.
       count stability
 - [ ] `tests/test_cleanup_notes.sh` asserts blank-line count stability
 - [ ] `bash tests/run_tests.sh` passes with zero failures
-- [ ] `shellcheck lib/notes.sh lib/notes_core.sh lib/drift_cleanup.sh
+- [ ] `shellcheck lib/notes.sh lib/notes_core_normalize.sh lib/drift_cleanup.sh
       lib/notes_cleanup.sh` reports zero warnings
 - [ ] `tekhton.sh` `TEKHTON_VERSION` is `3.73.0`
 - [ ] `.claude/milestones/MANIFEST.cfg` contains the M73 row
@@ -299,10 +308,13 @@ Edit `tekhton.sh` — bump `TEKHTON_VERSION` to `3.73.0`.
   normalization calls. Read each mutating function first and confirm it
   actually performs an in-place rewrite that could accumulate blanks. If a
   function only appends, normalization is unnecessary.
-- **File-length guardrail.** `lib/notes_core.sh` is already near the 300-line
-  threshold. If the helper pushes it over, extract to
-  `lib/notes_core_normalize.sh` (following M71 shell hygiene + M70 file-length
-  rules). Check `wc -l` before committing.
+- **File-length guardrail.** `lib/notes_core.sh` is already **332 lines**
+  (over M71's 300-line threshold). Adding the helper here would push it
+  further over, so extract the helper into a new
+  `lib/notes_core_normalize.sh` from the start — do NOT land it inside
+  `notes_core.sh`. Source the new file from `tekhton.sh` before
+  `notes_core.sh`. Follow M71 shell hygiene + M70 file-length rules.
+  Check `wc -l` before committing.
 
 ## Seeds Forward
 

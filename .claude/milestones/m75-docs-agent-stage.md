@@ -78,16 +78,18 @@ pattern as every other stage.
 
 ### 4. Skip-path: no public surface changed
 
-Before invoking the agent, the stage runs a quick check:
+Before invoking the agent, the stage runs a single quick check: did
+the coder's diff touch anything listed in CLAUDE.md's "public surface"
+declaration (section 13, added by M74)?
 
-- Did the coder's diff touch anything listed in CLAUDE.md's "public
-  surface" declaration?
-- Did `CODER_SUMMARY.md` already contain a fully-populated
-  `## Docs Updated` section with every expected file?
-
-If neither public surface was touched OR the coder already documented
-exhaustively, the stage logs "nothing to do" and returns 0 without
-invoking an agent. Saves tokens on routine internal-refactor milestones.
+If no public-surface files changed, the stage logs "nothing to do" and
+returns 0 without invoking an agent. This saves tokens on routine
+internal-refactor milestones. The check is intentionally narrow —
+deciding whether the coder's `## Docs Updated` section is "complete
+enough" is a judgment call we leave to the agent itself. If the agent
+runs and concludes no updates are needed, it just writes an empty
+report and exits. That's an acceptable cost compared to the risk of
+a heuristic false-skip.
 
 ### 5. Output contract
 
@@ -132,7 +134,7 @@ required.
 | New stage file | 1 | `stages/docs.sh` |
 | New prompt file | 1 | `prompts/docs_agent.prompt.md` |
 | New lib helpers | 1 | `lib/docs_agent.sh` — skip-path detection, public-surface parsing |
-| New config variables | 5 | `DOCS_AGENT_ENABLED`, `DOCS_AGENT_MODEL`, `DOCS_AGENT_MAX_TURNS`, `DOCS_AGENT_REPORT_FILE`, `SKIP_DOCS` |
+| New config variables | 4 | `DOCS_AGENT_ENABLED`, `DOCS_AGENT_MODEL`, `DOCS_AGENT_MAX_TURNS`, `DOCS_AGENT_REPORT_FILE` (`SKIP_DOCS` is a CLI-set runtime var, not in `config_defaults.sh`) |
 | Pipeline integration | 1 | `tekhton.sh` main loop — insert between build gate and security |
 | CLI flag | 1 | `--skip-docs` |
 | Tests added | 2 | `test_docs_agent_skip_path.sh`, `test_docs_agent_stage_smoke.sh` |
@@ -169,9 +171,6 @@ Create `lib/docs_agent.sh` with one main function:
 #   - SKIP_DOCS == true
 #   - No changed files from the coder touch anything listed as public surface
 #     in CLAUDE.md section 13 (parsed via grep — cheap and forgiving)
-#   - CODER_SUMMARY.md already has a `## Docs Updated` section with at least
-#     one entry AND the reviewer ran with a clean docs finding last cycle
-#     (not applicable on first cycle — skip this check)
 docs_agent_should_skip() { ... }
 ```
 
@@ -319,7 +318,7 @@ group `quality`.
 - `.claude/milestones/m75-docs-agent-stage.md` — this file
 
 ### Modified
-- `lib/config_defaults.sh` — five new `DOCS_AGENT_*` + `SKIP_DOCS` vars
+- `lib/config_defaults.sh` — four new `DOCS_AGENT_*` vars
 - `lib/prompts.sh` — register new template variables
 - `tekhton.sh` — source `stages/docs.sh`, invoke `run_stage_docs`,
   add `--skip-docs` flag, update stage-count helper, bump version
@@ -333,7 +332,7 @@ group `quality`.
 - [ ] `prompts/docs_agent.prompt.md` exists and references `{{CODER_SUMMARY_FILE}}`,
       `{{DOCS_README_FILE}}`, `{{DOCS_DIRS}}`, `{{DOCS_AGENT_REPORT_FILE}}`
 - [ ] `lib/docs_agent.sh` defines `docs_agent_should_skip`
-- [ ] `lib/config_defaults.sh` defines all five new vars with the correct defaults
+- [ ] `lib/config_defaults.sh` defines all four new `DOCS_AGENT_*` vars with the correct defaults
 - [ ] `DOCS_AGENT_ENABLED` defaults to `false`
 - [ ] `DOCS_AGENT_MODEL` defaults to `claude-haiku-4-5-20251001`
 - [ ] `tekhton.sh` sources `stages/docs.sh` and invokes `run_stage_docs`
@@ -369,11 +368,12 @@ group `quality`.
   is better than false negative (run when we shouldn't), because a
   false-negative spends tokens and can make a noisy "nothing to change"
   commit. Err toward skipping.
-- **Don't re-run on rework loops.** If the security or reviewer stage
-  triggers a rework, the coder re-runs. The docs stage SHOULD re-run
-  too — but only if the rework touched public-surface files. Add a
-  "second cycle on this milestone" check: if `REVIEW_CYCLE > 0` and
-  the delta since the last docs run is zero, skip.
+- **Rework loop re-runs are handled by the same skip check.** When the
+  security or reviewer stage triggers a rework, the coder re-runs. The
+  docs stage runs again too — but the same `docs_agent_should_skip`
+  check applies. If the rework diff doesn't touch public-surface files,
+  the stage skips without invoking the agent. No special-casing of
+  `REVIEW_CYCLE` is required.
 - **Parser forgiveness for CLAUDE.md section 13.** Section 13 is free-form
   markdown. Don't try to parse it as structured data. Extract file globs
   and path patterns via regex, then match against changed-file paths.

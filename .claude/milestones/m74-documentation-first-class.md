@@ -24,7 +24,7 @@ the pipeline actively maintains. This shows up in three places:
    references to `README`, `docs/`, or `documentation`. Neither
    `prompts/coder.prompt.md` nor `prompts/reviewer.prompt.md` requires doc
    updates when a coder touches a public surface. The only coder mention of
-   "documentation" is at line 231 of `coder.prompt.md` and it's about
+   "documentation" is at line 199 of `coder.prompt.md` and it's about
    system-design contradictions, not README maintenance.
 
 Result: projects built with Tekhton ship working code whose `README.md` and

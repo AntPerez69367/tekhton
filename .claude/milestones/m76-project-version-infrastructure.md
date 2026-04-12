@@ -329,9 +329,10 @@ Edit manifest — add M76 row with `depends_on=m72`, group `runtime`.
 - **Config cache placement.** `.claude/project_version.cfg` lives under
   `.claude/`, not `.tekhton/` (M72), because it's runtime state not an
   artifact. Consistent with `pipeline.conf` placement.
-- **M77 builds on this.** Keep `lib/project_version_bump.sh`'s public
-  API stable — M77's CHANGELOG hook will call `parse_current_version`
-  and `get_version_bump_hint`. Don't make the hint function private.
+- **M77 builds on this.** Keep the public APIs of both libraries
+  stable — M77's CHANGELOG hook will call `parse_current_version`
+  (from `lib/project_version.sh`) and `get_version_bump_hint` (from
+  `lib/project_version_bump.sh`). Don't make either function private.
 
 ## Seeds Forward
 

@@ -81,12 +81,15 @@ the schema in the prompt.
 ### 3. New lib: lib/draft_milestones.sh
 
 ```bash
-draft_milestones_run              # entry point — parses optional seed,
+run_draft_milestones              # entry point — parses optional seed,
                                   # invokes agent, handles phase transitions
+                                  # (matches Tekhton's run_* convention for
+                                  # CLI-facing entry points — see stages/*.sh)
 draft_milestones_build_prompt     # assembles prompt with repo map slice
 draft_milestones_validate_output  # checks that generated files parse as
                                   # milestone files with proper metadata
 draft_milestones_write_manifest   # appends new rows to MANIFEST.cfg
+draft_milestones_next_id          # pure helper — returns next free milestone ID
 ```
 
 Stays ≤ 300 lines. The heavy lifting is in the agent prompt, not the
@@ -198,9 +201,11 @@ project name, repo map slice, exemplar milestones, next milestone ID.
 
 ### Step 4 — Agent invocation
 
-Wire `draft_milestones_run` in `lib/draft_milestones.sh` to call
+Wire `run_draft_milestones` in `lib/draft_milestones.sh` to call
 `run_agent` (from `lib/agent.sh`) with the rendered prompt. Pass the
-user's seed description (if any) as the initial user turn.
+user's seed description (if any) as the initial user turn. (Entry-point
+naming follows the Tekhton `run_*` convention — see `run_intake_create`,
+`run_stage_coder`, etc.)
 
 Capture the agent's stdout — phase transitions are marked by agent
 outputting known sigils (`[PHASE:PROPOSE]`, `[PHASE:GENERATE]`) that
@@ -295,7 +300,8 @@ of the flow. Keeping the linear devx chain tight.
 - `.claude/milestones/m80-draft-milestones-interactive-flow.md` — this file
 
 ### Modified
-- `tekhton.sh` — new flag, deprecated alias, register finalize sequence
+- `tekhton.sh` — add `--draft-milestones` flag, deprecate
+  `--add-milestone` alias, source `lib/draft_milestones.sh`, bump version
 - `lib/config_defaults.sh` — four `DRAFT_MILESTONES_*` vars
 - `lib/prompts.sh` — register as template vars
 - `lib/dashboard.sh` — `emit_draft_milestones_data` stub

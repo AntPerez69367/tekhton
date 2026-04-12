@@ -11,8 +11,9 @@ versioning) adds **CHANGELOG generation** on top of it: every time the
 version bumps, Tekhton appends a keep-a-changelog entry to `CHANGELOG.md`
 summarizing what the milestone shipped.
 
-Depends on **M76** — reads `get_version_bump_hint` and
-`parse_current_version` from `lib/project_version_bump.sh`.
+Depends on **M76** — reads `parse_current_version` from
+`lib/project_version.sh` and `get_version_bump_hint` from
+`lib/project_version_bump.sh`.
 
 The entry is synthesized from existing sources — `CODER_SUMMARY.md`
 (what the coder did), milestone title from `MANIFEST.cfg`, and
