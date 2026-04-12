@@ -1,7 +1,15 @@
-# Reviewer Report
+# Reviewer Report — M73 (Notes blank-line normalization) — Re-review Cycle 2
 
 ## Verdict
 APPROVED_WITH_NOTES
+
+## Prior Blocker Verification
+
+**FIXED** — `tests/test_notes_normalization.sh:260` dead `last_char_hex` variable removed.
+The line `last_char_hex=$(tail -c 2 "$IDEM_FILE" | xxd -p | tail -c 5)` is gone.
+Line 260 now reads `last_line=$(tail -1 "$IDEM_FILE")`, which is the assignment
+actually used by the assertion. JR coder report confirms `bash -n` passes and
+SC2034 warning is eliminated with no new warnings introduced.
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,16 +18,12 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/prompts.sh:86-87`: The M72 path update replaced `${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}` with `${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}`. The self-referential fallback is logically broken — if `INTAKE_REPORT_FILE` is unset, the expression expands to empty string instead of any path. Zero practical impact (config_defaults.sh always sets this variable before prompts.sh is invoked), but the original defensive fallback was silently removed. Correct to `"${INTAKE_REPORT_FILE}"` (no fallback needed) or `"${INTAKE_REPORT_FILE:-${TEKHTON_DIR}/INTAKE_REPORT.md}"`.
-- `tekhton.sh:35,22,25` (header block): The script docstring comments use `.tekhton/${DESIGN_FILE}` and `.tekhton/${HUMAN_NOTES_FILE}` patterns. At runtime these expand to `.tekhton/.tekhton/DESIGN.md` and `.tekhton/.tekhton/HUMAN_NOTES.md` (double-prefix). The actual code uses `${DESIGN_FILE}` and `${HUMAN_NOTES_FILE}` correctly — only the comments are wrong.
-- `tekhton.sh:1163`: Dead code in the `--init-notes` handler — `: "${HUMAN_NOTES_FILE:=${TEKHTON_DIR}/${HUMAN_NOTES_FILE}}"`. Since `--init-notes` is processed in the main arg loop after `load_config` (line 854), `HUMAN_NOTES_FILE` is already set to `.tekhton/HUMAN_NOTES.md`. The `:=` is always a no-op. Remove the line.
-- `.claude/milestones/MANIFEST.cfg`: M72 row has `status=in_progress` rather than the `status=done` required by the M72 acceptance criteria. The acceptance criteria explicitly specifies the row should be added with `status=done` when implementation is complete.
+- `lib/drift_cleanup.sh` is exactly 300 lines — the project ceiling is *under* 300. Consider extracting `_resolve_addressed_nonblocking_notes()` to a helper on next cleanup pass (carried from cycle 1).
+- `_normalize_markdown_blank_runs()` (`lib/notes_core_normalize.sh:30`) silently drops a single blank line that appears immediately before a fenced code block: `blank_pending = 0` is set by the fence handler before the pending blank is emitted, so a lone blank before ``` is lost. The spec says "collapse runs of ≥ 2 blank lines to one" — a single blank should survive. Low-risk edge case in practice (carried from cycle 1).
+- Security agent flagged two LOW findings in `lib/notes_core_normalize.sh`: missing `trap` for tmpfile cleanup on failure (line 27), and `mv` not preserving file permissions (line 42). Both are fixable; the security report marks them `fixable:yes`.
 
 ## Coverage Gaps
 - None
 
-## Prior Blocker Disposition
-No prior blockers. Previous cycle verdict was APPROVED_WITH_NOTES (health_checks_hygiene.sh `set -euo pipefail` fix — unrelated to M72).
-
 ## Drift Observations
-- `lib/prompts.sh:86` — The self-referential `${VAR:-${VAR}}` pattern is a common M72 migration mistake. A broader scan of other files changed in this milestone is worth doing to ensure this isn't replicated elsewhere — it was only found in prompts.sh.
+- None

@@ -8,8 +8,6 @@
 # Uses: _awk_join_bullets() from drift.sh (sourced before this file)
 # =============================================================================
 
-set -euo pipefail
-
 # =============================================================================
 # NON-BLOCKING NOTES ACCUMULATION
 # Tracks reviewer Non-Blocking Notes across runs. When they exceed a threshold,
@@ -230,6 +228,7 @@ clear_completed_nonblocking_notes() {
     fi
 
     mv "$tmpfile" "$nb_file"
+    _normalize_markdown_blank_runs "$nb_file"
     log "Moved ${completed_count} completed item(s) from ## Open to ## Resolved in ${NON_BLOCKING_LOG_FILE}."
 }
 
@@ -294,8 +293,8 @@ clear_resolved_nonblocking_notes() {
     done < "$nb_file"
 
     mv "$tmpfile" "$nb_file"
+    _normalize_markdown_blank_runs "$nb_file"
     local count
     count=$(echo "$resolved_items" | wc -l)
     log "Cleared ${count} resolved item(s) from ${NON_BLOCKING_LOG_FILE} ## Resolved section."
 }
-

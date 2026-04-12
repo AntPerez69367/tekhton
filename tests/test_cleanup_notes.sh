@@ -15,6 +15,7 @@ TIMESTAMP="test"
 TASK="test task"
 
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core_normalize.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
@@ -176,6 +177,46 @@ if mark_note_deferred "anything" 2>/dev/null; then
     echo "FAIL: mark_note_deferred absent file — expected return 1"
     FAIL=1
 fi
+
+# =============================================================================
+# Test 11: Blank-line stability after mark_note_resolved (M73)
+# =============================================================================
+
+cat > "$NB_FILE" << 'EOF'
+## Open
+- [ ] `lib/foo.sh:10` — missing null check
+
+- [ ] `lib/bar.sh:20` — unused variable
+
+
+- [ ] `lib/baz.sh:30` — add docstring
+
+## Resolved
+EOF
+
+mark_note_resolved "missing null check"
+
+double_blank=$(awk '/^[[:space:]]*$/{b++; if(b>=2){found=1}} /[^[:space:]]/{b=0} END{print found+0}' "$NB_FILE")
+assert_eq "blank-line stability after resolve" "0" "$double_blank"
+
+# =============================================================================
+# Test 12: Blank-line stability after mark_note_deferred (M73)
+# =============================================================================
+
+cat > "$NB_FILE" << 'EOF'
+## Open
+- [ ] `lib/foo.sh:10` — needs refactor
+
+
+- [ ] `lib/bar.sh:20` — unused variable
+
+## Resolved
+EOF
+
+mark_note_deferred "needs refactor"
+
+double_blank=$(awk '/^[[:space:]]*$/{b++; if(b>=2){found=1}} /[^[:space:]]/{b=0} END{print found+0}' "$NB_FILE")
+assert_eq "blank-line stability after defer" "0" "$double_blank"
 
 # =============================================================================
 

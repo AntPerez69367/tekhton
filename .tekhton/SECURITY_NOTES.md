@@ -1,6 +1,7 @@
 # Security Notes
 
-Generated: 2026-04-07 12:02:59
+Generated: 2026-04-12 09:45:19
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A03] [stages/tester_fix.sh:162] fixable:unknown — `eval "${TEST_CMD}"` executes the configured test command via eval. This is a pre-existing convention shared with `lib/health_checks.sh:120`. `TEST_CMD` is sourced from project-owner-controlled `pipeline.conf`, not end-user input — no new attack surface is introduced. No action needed unless the project decides to sandbox config values globally.
+- [LOW] [category:A04] [lib/notes_core_normalize.sh:27-42] fixable:yes — No `trap` is set to remove `$tmpfile` on failure. If `awk` exits non-zero (e.g. disk full, SIGINT), the partial temp file containing notes content is left in `TEKHTON_SESSION_DIR` or `/tmp` and never cleaned up. Fix: add `trap 'rm -f "$tmpfile"' EXIT` immediately after the `mktemp` call and remove it on success.
+- [LOW] [category:A04] [lib/notes_core_normalize.sh:42] fixable:yes — `mv "$tmpfile" "$file"` replaces the original file without preserving its permissions. `mktemp` creates files with mode 0600; if the target file had wider permissions (e.g. 0644), the replacement silently tightens them. Fix: capture permissions with `stat` before writing and restore with `chmod` after `mv`, or use `install -m` instead.

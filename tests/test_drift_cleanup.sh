@@ -19,6 +19,7 @@ DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 TASK="Test task"
 
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core_normalize.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
 source "${TEKHTON_HOME}/lib/drift_artifacts.sh"

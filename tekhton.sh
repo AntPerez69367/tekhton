@@ -136,7 +136,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.72.0"
+TEKHTON_VERSION="3.73.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -719,6 +719,7 @@ _check_pipeline_lock
 source "${TEKHTON_HOME}/lib/common.sh"
 _phase_start "startup"
 source "${TEKHTON_HOME}/lib/config.sh"
+source "${TEKHTON_HOME}/lib/notes_core_normalize.sh"
 source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes_rollback.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
