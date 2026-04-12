@@ -15,11 +15,6 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 ## Features
 
 ## Bugs
-- [x] [BUG] Promote install.sh:125 bash-version warning to a hard
-      fail on macOS. Currently warns but continues, letting users
-      land in a broken state. `fail` (not `warn`) when
-      BASH_VERSINFO[0] < 4 and PLATFORM=macos.
-
 - [ ] [BUG] README.md lies about macOS being zero-setup. Update
       README.md:102 Requirements line to flag that macOS needs
       `brew install bash`, with a link to
