@@ -60,33 +60,45 @@ Produce a 1-paragraph "state of the relevant code" summary.
 #### Impact Surface Scan
 
 Before proposing milestones, identify EVERY code site affected by the change.
-Do not rely solely on known variable names or expected patterns — discover
-empirically:
+Use a tiered approach — start with the cheapest, broadest tools and narrow
+with precision tools. Do not dump raw output; summarize affected files with
+site counts.
 
-1. **Shell code:** Run `Grep` for every file, variable, path, or literal string
-   the milestone will create, modify, move, or reference. Search `lib/`,
-   `stages/`, and `tekhton.sh`. Include both the target name AND any aliases,
-   abbreviations, or dynamic constructions (e.g., `${var}_FINDINGS.md`).
-2. **Prompt templates:** Run `Grep` on `prompts/` for the same patterns. Prompts
-   instruct agents to read and write files — a literal filename in a prompt is
-   a write-site that must be parameterized.
-3. **Test files:** Run `Grep` on `tests/` for affected paths. Tests that
-   hardcode paths may mask bugs if not updated.
-4. **Config files:** Check `lib/config_defaults.sh`, `templates/pipeline.conf.example`,
-   and the project's own `pipeline.conf` for variables or defaults that reference
-   affected paths. For path/file changes, also check whether existing config
-   overrides would defeat new defaults.
-5. **Dynamic patterns:** Search for string interpolation that constructs
-   affected filenames (e.g., `"${PREFIX}_${NAME}.md"`). These won't match a
-   literal grep but are still affected code sites.
+**Tier 1 — Repo map (file-level scoping, cheapest):**
+If the repo map slice is available above, use it to identify which files are
+in the blast radius of the proposed change. The repo map ranks files by symbol
+relevance — files it highlights are likely affected. Note any files the repo
+map surfaces that you didn't expect.
 
-If the change involves file paths, run:
-```
-grep -rn '$PROJECT_DIR/[A-Z]' lib/ stages/
-grep -rn '"[A-Z][A-Z_]*\.\(md\|txt\|json\)"' lib/ stages/ prompts/
-```
+**Tier 2 — Serena LSP (symbol-level tracing, if available):**
+If Serena MCP tools are available (`find_referencing_symbols`,
+`get_symbol_definition`), use them to trace variable and function references.
+For changes that rename, move, or re-parameterize code symbols, LSP reference
+queries are more precise than grep — they follow the actual symbol graph, not
+string patterns. Use `find_referencing_symbols` on key functions and variables
+that the milestone will modify.
 
-Document the complete hit count and list every affected file with site counts.
+**Tier 3 — Targeted grep (string-literal patterns, narrowest):**
+AST and LSP tools cannot see literal strings embedded in code or prompts.
+Use grep specifically for patterns invisible to Tier 1 and 2:
+
+1. **Hardcoded filenames in shell code:** Search `lib/`, `stages/`, and
+   `tekhton.sh` for literal `.md`, `.txt`, or `.json` filenames that are
+   created, read, or referenced by the milestone's change.
+2. **Prompt templates as write-sites:** Search `prompts/` for the same
+   patterns. Prompts instruct agents to create files — a literal filename
+   in a prompt is a write-site that must be parameterized.
+3. **Config overrides that defeat defaults:** Check `lib/config_defaults.sh`,
+   `templates/pipeline.conf.example`, and the project's own `pipeline.conf`
+   for values that would override the milestone's new defaults.
+4. **Dynamic construction:** Search for string interpolation that builds
+   affected filenames (e.g., `"${PREFIX}_${NAME}.md"`). These escape both
+   AST parsing and literal grep.
+5. **Test files:** Search `tests/` for affected paths. Tests that hardcode
+   values may mask bugs if not updated.
+
+Summarize the total affected-file count per tier. Do not paste raw grep
+output — list files with hit counts in a table.
 
 ### Phase 3 — Propose
 

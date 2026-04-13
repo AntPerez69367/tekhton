@@ -157,14 +157,35 @@ been immediately visible.
 
 The root cause is that the `draft_milestones.prompt.md` does not instruct the
 analysis phase to:
-1. Perform exhaustive codebase discovery (grep for ALL affected patterns, not
-   just known ones)
+1. Perform exhaustive codebase discovery using available tooling — the repo map
+   (tree-sitter AST + PageRank) can scope which files are affected, Serena LSP
+   can trace symbol references, and targeted grep can catch string-literal
+   patterns invisible to both. M72 used none of these systematically.
 2. Require behavioral acceptance criteria (observe actual runtime behavior,
    not just structural patterns)
 3. Require negative-space documentation (what is explicitly out of scope, with
    justification)
 4. Cross-reference prompts as code sites (prompt templates tell agents to
    create files — those are write sites too)
+
+### Underutilized tooling
+
+Tekhton already has two tools that could have prevented M72's gaps, but neither
+was used during milestone generation:
+
+- **Repo map** (tree-sitter): Could have scoped the blast radius at the file
+  level, surfacing files like `lib/drift_prune.sh` and `lib/crawler.sh` as
+  relevant to a "move files" change. Currently only injected as a passive
+  context slice — not actively queried during impact analysis.
+
+- **Serena LSP** (`find_referencing_symbols`): Could have traced all call sites
+  of functions that write to `PROJECT_DIR`. Available to the draft milestones
+  agent if enabled, but the prompt never mentions it.
+
+Neither tool can catch literal string patterns in code (`"SCOUT_REPORT.md"`)
+or in prompt templates — that requires grep. But the tiered combination
+(repo map → Serena → targeted grep) catches more than any single tool alone
+while avoiding context bloat from dumping raw grep output.
 
 ---
 
@@ -227,14 +248,14 @@ criteria for completeness patterns before a milestone is accepted as "done."
 
 ### M86: Draft Milestones Impact Surface Analysis
 
-**Goal:** Enhance the `draft_milestones.prompt.md` Analyze phase to perform
-exhaustive codebase discovery and negative-space documentation, preventing
-the blind spots that caused M72's gaps.
+**Goal:** Enhance the `draft_milestones.prompt.md` Analyze phase with tiered
+codebase discovery (repo map → Serena LSP → targeted grep) and negative-space
+documentation, preventing the blind spots that caused M72's gaps.
 
 **Scope:**
-- Add mandatory "Impact Surface Scan" sub-phase to Phase 2 (Analyze)
-- Require the agent to grep for ALL code sites affected by the proposed
-  change, not just known ones
+- Add mandatory "Impact Surface Scan" sub-phase to Phase 2 (Analyze) with
+  tiered tooling: repo map for file scoping, Serena for symbol tracing,
+  targeted grep for string-literal patterns invisible to AST/LSP
 - Add mandatory "Negative Space" section to milestone template requiring
   explicit documentation of what is intentionally NOT changed
 - Add mandatory "Prompt Template Audit" step that treats prompt files as
@@ -287,8 +308,11 @@ introduced by M72's workaround.
 See the companion commit for the actual edits to
 `prompts/draft_milestones.prompt.md`. The changes add:
 
-1. **Impact Surface Scan** — Phase 2 now requires exhaustive grep-based
-   discovery of all affected code sites, including prompt templates.
+1. **Impact Surface Scan** — Phase 2 now requires tiered discovery: repo map
+   for file-level scoping, Serena LSP for symbol-level tracing, and targeted
+   grep for string-literal patterns invisible to AST/LSP. This avoids context
+   bloat (no raw grep dumps) while catching the exact class of bug that caused
+   M72's gaps.
 
 2. **Negative Space section** — The milestone template now requires a
    `## Negative Space` section documenting what is intentionally not changed.

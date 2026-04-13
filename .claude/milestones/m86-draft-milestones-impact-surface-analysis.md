@@ -13,8 +13,8 @@ The agent analyzed what it expected to find (known `_FILE` variables) rather
 than discovering everything that was actually affected.
 
 This milestone enhances the draft milestones prompt to require:
-1. An **Impact Surface Scan** — explicit grep-based discovery of all affected
-   code sites, including prompt templates and tests
+1. An **Impact Surface Scan** — tiered discovery using repo map (file scoping),
+   Serena LSP (symbol tracing), and targeted grep (string-literal patterns)
 2. A **Negative Space** section — documentation of what is intentionally NOT
    changed, forcing the author to confront the complete scope
 3. **Behavioral acceptance criteria** — at least one criterion that observes
@@ -32,12 +32,23 @@ The impact surface scan is part of analysis, not a separate phase. Adding a
 fifth phase would change the pipeline's phase tracking and introduce
 unnecessary complexity. Instead, Phase 2 gets explicit sub-steps.
 
-### 2. Prescriptive grep commands, not vague instructions
+### 2. Tiered tooling — repo map, Serena, then grep
 
-The prompt changes include actual example grep patterns, not just "search
-thoroughly." For example: "Run `grep -rn 'LITERAL_NAME' lib/ stages/ prompts/`
-for every file that the milestone creates, reads, or modifies." Specific
-instructions produce specific results.
+The impact surface scan uses a three-tier approach that leverages existing
+Tekhton tooling before falling back to raw grep:
+
+- **Tier 1 (Repo map):** Tree-sitter AST + PageRank identifies which files are
+  in the blast radius. Cheapest, broadest — reduces the search space.
+- **Tier 2 (Serena LSP):** `find_referencing_symbols` traces variable and
+  function references through the actual symbol graph. More precise than grep
+  for rename/reparameterize changes. Only available when Serena is enabled.
+- **Tier 3 (Targeted grep):** For patterns invisible to AST/LSP — literal
+  filenames in string constants, dynamic constructions, prompt write-sites,
+  config overrides. This is where M72's gaps lived: hardcoded `"SCOUT_REPORT.md"`
+  strings that no AST tool would flag.
+
+This avoids context bloat (no raw grep dumps) while catching the string-literal
+blind spot that caused M72's bugs.
 
 ### 3. Negative Space is a required section, not optional
 
@@ -65,26 +76,32 @@ pipeline produces no files at location X'), not just structural criteria
 
 ### Step 1 — Enhance Phase 2 (Analyze)
 
-Add an "Impact Surface Scan" sub-section to Phase 2 with these explicit
-instructions:
+Add an "Impact Surface Scan" sub-section to Phase 2 with a tiered approach
+that leverages existing Tekhton tooling before falling back to raw grep:
 
 ```markdown
 #### Impact Surface Scan
 
-Before proposing milestones, identify EVERY code site affected by the change:
+Use a tiered approach — cheapest/broadest tools first, precision tools to
+narrow:
 
-1. **Shell code:** `grep -rn 'PATTERN' lib/ stages/` for every file, variable,
-   or path the milestone will create, modify, or reference. Include both the
-   target name AND any aliases, abbreviations, or dynamic constructions.
-2. **Prompt templates:** `grep -rn 'PATTERN' prompts/` — prompts instruct agents
-   to read/write files. A literal filename in a prompt is a write-site.
-3. **Test files:** `grep -rn 'PATTERN' tests/` — tests that reference affected
-   paths must be updated.
-4. **Config files:** Check `lib/config_defaults.sh` and pipeline.conf examples
-   for variables or defaults that reference affected paths.
+**Tier 1 — Repo map (file-level scoping):**
+Use the repo map slice to identify files in the blast radius. The repo map
+ranks files by symbol relevance via tree-sitter AST + PageRank.
 
-Document the complete hit count. If the change touches file paths, grep for
-`$PROJECT_DIR/` and `${PROJECT_DIR}/` concatenated with literal filenames.
+**Tier 2 — Serena LSP (symbol-level tracing, if available):**
+If Serena MCP tools are available, use `find_referencing_symbols` and
+`get_symbol_definition` to trace variable/function references. LSP follows
+the actual symbol graph — more precise than grep for rename/reparameterize
+changes.
+
+**Tier 3 — Targeted grep (string-literal patterns):**
+AST and LSP cannot see literal strings in code or prompts. Use grep only
+for patterns invisible to Tier 1 and 2: hardcoded filenames in shell code,
+prompt templates as write-sites, config overrides defeating defaults, dynamic
+string construction, and test file hardcoded paths.
+
+Summarize affected-file count per tier. Do not paste raw output.
 ```
 
 ### Step 2 — Add Negative Space section to template
