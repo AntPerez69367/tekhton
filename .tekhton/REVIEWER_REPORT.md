@@ -1,3 +1,5 @@
+# Reviewer Report
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,23 +10,14 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `_changelog_insert_after_unreleased` inserts a blank line before the entry regardless of whether the original file already had one after `## [Unreleased]`. May produce a double blank line in some CHANGELOG.md files. Cosmetic only.
-- `lib/prompts.sh` was not updated with CHANGELOG_* template vars (listed in the spec's Step 1). These vars are not referenced by any prompt template, so registering them would be a no-op. Correct to skip.
+- [.github/workflows/brew-bump.yml:30] Security agent flagged `${{ steps.sha.outputs.tag }}` interpolated inline into `sed` run command (script injection pattern, MEDIUM). The security agent marked this fixable — move into a step-level `env:` var and reference as `$TAG`.
+- [.github/workflows/brew-bump.yml:20] Security agent flagged `actions/checkout@v4` as an unpinned mutable tag (MEDIUM). Pin to a full commit SHA per GitHub hardening guidance.
+- [.github/workflows/brew-bump.yml] Security agent flagged missing `permissions` block (MEDIUM). Add `permissions: contents: read` at workflow level; the bump job needs no repo access beyond what the PAT provides.
+- [docs/getting-started/installation.md:22] Security agent flagged the curl|bash one-liner fetching from mutable `main` branch (LOW). Consider documenting a versioned tag URL alongside the existing review step, or adding a sha256 checksum.
 
 ## Coverage Gaps
-- No test covers the case where `_hook_changelog_append` is invoked on a run where only Tekhton's internal pipeline files changed (CODER_SUMMARY.md, REVIEWER_REPORT.md, etc.) but no project code changed. The `git status --porcelain` guard would see those internal files as changes and write a changelog entry even though there's no user-facing code change.
-
-## ACP Verdicts
-None
+- None
 
 ## Drift Observations
-- `lib/changelog.sh:172` — The zero-diff guard reads `git status --porcelain` to detect zero-diff runs, but at hook execution time, Tekhton's own pipeline artifacts (CODER_SUMMARY.md, REVIEWER_REPORT.md, etc.) are also uncommitted. A run that produced no project code changes but wrote pipeline artifacts would still pass this guard and emit a changelog entry. Low-impact for normal use, but worth revisiting if false-positive entries surface in practice.
-
----
-## Re-review Notes (cycle 2)
-
-**Prior blocker 1** — `lib/changelog.sh` missing `set -euo pipefail` → **FIXED**: Line 2 now has `set -euo pipefail`.
-
-**Prior blocker 2** — `lib/changelog_helpers.sh` missing `set -euo pipefail` → **FIXED**: Line 2 now has `set -euo pipefail`.
-
-Both blockers from cycle 1 are resolved. No regressions introduced by the rework. `_hook_changelog_append` is correctly registered at position 19 in the finalization sequence (after `_hook_project_version_bump`, before `_hook_commit`), the test suite verifies all 24 hooks in order, and `TEKHTON_VERSION` is bumped to `3.77.0`.
+- [.github/workflows/brew-bump.yml:50] Smoke-test job runs `brew install tekhton` (short form after explicit `brew tap`) while README and installation.md show the long form `brew install geoffgodwin/tekhton/tekhton`. Both are correct post-tap, but the inconsistency could confuse maintainers reading the workflow vs. docs.
+- [docs/RELEASING.md:79] References `.github/workflows/release.yml` as creating "GitHub Release with a tarball and SHA256SUMS" — that workflow exists (M19 deliverable) and is accurate, but the runbook gives no indication of where to find or verify it. Minor discoverability gap for new maintainers.

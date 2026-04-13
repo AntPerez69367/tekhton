@@ -2,14 +2,13 @@
 PASS
 
 ## Confidence
-90
+91
 
 ## Reasoning
-- Scope is precisely defined: files to add/modify listed in a table, Seeds Forward section explicitly marks out-of-scope items
-- Acceptance criteria are specific and machine-checkable (exact function names, version string, line count, shellcheck zero warnings)
-- Implementation plan is step-by-step with concrete function signatures and awk/grep hints — no guessing required
-- Commit-type mapping table is exhaustive; bullet synthesis priority order is numbered
-- Watch For section preemptively addresses the most likely failure modes (hook order, idempotency, markdown injection, empty CODER_SUMMARY fallback)
-- M76 dependency is explicit and the consumed symbols are named (`parse_current_version`, `get_version_bump_hint`)
-- No UI components — UI testability dimension not applicable
-- Minor gap: no formal "Migration Impact" section for the four new `CHANGELOG_*` config keys or the auto-created `CHANGELOG.md`. All defaults are backwards-compatible and the milestone describes the init behavior clearly, so this is informational rather than blocking.
+- Scope is precisely defined: explicit in-scope/out-of-scope table, zero code changes to tekhton.sh, no new config vars
+- Implementation plan provides verbatim content for every artifact (README section, workflow YAML, formula Ruby, smoke-test job) — no guessing required
+- Acceptance criteria are specific and testable: exact version string, exact MANIFEST.cfg fields, exact README content checks, workflow trigger verified by file existence
+- External dependency (tap repo creation, PAT secret) is correctly identified as a manual maintainer step and excluded from the PR scope — documented in docs/RELEASING.md
+- Watch For section proactively covers the key risks (sha256 drift, PAT scope, system-vs-Homebrew bash, scope-creep from M79)
+- No migration impact needed: no new config keys, no format changes, no user-facing pipeline behavior changes
+- Minor inconsistency between Step 5 ("60 to 80 lines max" for RELEASING.md) and Watch For ("stays under 150 lines") is cosmetic — both are actionable guardrails and a developer can pick either without blocking implementation

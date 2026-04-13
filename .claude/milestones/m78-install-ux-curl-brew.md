@@ -1,7 +1,7 @@
 # Milestone 78: Install UX — curl|bash Promotion + Homebrew Tap
 <!-- milestone-meta
 id: "78"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

@@ -1,0 +1,51 @@
+name: Bump Homebrew Formula
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute tarball sha256
+        id: sha
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Clone tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: geoffgodwin/homebrew-tekhton
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          path: tap
+
+      - name: Update formula
+        run: |
+          cd tap
+          sed -i -E \
+            -e "s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${{ steps.sha.outputs.tag }}.tar.gz\"|" \
+            -e "s|sha256 \".*\"|sha256 \"${{ steps.sha.outputs.sha256 }}\"|" \
+            Formula/tekhton.rb
+
+      - name: Commit and push
+        run: |
+          cd tap
+          git config user.name "tekhton-bot"
+          git config user.email "noreply@tekhton.dev"
+          git add Formula/tekhton.rb
+          git commit -m "tekhton ${{ steps.sha.outputs.tag }}"
+          git push
+
+  smoke-test:
+    needs: bump
+    runs-on: macos-latest
+    steps:
+      - name: Install from tap and verify
+        run: |
+          brew tap geoffgodwin/tekhton
+          brew install tekhton
+          tekhton --version | grep -q "${GITHUB_REF_NAME#v}"

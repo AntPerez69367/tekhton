@@ -5,6 +5,10 @@ Items are auto-collected from `## Non-Blocking Notes` in ${REVIEWER_REPORT_FILE}
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-04-13 | "M78"] [.github/workflows/brew-bump.yml:30] Security agent flagged `${{ steps.sha.outputs.tag }}` interpolated inline into `sed` run command (script injection pattern, MEDIUM). The security agent marked this fixable — move into a step-level `env:` var and reference as `$TAG`.
+- [ ] [2026-04-13 | "M78"] [.github/workflows/brew-bump.yml:20] Security agent flagged `actions/checkout@v4` as an unpinned mutable tag (MEDIUM). Pin to a full commit SHA per GitHub hardening guidance.
+- [ ] [2026-04-13 | "M78"] [.github/workflows/brew-bump.yml] Security agent flagged missing `permissions` block (MEDIUM). Add `permissions: contents: read` at workflow level; the bump job needs no repo access beyond what the PAT provides.
+- [ ] [2026-04-13 | "M78"] [docs/getting-started/installation.md:22] Security agent flagged the curl|bash one-liner fetching from mutable `main` branch (LOW). Consider documenting a versioned tag URL alongside the existing review step, or adding a sha256 checksum.
 - [ ] [2026-04-13 | "M77"] `_changelog_insert_after_unreleased` inserts a blank line before the entry regardless of whether the original file already had one after `## [Unreleased]`. May produce a double blank line in some CHANGELOG.md files. Cosmetic only.
 - [ ] [2026-04-13 | "M77"] `lib/prompts.sh` was not updated with CHANGELOG_* template vars (listed in the spec's Step 1). These vars are not referenced by any prompt template, so registering them would be a no-op. Correct to skip.
 - [ ] [2026-04-12 | "M76"] `tests/test_project_version_detect.sh:158` — The pubspec.yaml assertion `grep -q 'CURRENT_VERSION=1.0.0'` is a substring match and passes falsely when the config contains `CURRENT_VERSION=1.0.0+1` (Flutter build number is not stripped during detection). Tighten to `grep -qE 'CURRENT_VERSION=1.0.0$'` to distinguish the two cases. (Carried from cycle 1 — still unaddressed, no blocker.)

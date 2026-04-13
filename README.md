@@ -5,7 +5,7 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v3.71.1 — Context-Aware Pipeline</em></p>
+  <p><em>v3.78.0 — Context-Aware Pipeline</em></p>
 </div>
 
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
@@ -110,29 +110,48 @@ met, e.g. UI specialist on UI projects), and existing v2 workflows remain unchan
 - **Serena LSP** — for live symbol lookup via MCP (`--setup-indexer --with-lsp`)
 - **shellcheck** — for development on Tekhton itself
 
-## Quick Start
+## Install
 
-> **macOS users:** macOS ships with bash 3.2 which is too old for Tekhton. Run `brew install bash` first and ensure `/opt/homebrew/bin` (Apple Silicon) or `/usr/local/bin` (Intel) is on your `PATH` ahead of `/bin`. See [Installation → macOS](docs/getting-started/installation.md#macos) for details.
+### One-liner (Linux, macOS, WSL)
 
 ```bash
-# Clone Tekhton
-git clone https://github.com/geoffgodwin/tekhton.git
-cd tekhton && chmod +x tekhton.sh
+curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/main/install.sh | bash
+```
 
+This installs Tekhton to `~/.tekhton` and adds `tekhton` to your PATH.
+
+### macOS (Homebrew)
+
+```bash
+brew install geoffgodwin/tekhton/tekhton
+```
+
+### From source
+
+```bash
+git clone https://github.com/geoffgodwin/tekhton.git
+cd tekhton && ./install.sh
+```
+
+### Platform notes
+
+- **macOS:** `brew install geoffgodwin/tekhton/tekhton` (preferred) or the curl one-liner. macOS ships with bash 3.2 — both methods install bash 4.3+ automatically. See [Installation → macOS](docs/getting-started/installation.md#macos) for details.
+- **Linux / WSL:** The curl one-liner is the recommended path.
+- **From source:** `git clone` + `./install.sh` for contributors or custom installs.
+
+## Quick Start
+
+```bash
 # Initialize your project
 cd /path/to/your/project
-/path/to/tekhton/tekhton.sh --init
+tekhton --init
 
 # Configure
 $EDITOR .claude/pipeline.conf    # Set PROJECT_NAME, ANALYZE_CMD, TEST_CMD, etc.
 $EDITOR .claude/agents/coder.md  # Customize agent roles
 
 # Run a single task
-/path/to/tekhton/tekhton.sh "Implement user authentication"
-
-# Or create an alias
-alias tekhton='/path/to/tekhton/tekhton.sh'
-tekhton "Fix: login redirect loop"
+tekhton "Implement user authentication"
 
 # Run until completion (autonomous loop)
 tekhton --complete "Resolve all NON_BLOCKING_LOG observations"
@@ -148,8 +167,8 @@ tekhton --human --complete
 
 # Onboard an existing project (brownfield)
 cd /path/to/existing/project
-/path/to/tekhton/tekhton.sh --init    # Detects stack, crawls, generates docs
-tekhton --replan                      # Update docs after codebase changes
+tekhton --init      # Detects stack, crawls, generates docs
+tekhton --replan    # Update docs after codebase changes
 ```
 
 After `--init`, your project will contain:

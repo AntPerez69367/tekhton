@@ -1,41 +1,28 @@
+# Coder Summary
 ## Status: COMPLETE
+## What Was Implemented
+- Rewrote README.md Install section: curl|bash one-liner is now the headline install method, followed by Homebrew tap, then from-source as a secondary option
+- Cleaned up Quick Start section: removed redundant install steps, assumes `tekhton` is on PATH from the new Install section
+- Created `.github/workflows/brew-bump.yml`: tag-push triggered workflow that computes tarball sha256, updates the Homebrew tap formula, and runs a macOS smoke test verifying `brew install` works
+- Created `docs/RELEASING.md`: maintainer runbook covering one-time tap repo setup, PAT configuration, release cut process, and troubleshooting (sha256 drift, formula rollback, expired tokens)
+- Updated `docs/getting-started/installation.md`: added curl|bash one-liner and Homebrew as primary install methods ahead of the git clone path
+- Bumped `TEKHTON_VERSION` to `3.78.0` in `tekhton.sh`
+- Updated README version banner from v3.71.1 to v3.78.0
 
-## Summary
-.tekhton/CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
-failed to produce or maintain it. The following files were modified based
-on git state. The reviewer should assess actual changes directly.
+## Root Cause (bugs only)
+N/A — docs + packaging milestone, no bug fix.
 
 ## Files Modified
-- .claude/milestones/MANIFEST.cfg
-- .claude/milestones/m77-changelog-generation.md
-- .tekhton/CODER_SUMMARY.md
-- .tekhton/INTAKE_REPORT.md
-- .tekhton/JR_CODER_SUMMARY.md
-- .tekhton/REVIEWER_REPORT.md
-- .tekhton/TESTER_REPORT.md
-- PREFLIGHT_REPORT.md
-- lib/config_defaults.sh
-- lib/finalize.sh
-- lib/hooks.sh
-- lib/init.sh
-- tekhton.sh
-- tests/test_finalize_run.sh
+- `README.md` — rewrote Install/Quick Start sections, updated version banner
+- `tekhton.sh` — bumped TEKHTON_VERSION to 3.78.0
+- `.github/workflows/brew-bump.yml` (NEW) — Homebrew formula auto-update workflow
+- `docs/RELEASING.md` (NEW) — maintainer release runbook
+- `docs/getting-started/installation.md` — added curl|bash and Homebrew install methods
 
-## New Files Created
-- lib/changelog.sh (new)
-- lib/changelog_helpers.sh (new)
-- tests/test_changelog_append.sh (new)
-- tests/test_changelog_init.sh (new)
+## Human Notes Status
+No human notes for this milestone.
 
-## Git Diff Summary
-```
- lib/hooks.sh                                   | 30 ++++++++---
- lib/init.sh                                    | 20 +++++++
- tekhton.sh                                     |  2 +-
- tests/test_finalize_run.sh                     | 19 +++----
- 14 files changed, 82 insertions(+), 165 deletions(-)
-```
-
-## Remaining Work
-Unable to determine — coder did not report remaining items.
-Review the task description against actual changes to identify gaps.
+## Docs Updated
+- `README.md` — Install section rewritten with curl|bash headline, Homebrew, from-source, and platform notes
+- `docs/getting-started/installation.md` — added curl|bash and Homebrew install methods
+- `docs/RELEASING.md` (NEW) — maintainer release runbook
