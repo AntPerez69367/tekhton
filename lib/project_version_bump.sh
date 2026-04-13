@@ -177,7 +177,12 @@ if d.get('version') == sys.argv[2]:
 " "$file" "$old_version" "$new_version" 2>/dev/null || true
             ;;
         pyproject.toml|Cargo.toml)
-            sed -i.bak "s|^\\(version\\s*=\\s*\"\\)${escaped_old}\"|\1${new_version}\"|" "$file"
+            # Two patterns: one for single-quoted, one for double-quoted,
+            # so the replacement preserves the original quote style.
+            sed -i.bak \
+                -e "s|^\\(version\\s*=\\s*'\\)${escaped_old}'|\1${new_version}'|" \
+                -e "s|^\\(version\\s*=\\s*\"\\)${escaped_old}\"|\1${new_version}\"|" \
+                "$file"
             rm -f "${file}.bak"
             ;;
         setup.py)

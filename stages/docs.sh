@@ -83,9 +83,7 @@ _docs_prepare_template_vars() {
     export DOCS_SURFACE_SECTION=""
     local rules_file="${PROJECT_RULES_FILE:-CLAUDE.md}"
     if [[ -f "$rules_file" ]]; then
-        DOCS_SURFACE_SECTION=$(sed -n \
-            '/^##.*[Dd]ocumentation [Rr]esponsibilities/,/^## /{ /^## [^D]/d; p; }' \
-            "$rules_file" 2>/dev/null || true)
+        DOCS_SURFACE_SECTION=$(_docs_extract_doc_responsibilities "$rules_file")
     fi
 
     # Ensure DOCS_README_FILE and DOCS_DIRS are exported for the prompt

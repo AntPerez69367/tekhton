@@ -15,12 +15,43 @@ Before installing Tekhton, you need:
 
 ## Install Tekhton
 
-### Quick Install (Git Clone)
+### One-liner (recommended)
 
 ```bash
-git clone https://github.com/GeoffGodwin/tekhton.git ~/.tekhton
-echo 'export PATH="$HOME/.tekhton:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/main/install.sh | bash
+```
+
+This installs Tekhton to `~/.tekhton` and adds `tekhton` to your PATH.
+
+For a pinned install from a specific release tag:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/v4.78.0/install.sh | bash
+```
+
+Replace `v4.78.0` with the desired [release tag](https://github.com/geoffgodwin/tekhton/releases).
+
+To review the script before running:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/main/install.sh -o install.sh
+less install.sh    # review
+bash install.sh
+```
+
+### Homebrew (macOS)
+
+```bash
+brew install geoffgodwin/tekhton/tekhton
+```
+
+This installs bash 4.3+ and other dependencies automatically.
+
+### From source
+
+```bash
+git clone https://github.com/geoffgodwin/tekhton.git ~/.tekhton
+cd ~/.tekhton && ./install.sh
 ```
 
 ### Verify Installation
@@ -28,8 +59,6 @@ source ~/.bashrc
 ```bash
 tekhton --version
 ```
-
-You should see output like `Tekhton 3.18.0`.
 
 ## Platform Notes
 

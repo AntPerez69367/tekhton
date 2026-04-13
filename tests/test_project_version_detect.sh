@@ -156,7 +156,7 @@ YAML
 PROJECT_DIR="$PROJ" PROJECT_VERSION_CONFIG=".claude/project_version.cfg" \
     PROJECT_VERSION_STRATEGY="semver" detect_project_version_files
 cfg="$PROJ/.claude/project_version.cfg"
-if grep -q 'CURRENT_VERSION=1.0.0' "$cfg"; then pass "pubspec.yaml version detected"; else fail "pubspec.yaml version not detected: $(cat "$cfg")"; fi
+if grep -qE 'CURRENT_VERSION=1\.0\.0\+1$' "$cfg"; then pass "pubspec.yaml version detected"; else fail "pubspec.yaml version not detected: $(cat "$cfg")"; fi
 
 # =============================================================================
 # Test: plain VERSION file detection

@@ -1,3 +1,5 @@
+# Reviewer Report
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,23 +10,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `_changelog_insert_after_unreleased` inserts a blank line before the entry regardless of whether the original file already had one after `## [Unreleased]`. May produce a double blank line in some CHANGELOG.md files. Cosmetic only.
-- `lib/prompts.sh` was not updated with CHANGELOG_* template vars (listed in the spec's Step 1). These vars are not referenced by any prompt template, so registering them would be a no-op. Correct to skip.
+- `lib/changelog_helpers.sh:113-129` — The double-blank fix has a subtle formatting asymmetry: when the line immediately after `## [Unreleased]` is already blank, `next_line` is empty so no separator is emitted — the entry lands directly after the header (`## [Unreleased]\n- entry\n\nexisting`). When the next line is non-blank, a blank separator IS inserted. The symmetric fix is to always emit the blank and skip the existing blank via `tail -n +"$((line_num + 2))"`. Acceptable as-is since the entry is correctly placed; worth fixing before this path exercises CI.
+- `docs/getting-started/installation.md:26-32` — The security finding asked to document the expected sha256 alongside the versioned URL. The pinned tag URL was added but no sha256 verification guidance is included. The LOW finding is partially addressed; integrity verification step remains unimplemented.
 
 ## Coverage Gaps
-- No test covers the case where `_hook_changelog_append` is invoked on a run where only Tekhton's internal pipeline files changed (CODER_SUMMARY.md, REVIEWER_REPORT.md, etc.) but no project code changed. The `git status --porcelain` guard would see those internal files as changes and write a changelog entry even though there's no user-facing code change.
-
-## ACP Verdicts
-None
+- `lib/changelog_helpers.sh:_changelog_insert_after_unreleased` — No test exercises the new "skip extra blank when next line is already blank" branch. A fixture CHANGELOG.md with a pre-existing blank after `## [Unreleased]` would cover this path and catch the asymmetry noted above.
 
 ## Drift Observations
-- `lib/changelog.sh:172` — The zero-diff guard reads `git status --porcelain` to detect zero-diff runs, but at hook execution time, Tekhton's own pipeline artifacts (CODER_SUMMARY.md, REVIEWER_REPORT.md, etc.) are also uncommitted. A run that produced no project code changes but wrote pipeline artifacts would still pass this guard and emit a changelog entry. Low-impact for normal use, but worth revisiting if false-positive entries surface in practice.
-
----
-## Re-review Notes (cycle 2)
-
-**Prior blocker 1** — `lib/changelog.sh` missing `set -euo pipefail` → **FIXED**: Line 2 now has `set -euo pipefail`.
-
-**Prior blocker 2** — `lib/changelog_helpers.sh` missing `set -euo pipefail` → **FIXED**: Line 2 now has `set -euo pipefail`.
-
-Both blockers from cycle 1 are resolved. No regressions introduced by the rework. `_hook_changelog_append` is correctly registered at position 19 in the finalization sequence (after `_hook_project_version_bump`, before `_hook_commit`), the test suite verifies all 24 hooks in order, and `TEKHTON_VERSION` is bumped to `3.77.0`.
+- `lib/docs_agent.sh:70` — The sed delete predicate `/^## [^D]/` excludes only uppercase `D`. A CLAUDE.md with a closing `## documentation ...` header (lowercase `d`) would not be deleted from the extracted range. The range-start pattern uses `[Dd]` for case-insensitivity; the delete predicate should match with `[^Dd]` for consistency. Low risk in practice since CLAUDE.md headers are title-case.
