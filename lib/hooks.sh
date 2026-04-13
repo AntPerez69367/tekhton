@@ -19,7 +19,7 @@ archive_reports() {
     # each run from the causal log. CAUSAL_LOG.jsonl IS archived via archive_causal_log().
     for f in "${CODER_SUMMARY_FILE}" "${REVIEWER_REPORT_FILE}" "${TESTER_REPORT_FILE}" "${JR_CODER_SUMMARY_FILE}" "${SECURITY_REPORT_FILE}" "${SECURITY_NOTES_FILE}" "${INTAKE_REPORT_FILE}" "${PREFLIGHT_ERRORS_FILE}" "${TEST_AUDIT_REPORT_FILE}" "${UI_VALIDATION_REPORT_FILE}"; do
         if [ -f "$f" ]; then
-            cp "$f" "${log_dir}/${timestamp}_${f}"
+            cp "$f" "${log_dir}/${timestamp}_$(basename "$f")"
         fi
     done
 }
