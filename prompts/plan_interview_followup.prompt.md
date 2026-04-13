@@ -87,4 +87,10 @@ Produce the updated, complete {{DESIGN_FILE}} in markdown format. Follow these r
     project's documentation, who owns doc updates, what "public surface" means
     for this project, and whether doc freshness should block merges or just warn.
 
+11. **Versioning & Release Strategy.** If the flagged sections include
+    `Versioning & Release Strategy`, probe for the versioning scheme
+    (semver, calver, datestamp, or none/manual). If unclear, default to
+    semantic versioning (major.minor.patch). Document what constitutes
+    major/minor/patch bumps and the release process.
+
 Begin with the document title now.

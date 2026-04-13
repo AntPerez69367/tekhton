@@ -1,10 +1,8 @@
-
 # Milestone 76: Target-Project Version File Management
 <!-- milestone-meta
 id: "76"
-status: "done"
+status: "in_progress"
 -->
-<!-- PM-tweaked: 2026-04-12 -->
 
 ## Overview
 
@@ -134,34 +132,6 @@ fine — restore or remove the `.bak` after the edit.
 ```
 
 Expose all six as template variables in `lib/prompts.sh`.
-
-## Migration Impact
-
-<!-- [PM: Added — rubric requires a Migration Impact section when new user-facing config, files, or auto-enabled behaviors are introduced.] -->
-
-This milestone is **opt-out by default** on all existing target projects:
-
-- `PROJECT_VERSION_ENABLED` defaults to `true`. On the first pipeline run
-  after M76 is installed, `detect_project_version_files` will scan the
-  project root and create `.claude/project_version.cfg`. Projects that do
-  not want auto-versioning must set `PROJECT_VERSION_ENABLED=false` in
-  `pipeline.conf`.
-- `.claude/project_version.cfg` is a new runtime-state file. It is not
-  committed to the target project's repo by default. Add it to `.gitignore`
-  in `--init` if desired, or document that it is ephemeral. **Decision
-  required**: should `--init` add `.claude/project_version.cfg` to the
-  project's `.gitignore`? Current scope leaves this unspecified — either
-  document that users must add it manually or add it in `lib/init.sh`.
-  Defaulting to: do nothing (`.claude/` is typically already gitignored in
-  Tekhton-managed projects).
-- The finalize hook runs on every pipeline execution once `M76` lands.
-  Projects mid-milestone that receive a `patch` bump on every run may see
-  unexpected version churn until M77 lands with CHANGELOG context.
-  Mitigation: the no-op gate (Design Decision #4) prevents bumps on
-  advice-only / no-commit runs.
-
-No schema migrations are required for `pipeline.conf` — all six new vars
-have backward-compatible defaults.
 
 ## Scope Summary
 
@@ -331,12 +301,9 @@ Edit manifest — add M76 row with `depends_on=m72`, group `runtime`.
 
 ## Watch For
 
-- **Do not confuse `TEKHTON_VERSION` with `PROJECT_VERSION` in new code.**
-  `TEKHTON_VERSION` is bumped to `3.76.0` in Step 8 as the standard
-  milestone completion action. `PROJECT_VERSION` is the *target project's*
-  version managed by the new libraries. Keep them clearly separated in
-  variable names, log messages, and comments — never use one where the
-  other is meant. <!-- [PM: Reworded to clarify that TEKHTON_VERSION IS bumped in Step 8; the prohibition is against confusing the two in new library code, not against the standard milestone bump.] -->
+- **Do not touch `TEKHTON_VERSION`.** That's Tekhton's own version.
+  `PROJECT_VERSION` is the target project's version. The two must not be
+  confused anywhere in code or prompts.
 - **Bash regex is brittle for TOML.** Cargo.toml's `[package]` block can
   be separated from its `version` line by arbitrary whitespace and
   comments. Use `python3 -c 'import tomllib; …'` on Python 3.11+, or a

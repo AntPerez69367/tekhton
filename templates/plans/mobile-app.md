@@ -193,6 +193,19 @@
 <!-- Is doc freshness strict (block the merge) or warn-only? -->
 <!-- Any auto-generation tooling? (dartdoc, jazzy, KDoc, Storybook for React Native) -->
 
+## Versioning & Release Strategy
+<!-- REQUIRED -->
+<!-- PHASE:2 -->
+<!-- How should this project be versioned? Options: -->
+<!-- 1) Semantic versioning (major.minor.patch) — default -->
+<!-- 2) CalVer (YYYY.MM.patch) -->
+<!-- 3) Date-stamped (YYYY-MM-DD) -->
+<!-- 4) None / manual (Tekhton won't bump) -->
+<!-- What constitutes a major, minor, or patch version change? -->
+<!-- Release process: automated or manual? Who can publish? -->
+<!-- Changelog: auto-generated from commits? Conventional commits? -->
+<!-- Pre-release naming convention: alpha, beta, rc? -->
+
 ## Testing Strategy
 <!-- PHASE:3 -->
 <!-- Unit tests: what logic is unit tested? View models, services, utilities? -->

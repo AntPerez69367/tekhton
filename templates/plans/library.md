@@ -137,6 +137,7 @@
 <!-- Comparison: how does performance compare to alternatives? -->
 
 ## Versioning & Release Strategy
+<!-- REQUIRED -->
 <!-- PHASE:2 -->
 <!-- Versioning: strict semver? What constitutes major, minor, patch? -->
 <!-- Deprecation policy: how long are deprecated APIs supported? -->

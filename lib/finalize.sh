@@ -412,6 +412,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/run_memory.sh"
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/timing.sh"
 
+# l3. Project version bump + tag (M76)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/finalize_version.sh"
+
 # m. Write LAST_FAILURE_CONTEXT.json and emit diagnose hint (M17, failure only)
 # NOTE: This hook runs AFTER _hook_causal_log_finalize (hook d), which archives
 # the causal log. The live CAUSAL_LOG.jsonl is still present (archive_causal_log
@@ -507,7 +511,9 @@ register_finalize_hook "_hook_emit_run_memory"
 register_finalize_hook "_hook_emit_timing_report"
 register_finalize_hook "_hook_failure_context"
 register_finalize_hook "_hook_express_persist"
+register_finalize_hook "_hook_project_version_bump"
 register_finalize_hook "_hook_commit"
+register_finalize_hook "_hook_project_version_tag"
 register_finalize_hook "_hook_update_check"
 register_finalize_hook "_hook_final_dashboard_status"
 # --- Orchestrator ---

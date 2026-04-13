@@ -420,6 +420,14 @@ set -euo pipefail
 : "${DOCS_AGENT_MAX_TURNS:=10}"                            # Turn budget for docs agent
 : "${DOCS_AGENT_REPORT_FILE:=${TEKHTON_DIR}/DOCS_AGENT_REPORT.md}"  # Stage output report
 
+# --- Project version management defaults (Milestone 76) ---
+: "${PROJECT_VERSION_ENABLED:=true}"
+: "${PROJECT_VERSION_STRATEGY:=semver}"          # semver | calver | datestamp | none
+: "${PROJECT_VERSION_CONFIG:=.claude/project_version.cfg}"
+: "${PROJECT_VERSION_DEFAULT_BUMP:=patch}"       # fallback when no rule matches
+: "${PROJECT_VERSION_TAG_ON_BUMP:=false}"        # git tag vX.Y.Z on bump
+: "${PROJECT_VERSION_AUTO_DETECT:=true}"         # run detection on first pipeline run
+
 # --- UI platform adapter defaults (Milestone 57) ---
 : "${UI_PLATFORM:=auto}"
 : "${SPECIALIST_UI_ENABLED:=auto}"
