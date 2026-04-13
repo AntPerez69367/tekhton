@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-13 14:38:36
+Generated: 2026-04-13 15:55:42
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A03] [lib/draft_milestones_write.sh:133-136] fixable:yes — `$title` extracted from a milestone file via `grep | sed` is appended verbatim to the pipe-delimited MANIFEST.cfg (`echo "m${id}|${title}|..."`). A title containing `|` would corrupt manifest column parsing downstream (`IFS='|'` reads). Fix: strip pipe characters before interpolation — `title="${title//|/}"`.

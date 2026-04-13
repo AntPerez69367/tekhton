@@ -440,6 +440,9 @@ set -euo pipefail
 : "${DRAFT_MILESTONES_AUTO_WRITE:=false}"
 : "${DRAFT_MILESTONES_SEED_EXEMPLARS:=3}"
 
+# --- Init auto-prompt defaults (Milestone 81) ---
+: "${INIT_AUTO_PROMPT:=false}"
+
 # --- UI platform adapter defaults (Milestone 57) ---
 : "${UI_PLATFORM:=auto}"
 : "${SPECIALIST_UI_ENABLED:=auto}"
