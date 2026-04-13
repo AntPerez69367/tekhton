@@ -86,6 +86,9 @@ detect_project_version_files() {
     fi
 
     # Ecosystems: file:accessor:path_key (ordered by detection priority)
+    # Note: path_key is stored in VERSION_FILES but not consumed by bump logic
+    # (_bump_single_file re-derives the accessor via _accessor_for_file).
+    # Reserved for a future structured-read accessor.
     local -a ecosystems=(
         "package.json:json:.version"
         "pyproject.toml:toml_version:.project.version"

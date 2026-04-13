@@ -40,7 +40,10 @@ _hook_project_version_bump() {
 # _hook_project_version_tag — Create git tag after successful commit.
 # Runs after _hook_commit. Only tags if PROJECT_VERSION_TAG_ON_BUMP=true.
 _hook_project_version_tag() {
-    # shellcheck disable=SC2034  # exit_code assigned for hook interface
+    # shellcheck disable=SC2034  # exit_code accepted for hook interface parity
+    # Deliberately not checked: tagging guards on _COMMIT_SUCCEEDED (set by
+    # _hook_commit) rather than exit_code, because the tag should only be
+    # created after a confirmed git commit, not merely a successful pipeline.
     local exit_code="$1"
     [[ "${_COMMIT_SUCCEEDED:-false}" != "true" ]] && return 0
     [[ "${PROJECT_VERSION_ENABLED:-true}" != "true" ]] && return 0

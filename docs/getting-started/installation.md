@@ -23,6 +23,14 @@ curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/main/install.sh 
 
 This installs Tekhton to `~/.tekhton` and adds `tekhton` to your PATH.
 
+For a pinned install from a specific release tag:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/v4.78.0/install.sh | bash
+```
+
+Replace `v4.78.0` with the desired [release tag](https://github.com/geoffgodwin/tekhton/releases).
+
 To review the script before running:
 
 ```bash

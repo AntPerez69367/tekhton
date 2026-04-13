@@ -79,8 +79,9 @@ minimal privilege scope.
    - The **brew-bump workflow** (`.github/workflows/brew-bump.yml`)
      computes the tarball sha256, updates `Formula/tekhton.rb` in the
      tap repo, and pushes the change
-   - A **smoke-test job** runs `brew install geoffgodwin/tekhton/tekhton`
-     on a macOS runner and verifies `tekhton --version` matches the tag
+   - A **smoke-test job** runs `brew install tekhton` (short form, after
+     `brew tap geoffgodwin/tekhton`) on a macOS runner and verifies
+     `tekhton --version` matches the tag
 
 ## Troubleshooting
 

@@ -61,6 +61,16 @@ docs_agent_should_skip() {
     return 0
 }
 
+# _docs_extract_doc_responsibilities FILE
+#   Extract the Documentation Responsibilities section from a CLAUDE.md-style file.
+#   Returns the raw section text, or empty string if not found.
+_docs_extract_doc_responsibilities() {
+    local rules_file="$1"
+    [[ ! -f "$rules_file" ]] && return 0
+    sed -n '/^##.*[Dd]ocumentation [Rr]esponsibilities/,/^## /{ /^## [^D]/d; p; }' \
+        "$rules_file" 2>/dev/null || true
+}
+
 # _docs_extract_public_surface — Extract public-surface indicators from CLAUDE.md.
 # Reads the Documentation Responsibilities section (section 13) and extracts
 # keywords/patterns that indicate public-surface files.
@@ -72,10 +82,8 @@ _docs_extract_public_surface() {
     fi
 
     # Extract the Documentation Responsibilities section.
-    # Look for the heading and capture until the next ## heading.
     local section
-    section=$(sed -n '/^##.*[Dd]ocumentation [Rr]esponsibilities/,/^## /{ /^## [^D]/d; p; }' \
-        "$rules_file" 2>/dev/null || true)
+    section=$(_docs_extract_doc_responsibilities "$rules_file")
     if [[ -z "$section" ]]; then
         return
     fi

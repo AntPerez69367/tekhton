@@ -111,12 +111,18 @@ _changelog_insert_after_unreleased() {
         return 0
     fi
 
-    # Insert after the [Unreleased] line
+    # Insert after the [Unreleased] line, avoiding double blank lines.
+    # Check if the line immediately after [Unreleased] is already blank.
+    local next_line
+    next_line=$(sed -n "$((line_num + 1))p" "$file")
+
     local tmpfile
     tmpfile=$(mktemp)
     {
         head -n "$line_num" "$file"
-        echo ""
+        if [[ -n "$next_line" ]]; then
+            echo ""
+        fi
         echo "$entry"
         tail -n +"$((line_num + 1))" "$file"
     } > "$tmpfile"

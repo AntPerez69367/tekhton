@@ -3,6 +3,9 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+
 jobs:
   bump:
     runs-on: ubuntu-latest
@@ -17,27 +20,32 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Clone tap repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: geoffgodwin/homebrew-tekhton
           token: ${{ secrets.HOMEBREW_TAP_PAT }}
           path: tap
 
       - name: Update formula
+        env:
+          TAG: ${{ steps.sha.outputs.tag }}
+          TARBALL_SHA: ${{ steps.sha.outputs.sha256 }}
         run: |
           cd tap
           sed -i -E \
-            -e "s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${{ steps.sha.outputs.tag }}.tar.gz\"|" \
-            -e "s|sha256 \".*\"|sha256 \"${{ steps.sha.outputs.sha256 }}\"|" \
+            -e "s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz\"|" \
+            -e "s|sha256 \".*\"|sha256 \"${TARBALL_SHA}\"|" \
             Formula/tekhton.rb
 
       - name: Commit and push
+        env:
+          TAG: ${{ steps.sha.outputs.tag }}
         run: |
           cd tap
           git config user.name "tekhton-bot"
           git config user.email "noreply@tekhton.dev"
           git add Formula/tekhton.rb
-          git commit -m "tekhton ${{ steps.sha.outputs.tag }}"
+          git commit -m "tekhton ${TAG}"
           git push
 
   smoke-test:
