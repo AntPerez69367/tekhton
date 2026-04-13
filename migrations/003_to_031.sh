@@ -44,6 +44,7 @@ migration_apply() {
         JR_CODER_SUMMARY.md BUILD_ERRORS.md BUILD_RAW_ERRORS.txt
         UI_TEST_ERRORS.md PREFLIGHT_ERRORS.md DIAGNOSIS.md
         CLARIFICATIONS.md SPECIALIST_REPORT.md UI_VALIDATION_REPORT.md
+        PREFLIGHT_REPORT.md
     )
 
     local f src dst

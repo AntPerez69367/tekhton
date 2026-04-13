@@ -74,6 +74,7 @@ set -euo pipefail
 : "${HUMAN_NOTES_FILE:=${TEKHTON_DIR}/HUMAN_NOTES.md}"
 : "${SPECIALIST_REPORT_FILE:=${TEKHTON_DIR}/SPECIALIST_REPORT.md}"
 : "${UI_VALIDATION_REPORT_FILE:=${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
+: "${PREFLIGHT_REPORT_FILE:=${TEKHTON_DIR}/PREFLIGHT_REPORT.md}"
 
 # --- Final check fix defaults (auto-fix on final check test failures) ---
 # Note: FINAL_FIX_* controls the inline fix agent in hooks.sh (final checks).

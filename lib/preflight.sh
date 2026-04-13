@@ -104,7 +104,8 @@ _pf_detect_test_frameworks() {
 # =============================================================================
 _emit_preflight_report() {
     local proj="${PROJECT_DIR:-.}"
-    local report_file="$proj/PREFLIGHT_REPORT.md"
+    local report_file="${proj}/${PREFLIGHT_REPORT_FILE:-${TEKHTON_DIR:-.tekhton}/PREFLIGHT_REPORT.md}"
+    mkdir -p "$(dirname "$report_file")" 2>/dev/null || true
     local timestamp
     timestamp=$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
 
@@ -176,11 +177,11 @@ run_preflight_checks() {
     local summary="Pre-flight: ${_PF_PASS} passed, ${_PF_WARN} warned, ${_PF_FAIL} failed, ${_PF_REMEDIATED} auto-fixed"
     if [[ "$_PF_FAIL" -gt 0 ]]; then
         error "$summary"
-        error "Pre-flight failed: ${_PF_FAIL} blocking issue(s). See PREFLIGHT_REPORT.md."
+        error "Pre-flight failed: ${_PF_FAIL} blocking issue(s). See ${PREFLIGHT_REPORT_FILE}."
         return 1
     elif [[ "$_PF_WARN" -gt 0 ]] && [[ "${PREFLIGHT_FAIL_ON_WARN:-false}" == "true" ]]; then
         warn "$summary"
-        error "Pre-flight failed: PREFLIGHT_FAIL_ON_WARN is set. See PREFLIGHT_REPORT.md."
+        error "Pre-flight failed: PREFLIGHT_FAIL_ON_WARN is set. See ${PREFLIGHT_REPORT_FILE}."
         return 1
     elif [[ "$_PF_WARN" -gt 0 ]]; then
         warn "$summary"

@@ -2520,7 +2520,7 @@ fi
 # deps, missing tools, env var gaps, version mismatches. Only during task runs.
 run_preflight_checks || {
     write_pipeline_state "preflight" "env_failure" "" "$TASK" \
-        "Pre-flight environment validation failed. See PREFLIGHT_REPORT.md."
+        "Pre-flight environment validation failed. See ${PREFLIGHT_REPORT_FILE}."
     exit 1
 }
 
