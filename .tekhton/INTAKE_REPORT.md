@@ -2,14 +2,14 @@
 PASS
 
 ## Confidence
-91
+90
 
 ## Reasoning
-- Scope is precisely defined: 2 new lib files, 3 new test files, 6 new config vars, 6 plan templates updated, 1 interview question — all itemized
-- Implementation is staged into 8 discrete steps, each independently testable
-- Acceptance criteria are concrete and verifiable — specific function names, specific behaviors, specific file counts
-- Watch For section pre-emptively addresses the highest-risk gotchas (TOML regex brittleness, jq availability, idempotency, git tag collisions)
-- Migration Impact section is present and explicit about opt-out path (added by prior PM pass)
-- M77 dependency surface is clearly documented (two public API functions named)
-- No UI components — UI testability rubric not applicable
-- The one open decision (whether `--init` adds `.claude/project_version.cfg` to `.gitignore`) is explicitly flagged and a default chosen (do nothing), so it is resolved for implementation purposes
+- Scope is precisely defined: files to add/modify listed in a table, Seeds Forward section explicitly marks out-of-scope items
+- Acceptance criteria are specific and machine-checkable (exact function names, version string, line count, shellcheck zero warnings)
+- Implementation plan is step-by-step with concrete function signatures and awk/grep hints — no guessing required
+- Commit-type mapping table is exhaustive; bullet synthesis priority order is numbered
+- Watch For section preemptively addresses the most likely failure modes (hook order, idempotency, markdown injection, empty CODER_SUMMARY fallback)
+- M76 dependency is explicit and the consumed symbols are named (`parse_current_version`, `get_version_bump_hint`)
+- No UI components — UI testability dimension not applicable
+- Minor gap: no formal "Migration Impact" section for the four new `CHANGELOG_*` config keys or the auto-created `CHANGELOG.md`. All defaults are backwards-compatible and the milestone describes the init behavior clearly, so this is informational rather than blocking.

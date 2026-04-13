@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_project_version_bump.sh` — add Cargo.toml and Chart.yaml bump-write assertions
+- [x] `tests/test_changelog_hook_internal_files.sh` — _hook_changelog_append fires when only internal pipeline files changed (coverage gap from reviewer)
 
 ## Test Run Results
-Passed: 22  Failed: 0
+Passed: 13  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_project_version_bump.sh`
+- [x] `tests/test_changelog_hook_internal_files.sh`

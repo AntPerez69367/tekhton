@@ -57,6 +57,27 @@ _sanitize_for_commit() {
     printf '%s' "$input" | tr -d '\000-\010\013\014\016-\037\177' | tr '\n\r' '  '
 }
 
+# --- Commit type inference ----------------------------------------------------
+#
+# _infer_commit_type TASK_STRING
+# Returns the conventional-commit prefix (feat, fix, refactor, test, chore, docs)
+# based on the task string. Shared by generate_commit_message and changelog.
+_infer_commit_type() {
+    local task="$1"
+    local prefix="feat"
+    if echo "$task" | grep -qi "^fix"; then prefix="fix"
+    elif echo "$task" | grep -qi "^refactor"; then prefix="refactor"
+    elif echo "$task" | grep -qi "^test"; then prefix="test"
+    elif echo "$task" | grep -qi "^chore"; then prefix="chore"
+    elif echo "$task" | grep -qi "^docs"; then prefix="docs"
+    elif echo "$task" | grep -qi "^security"; then prefix="security"
+    elif echo "$task" | grep -qi "^deprecat"; then prefix="deprecate"
+    elif echo "$task" | grep -qi "^remov"; then prefix="remove"
+    elif echo "$task" | grep -qi "^perf"; then prefix="perf"
+    fi
+    echo "$prefix"
+}
+
 # --- Commit message generation -----------------------------------------------
 #
 # Usage:  generate_commit_message "task description" [milestone_num] [disposition]
@@ -84,13 +105,8 @@ generate_commit_message() {
         file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
     fi
 
-    local prefix="feat"
-    if echo "$task" | grep -qi "^fix"; then prefix="fix"
-    elif echo "$task" | grep -qi "^refactor"; then prefix="refactor"
-    elif echo "$task" | grep -qi "^test"; then prefix="test"
-    elif echo "$task" | grep -qi "^chore"; then prefix="chore"
-    elif echo "$task" | grep -qi "^docs"; then prefix="docs"
-    fi
+    local prefix
+    prefix=$(_infer_commit_type "$task")
 
     local subject
     subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"

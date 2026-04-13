@@ -158,6 +158,26 @@ run_smart_init() {
         log "CLAUDE.md already exists — skipping stub generation"
     fi
 
+    # Phase 6b: CHANGELOG.md stub (Milestone 77)
+    if [[ "${CHANGELOG_ENABLED:-true}" == "true" ]] && [[ ! -f "${project_dir}/${CHANGELOG_FILE:-CHANGELOG.md}" ]]; then
+        if command -v changelog_init_if_missing &>/dev/null; then
+            changelog_init_if_missing "$project_dir"
+        else
+            # Inline fallback when changelog.sh is not sourced (init early-exit path)
+            cat > "${project_dir}/${CHANGELOG_FILE:-CHANGELOG.md}" <<'CHANGELOG_EOF'
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+CHANGELOG_EOF
+            success "Created ${CHANGELOG_FILE:-CHANGELOG.md}"
+        fi
+    fi
+
     # Phase 7: Report and next-step routing (Milestone 22)
     emit_init_report_file "$project_dir" "$languages" "$frameworks" \
         "$commands" "$entry_points" "$project_type" "$tracked_file_count"

@@ -428,6 +428,12 @@ set -euo pipefail
 : "${PROJECT_VERSION_TAG_ON_BUMP:=false}"        # git tag vX.Y.Z on bump
 : "${PROJECT_VERSION_AUTO_DETECT:=true}"         # run detection on first pipeline run
 
+# --- Changelog generation defaults (Milestone 77) ---
+: "${CHANGELOG_ENABLED:=true}"
+: "${CHANGELOG_FILE:=CHANGELOG.md}"              # project root, not .tekhton/
+: "${CHANGELOG_FORMAT:=keep-a-changelog}"        # future: conventional-commits
+: "${CHANGELOG_INIT_IF_MISSING:=true}"
+
 # --- UI platform adapter defaults (Milestone 57) ---
 : "${UI_PLATFORM:=auto}"
 : "${SPECIALIST_UI_ENABLED:=auto}"
