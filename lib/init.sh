@@ -13,6 +13,11 @@ set -euo pipefail
 #             crawler.sh, init_config.sh, init_helpers.sh
 # =============================================================================
 
+# --- File-written tracking (Milestone 81) ---
+# Global array: each entry is "path|description". Populated during init,
+# consumed by emit_init_summary to render "What Tekhton wrote" section.
+_INIT_FILES_WRITTEN=()
+
 # Source companion files
 _INIT_DIR="${BASH_SOURCE[0]%/*}"
 # shellcheck source=lib/init_config.sh
@@ -120,6 +125,7 @@ run_smart_init() {
     tracked_file_count=$(_count_tracked_files "$project_dir")
     log "Crawling project (${tracked_file_count} files)..."
     crawl_project "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
+    _INIT_FILES_WRITTEN+=("PROJECT_INDEX.md|structured project index")
 
     # Phase 4: Config generation
     log "Generating pipeline.conf..."
@@ -139,10 +145,12 @@ run_smart_init() {
     else
         success "Created ${conf_file}"
     fi
+    _INIT_FILES_WRITTEN+=(".claude/pipeline.conf|primary config — edit this first")
 
     # Phase 5: Agent role customization
     _install_agent_roles "$project_dir" "$tekhton_home" "$languages"
     _ensure_init_gitignore "$project_dir" "$languages"
+    _INIT_FILES_WRITTEN+=(".gitignore|tech-stack and sensitive-file patterns")
 
     # Phase 6: Stub CLAUDE.md
     if [[ ! -f "${project_dir}/CLAUDE.md" ]]; then
@@ -154,6 +162,7 @@ run_smart_init() {
         fi
         _seed_claude_md "$project_dir" "$detection_report" "$project_type" "$merge_context"
         success "Created CLAUDE.md (seeded with detection results)"
+        _INIT_FILES_WRITTEN+=("CLAUDE.md|project rules — seeded with detection results")
     else
         log "CLAUDE.md already exists — skipping stub generation"
     fi
@@ -176,11 +185,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 CHANGELOG_EOF
             success "Created ${CHANGELOG_FILE:-CHANGELOG.md}"
         fi
+        _INIT_FILES_WRITTEN+=("${CHANGELOG_FILE:-CHANGELOG.md}|changelog stub")
     fi
 
     # Phase 7: Report and next-step routing (Milestone 22)
     emit_init_report_file "$project_dir" "$languages" "$frameworks" \
         "$commands" "$entry_points" "$project_type" "$tracked_file_count"
+    _INIT_FILES_WRITTEN+=("INIT_REPORT.md|full detection report")
 
     # Emit dashboard init data if available
     if type -t emit_dashboard_init &>/dev/null; then

@@ -175,6 +175,7 @@ _install_agent_roles() {
             # Append tech-stack addenda if available
             _append_addenda "$target" "$tekhton_home" "$languages"
             success "Created agent role file: .claude/agents/${role}.md"
+            _INIT_FILES_WRITTEN+=(".claude/agents/${role}.md|${role} agent role")
         else
             log "Skipped .claude/agents/${role}.md (already exists)"
         fi

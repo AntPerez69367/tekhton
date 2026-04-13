@@ -1,5 +1,3 @@
-# Reviewer Report — M80 Draft Milestones Interactive Flow (Cycle 2)
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,16 +8,25 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `prompts/draft_milestones.prompt.md:34-35` — Empty `{{IF:DRAFT_SEED_DESCRIPTION}}...{{ENDIF:DRAFT_SEED_DESCRIPTION}}` block is still present (dead code, likely a copy-paste residue). Remove for clarity.
-- `lib/draft_milestones.sh:87` — `head -"$count"` where `$count` comes from `DRAFT_MILESTONES_SEED_EXEMPLARS`. `_clamp_config_value` enforces an upper bound but does not enforce the value is an integer. A non-integer config value passes through to `head` as a malformed flag. Add `[[ "$count" =~ ^[0-9]+$ ]] || count=3` before the pipeline.
-- `tests/test_draft_milestones_next_id.sh:33` — `source ... 2>/dev/null || true` silently suppresses errors when loading `draft_milestones.sh`. A syntax error in that file would produce confusing "command not found" failures downstream. Remove the suppression so source errors surface clearly.
+- `lib/init_report_banner.sh` is 355 lines — still over the 300-line ceiling. No functional impact; log for future cleanup sweep.
+- Milestone-detection logic (MANIFEST.cfg presence + pending grep) remains duplicated verbatim in `_emit_next_section` and `_emit_auto_prompt` (lines 271–286 and 323–336). Still a candidate for extraction to `_init_detect_milestone_state`, but not a blocker.
+- `lib/prompts.sh` was not updated to register `INIT_AUTO_PROMPT` as a template variable (as noted in cycle 1). No functional impact since no prompt currently uses it, but the variable registry remains incomplete.
 
 ## Coverage Gaps
-- `draft_milestones_write_manifest()` has no automated test coverage. Tests cover `draft_milestones_next_id()` (5 cases) and `draft_milestones_validate_output()` (7 cases) but not the manifest write path. A test verifying the function appends correct pipe-delimited rows to a fixture MANIFEST.cfg (including the dependency-chaining logic) would protect against regressions.
+- No test exercises the `INIT_AUTO_PROMPT=true` auto-prompt code path. The TTY check makes it untestable in a non-interactive harness; document as known gap.
+- `_init_render_files_written` truncation behavior (>8 entries → "...plus N more") has no test case. The 3-entry fixture in `test_init_recommendation.sh` never reaches that branch.
 
-## Prior Blockers — Resolution Summary
-- FIXED: `set -euo pipefail` added to both `lib/draft_milestones.sh` (line 2) and `lib/draft_milestones_write.sh` (line 2).
-- FIXED: `title="${title//|/}"` added at `lib/draft_milestones_write.sh:136`, before the manifest row is written. Pipe characters in milestone titles can no longer corrupt `IFS='|'` parsing.
+## ACP Verdicts
 
 ## Drift Observations
-- None
+- `lib/agent_helpers.sh` and `lib/agent_retry.sh` also lack `set -euo pipefail` while `lib/milestone_dag_helpers.sh` and `lib/init_report_banner.sh` include it. Sourced companion files remain inconsistently following the "all .sh files" rule across the codebase. Not introduced by M81; warrants a future standardization sweep.
+
+---
+
+## Prior Blocker Verification
+
+**Blocker 1 (simple): `lib/init_report_banner.sh` missing `set -euo pipefail`**
+FIXED — Line 2 of `lib/init_report_banner.sh` is now `set -euo pipefail`.
+
+**Blocker 2 (simple): `exec ${rec_cmd}` unquoted variable (SC2086)**
+FIXED — `_emit_auto_prompt` now uses `read -ra _cmd_array <<< "$rec_cmd"` followed by `exec "${_cmd_array[@]}"` (lines 348–350). This is the cleaner of the two suggested fixes and correctly handles multi-word commands like `tekhton --plan-from-index`.

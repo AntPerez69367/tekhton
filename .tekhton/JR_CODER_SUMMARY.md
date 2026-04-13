@@ -1,17 +1,16 @@
-# JR Coder Summary — M80 Draft Milestones Interactive Flow
+# Jr Coder Summary — M81
 
 ## What Was Fixed
 
-- **`lib/draft_milestones.sh`**: Added `set -euo pipefail` after shebang to comply with CLAUDE.md rule #2 (all scripts must have it)
-- **`lib/draft_milestones_write.sh`**: Added `set -euo pipefail` after shebang to comply with CLAUDE.md rule #2
-- **`lib/draft_milestones_write.sh:135`**: Added `title="${title//|/}"` to escape pipe characters in milestone titles before appending to pipe-delimited MANIFEST.cfg row (prevents manifest column parsing corruption)
+- **Missing `set -euo pipefail`**: Added `set -euo pipefail` on line 2 of `lib/init_report_banner.sh` (after shebang). This is a hard shell quality requirement for all `.sh` files per the reviewer checklist.
+  
+- **Unquoted variable SC2086**: Fixed `exec ${rec_cmd}` at line 345 by refactoring to use a bash array approach (`read -ra _cmd_array <<< "$rec_cmd"; exec "${_cmd_array[@]}"`). This properly handles multi-word commands like `tekhton --plan-from-index` while passing shellcheck clean.
 
 ## Files Modified
 
-- `lib/draft_milestones.sh`
-- `lib/draft_milestones_write.sh`
+- `lib/init_report_banner.sh`
 
 ## Verification
 
-- ✅ Syntax check: `bash -n` passes
-- ✅ Shellcheck: zero warnings
+- ✓ `shellcheck lib/init_report_banner.sh` — clean
+- ✓ `bash -n lib/init_report_banner.sh` — syntax valid
