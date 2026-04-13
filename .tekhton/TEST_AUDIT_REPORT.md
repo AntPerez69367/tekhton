@@ -1,81 +1,37 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 22 test assertions
+Tests audited: 1 file, 13 test assertions across 7 numbered test cases
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Missing bump tests for 4 supported ecosystems
-- File: tests/test_project_version_bump.sh (no specific line — gap)
-- Issue: `_bump_single_file` handles 9 distinct file types. The bump test suite covers
-  package.json, VERSION, pyproject.toml, setup.py (×2), Cargo.toml, and Chart.yaml —
-  but omits composer.json, setup.cfg, gradle.properties, and pubspec.yaml. These four
-  are supported in `lib/project_version_bump.sh:167-203` and are plausible breakage
-  targets (e.g., gradle.properties uses a different sed pattern with no quotes;
-  pubspec.yaml uses the yaml_version branch distinct from Chart.yaml).
-- Severity: LOW
-- Action: Add `bump_version_files` test cases for setup.cfg, gradle.properties, and
-  pubspec.yaml. Each needs a temp project fixture, a `.claude/project_version.cfg`
-  config, and a `grep -q` assertion on the bumped output. composer.json shares the json
-  branch with package.json and is lowest priority.
+#### EXERCISE: Inlined `_infer_commit_type` creates silent drift risk
+- File: tests/test_changelog_hook_internal_files.sh:52-66
+- Issue: The function is duplicated verbatim from `lib/hooks.sh:65-79` rather than sourced. Both copies are currently identical. If `_infer_commit_type` is updated in `hooks.sh`, the test's inline copy will silently diverge — skip-path tests (Test 6: docs/chore/test) and feat-detection tests (Tests 1–5, 7) will continue passing while exercising a stale function, masking regression.
+- Severity: MEDIUM
+- Action: Add an inline comment on line 52 citing `lib/hooks.sh:65` as the source of truth and noting the copy must be kept in sync. If a second test file ever needs this function, extract to `tests/helpers/commit_type.sh`.
 
-#### COVERAGE: PROJECT_VERSION_ENABLED=false guard path is untested
-- File: tests/test_project_version_bump.sh (no specific line — gap)
-- Issue: `bump_version_files` returns early at `lib/project_version_bump.sh:95` when
-  `PROJECT_VERSION_ENABLED != "true"`. All 22 existing test invocations hard-code
-  `PROJECT_VERSION_ENABLED="true"`. If the guard condition is ever accidentally
-  inverted, no test would catch it.
+#### COVERAGE: Non-default `CODER_SUMMARY_FILE` path means production default path untested
+- File: tests/test_changelog_hook_internal_files.sh:136
+- Issue: `_set_env` sets `CODER_SUMMARY_FILE="CODER_SUMMARY.md"` (project root). The production default from `lib/config_defaults.sh:64` is `${TEKHTON_DIR}/CODER_SUMMARY.md` (`.tekhton/CODER_SUMMARY.md`). Test 5's bullet-extraction assertion passes because `_write_summary` places the fixture at `$dir/CODER_SUMMARY.md` matching the non-default value — the real deployment path where the summary lives in `.tekhton/` is not exercised. No test covers the hook's behaviour when the summary is at the default location.
 - Severity: LOW
-- Action: Add one negative test: create a VERSION fixture, invoke
-  `PROJECT_VERSION_ENABLED="false" bump_version_files "patch"`, assert the file
-  content is unchanged.
-
-#### COVERAGE: Missing-config-file early exit is untested
-- File: tests/test_project_version_bump.sh (no specific line — gap)
-- Issue: `bump_version_files` silently returns 0 when no config file exists
-  (`lib/project_version_bump.sh:100`). This defensive guard is not exercised by any
-  current test case. A regression here (e.g., a crash instead of a silent return)
-  would go undetected.
-- Severity: LOW
-- Action: Add a test that calls `bump_version_files "patch"` with `PROJECT_DIR`
-  pointing at an empty temp directory (no `.claude/project_version.cfg`). Assert
-  the function exits 0 and no file is created or modified.
+- Action: Add a variant of Test 5 that sets `CODER_SUMMARY_FILE=".tekhton/CODER_SUMMARY.md"`, creates the `.tekhton/` subdir, and writes the fixture there to exercise the production-default path.
 
 #### INTEGRITY: None
-- All expected values are derived from implementation logic rather than hard-coded
-  independently. Semver expectations ("1.2.4", "1.3.0", "2.0.0") follow the arithmetic
-  in `lib/project_version_bump.sh:29-33`. Calver and datestamp expectations are
-  computed dynamically at test runtime using `date`, matching the same calls in the
-  implementation. No `assertTrue(True)` or always-passing assertions detected.
-
-#### EXERCISE: None
-- Tests source `lib/project_version.sh` and `lib/project_version_bump.sh` directly and
-  call the real functions (`compute_next_version`, `bump_version_files`) with real
-  inputs on real temp filesystem fixtures. Logging stubs (`log`, `warn`, `error`,
-  `success`, `header`) do not affect any correctness path. No test mocks away the
-  logic under test.
+- All assertions derive from real function output. `[1.2.3]` traces to the stubbed `parse_current_version`; `pipeline artifact` traces to `_changelog_extract_coder_bullet` processing the fixture CODER_SUMMARY.md. No hard-coded expected values appear independently of the implementation. No always-true assertions detected.
 
 #### ISOLATION: None
-- All fixture data is written to `TEST_TMPDIR=$(mktemp -d)` sub-directories with
-  `trap 'rm -rf "$TEST_TMPDIR"' EXIT` cleanup. No test reads `.tekhton/` reports,
-  `.claude/logs/`, live config state, or any mutable project file. `PROJECT_DIR`
-  is redirected to isolated temp fixtures for every `bump_version_files` invocation.
+- All tests create isolated git repos under `$(mktemp -d)` with `trap 'rm -rf "$TEST_ROOT"' EXIT` cleanup. No live pipeline files (`.tekhton/`, `.claude/logs/`, etc.) are read. The only live files sourced are `lib/changelog.sh` and `lib/changelog_helpers.sh` — implementation files, not mutable state. Correct.
+
+#### EXERCISE (positive): Tests call real implementation
+- `lib/changelog.sh` and `lib/changelog_helpers.sh` are sourced and the real `_hook_changelog_append` is invoked. Only `parse_current_version` (version-file dependency) and `_infer_commit_type` (hooks.sh transitive dependency) are stubbed — both minimal and targeted. No test mocks away the logic under test.
 
 #### WEAKENING: None
-- The tester added Cargo.toml and Chart.yaml cases (4 new assertions), consistent with
-  the TESTER_REPORT claim. The setup.py single/double-quote tests (assertions 17-18)
-  were added by the Senior Coder rework phase, not the tester — the tester's report
-  accurately scopes their contribution. No existing assertion was removed, broadened,
-  or relaxed.
+- This is a newly created file. No existing tests were modified.
 
 #### SCOPE: None
-- All sourced functions (`compute_next_version`, `bump_version_files`, `_bump_single_file`,
-  `_read_version_config`, `_write_version_config`, `_accessor_for_file`,
-  `_detect_version_from_file`) exist in the current implementation files. No orphaned
-  or stale references detected.
+- `lib/changelog.sh` and `lib/changelog_helpers.sh` exist on disk. `_hook_changelog_append` is defined in `changelog.sh` and registered in `lib/finalize.sh:519`. No orphaned, stale, or dead references detected.
 
 #### NAMING: None
-- Pass/fail message strings encode both the scenario and the expected outcome:
-  `"semver patch strips prerelease suffix"`, `"user pre-bump preserved"`,
-  `"setup.py double-quoted bumped to 1.0.6"`. Appropriate for this bash test style.
+- Section headers encode scenario and expected outcome clearly (e.g., `=== 5: internal pipeline files only → hook fires (coverage gap) ===`). Pass/fail messages are descriptive. Consistent with project bash test style.

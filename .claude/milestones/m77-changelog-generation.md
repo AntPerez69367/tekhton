@@ -1,7 +1,7 @@
 # Milestone 77: CHANGELOG Generation at Finalize
 <!-- milestone-meta
 id: "77"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
