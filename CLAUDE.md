@@ -29,6 +29,9 @@ tekhton/
 │   ├── finalize.sh         # Hook-based finalization sequence
 │   ├── finalize_display.sh # Completion banner + action items
 │   ├── finalize_summary.sh # RUN_SUMMARY.json emitter
+│   ├── finalize_version.sh # Project version bump finalize hooks
+│   ├── project_version.sh  # Target-project version file detection
+│   ├── project_version_bump.sh # Version bump logic + file writes
 │   ├── notes.sh            # Human notes management
 │   ├── prompts.sh          # Template engine for .prompt.md files
 │   ├── state.sh            # Pipeline state persistence + resume
@@ -429,6 +432,12 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DOCS_AGENT_REPORT_FILE` | Docs agent output report path (default: ${TEKHTON_DIR}/DOCS_AGENT_REPORT.md) |
 | `DOCS_README_FILE` | Primary README path (default: README.md) |
 | `DOCS_DIRS` | Documentation directories (default: docs/) |
+| `PROJECT_VERSION_ENABLED` | Toggle project version bumping (default: true) |
+| `PROJECT_VERSION_STRATEGY` | Version strategy: semver, calver, datestamp, none (default: semver) |
+| `PROJECT_VERSION_CONFIG` | Path to version config cache (default: .claude/project_version.cfg) |
+| `PROJECT_VERSION_DEFAULT_BUMP` | Fallback bump type when no rule matches (default: patch) |
+| `PROJECT_VERSION_TAG_ON_BUMP` | Create git tag vX.Y.Z on bump (default: false) |
+| `PROJECT_VERSION_AUTO_DETECT` | Auto-detect version files on first run (default: true) |
 
 ## Testing
 

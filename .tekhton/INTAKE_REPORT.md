@@ -2,15 +2,14 @@
 PASS
 
 ## Confidence
-90
+91
 
 ## Reasoning
-- Scope is precisely defined: new files, modified files, and a scope summary table are all present
-- Acceptance criteria are specific and testable — each criterion names a concrete artifact, function, return value, or shell command output
-- Implementation plan is step-by-step with code examples; two developers would land nearly identical implementations
-- Migration Impact section is present and thorough — all six new config keys documented with defaults, backward-compat guarantee explicit
-- Watch For section is unusually thorough and covers the highest-risk pitfalls (stage-count update, non-blocking failure mode, skip-path bias, parser forgiveness)
-- Dependency on M74 is explicit; milestone correctly gates on it in the manifest note
-- `CODER_SUMMARY_FILE` template reference in the prompt is a cross-milestone variable (M74 origin) — not a gap, just an inherited dependency
-- PM has already made one round of tweaks (2026-04-12) that added `DOCS_README_FILE`/`DOCS_DIRS` defaults and the Migration Impact section — the known gaps were already addressed
-- No UI components; UI testability criterion is not applicable
+- Scope is precisely defined: 2 new lib files, 3 new test files, 6 new config vars, 6 plan templates updated, 1 interview question — all itemized
+- Implementation is staged into 8 discrete steps, each independently testable
+- Acceptance criteria are concrete and verifiable — specific function names, specific behaviors, specific file counts
+- Watch For section pre-emptively addresses the highest-risk gotchas (TOML regex brittleness, jq availability, idempotency, git tag collisions)
+- Migration Impact section is present and explicit about opt-out path (added by prior PM pass)
+- M77 dependency surface is clearly documented (two public API functions named)
+- No UI components — UI testability rubric not applicable
+- The one open decision (whether `--init` adds `.claude/project_version.cfg` to `.gitignore`) is explicitly flagged and a default chosen (do nothing), so it is resolved for implementation purposes

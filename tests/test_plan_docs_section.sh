@@ -151,6 +151,12 @@ CLI flags, config keys, and environment variables must be documented.
 On every feature change, update the relevant docs/ page.
 ### Doc Freshness Policy
 Warn-only — non-blocking finding during review.
+
+## Versioning & Release Strategy
+### Versioning Scheme
+Semantic versioning (major.minor.patch).
+### Bump Rules
+Major for breaking changes, minor for new features, patch for bug fixes.
 DESIGN_EOF
 
 if check_design_completeness; then

@@ -161,7 +161,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.75.0"
+TEKHTON_VERSION="3.76.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -840,6 +840,8 @@ source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
 source "${TEKHTON_HOME}/lib/pipeline_order.sh"
 source "${TEKHTON_HOME}/lib/express.sh"
 source "${TEKHTON_HOME}/lib/express_persist.sh"
+source "${TEKHTON_HOME}/lib/project_version.sh"
+source "${TEKHTON_HOME}/lib/project_version_bump.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"

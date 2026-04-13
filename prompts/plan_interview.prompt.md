@@ -87,4 +87,9 @@ Produce the complete {{DESIGN_FILE}} in markdown format. Follow these rules:
    - Do you want Tekhton to enforce doc freshness during review?
      (strict = block merge, warn = non-blocking finding, off)
 
+10. **Versioning & Release Strategy (REQUIRED).** Every template includes a
+    `## Versioning & Release Strategy` section. If the developer skips it or
+    says "unclear," default to semantic versioning (major.minor.patch).
+    Document the chosen strategy and what constitutes major/minor/patch bumps.
+
 Begin with the document title now.

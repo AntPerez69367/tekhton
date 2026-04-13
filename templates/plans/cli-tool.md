@@ -132,7 +132,8 @@
 <!-- Parallelism: multi-threaded? Worker count configurable? -->
 <!-- Caching: does the tool cache anything? Where? Invalidation strategy? -->
 
-## Versioning & Compatibility
+## Versioning & Release Strategy
+<!-- REQUIRED -->
 <!-- PHASE:2 -->
 <!-- Versioning scheme: semver? -->
 <!-- CLI interface stability: when can flags/commands change? Deprecation policy? -->

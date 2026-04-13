@@ -1,77 +1,81 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 32 test cases
+Tests audited: 1 file, 22 test assertions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: `_docs_extract_public_surface()` and `_docs_changed_files_match_surface()` are never called directly
-- File: tests/test_docs_agent_skip_path.sh (all tests)
-- Issue: Both internal helpers are tested only through `docs_agent_should_skip()`. There is no direct unit test verifying glob-style pattern matching (`*.sh`), multi-line pattern deduplication, or the fallback when the CLAUDE.md section exists but contains no extractable patterns (empty `ext_matches`, `path_matches`, `dir_matches`). An incorrect regex in the glob expansion path (`sed 's/\./\\./g; s/\*/.*/g'`) would not be caught by the existing tests since none of the fixtures use extension globs as changed files.
+#### COVERAGE: Missing bump tests for 4 supported ecosystems
+- File: tests/test_project_version_bump.sh (no specific line — gap)
+- Issue: `_bump_single_file` handles 9 distinct file types. The bump test suite covers
+  package.json, VERSION, pyproject.toml, setup.py (×2), Cargo.toml, and Chart.yaml —
+  but omits composer.json, setup.cfg, gradle.properties, and pubspec.yaml. These four
+  are supported in `lib/project_version_bump.sh:167-203` and are plausible breakage
+  targets (e.g., gradle.properties uses a different sed pattern with no quotes;
+  pubspec.yaml uses the yaml_version branch distinct from Chart.yaml).
 - Severity: LOW
-- Action: Add one test case to `test_docs_agent_skip_path.sh` that uses a CLAUDE.md section with `*.sh` pattern and verifies that a changed `.sh` file is treated as a public-surface hit.
+- Action: Add `bump_version_files` test cases for setup.cfg, gradle.properties, and
+  pubspec.yaml. Each needs a temp project fixture, a `.claude/project_version.cfg`
+  config, and a `grep -q` assertion on the bumped output. composer.json shares the json
+  branch with package.json and is lowest priority.
 
-#### COVERAGE: `git diff --cached` (staged changes) fallback path is not exercised
-- File: tests/test_docs_agent_skip_path.sh (all tests)
-- Issue: `docs_agent_should_skip()` checks `git diff --name-only HEAD` first, then falls back to `git diff --cached --name-only`. All eight test cases use only unstaged modifications (`echo ... > file` without `git add`). The cached-only path (files staged but not yet committed, which is the state immediately after a coder agent runs) is untested. If the fallback branch were broken (e.g., wrong flag), no test would catch it.
+#### COVERAGE: PROJECT_VERSION_ENABLED=false guard path is untested
+- File: tests/test_project_version_bump.sh (no specific line — gap)
+- Issue: `bump_version_files` returns early at `lib/project_version_bump.sh:95` when
+  `PROJECT_VERSION_ENABLED != "true"`. All 22 existing test invocations hard-code
+  `PROJECT_VERSION_ENABLED="true"`. If the guard condition is ever accidentally
+  inverted, no test would catch it.
 - Severity: LOW
-- Action: Add a test that stages a doc file with `git add` without committing and verifies that `docs_agent_should_skip()` returns 1 (run).
+- Action: Add one negative test: create a VERSION fixture, invoke
+  `PROJECT_VERSION_ENABLED="false" bump_version_files "patch"`, assert the file
+  content is unchanged.
 
-#### COVERAGE: `_docs_prepare_template_vars()` exports are invoked but never asserted
-- File: tests/test_docs_agent_stage_smoke.sh:116–164 (Tests 3, 5)
-- Issue: When the agent is called (Tests 3 and 5), `_docs_prepare_template_vars()` runs and exports `CODER_SUMMARY_CONTENT`, `DOCS_GIT_DIFF_STAT`, `DOCS_SURFACE_SECTION`, `DOCS_README_FILE`, `DOCS_DIRS`, `DOCS_AGENT_REPORT_FILE`. None of these are asserted post-call. If the function silently failed or exported empty strings for all variables, `run_stage_docs()` would still pass. The non-blocking design means this silent failure would go undetected.
+#### COVERAGE: Missing-config-file early exit is untested
+- File: tests/test_project_version_bump.sh (no specific line — gap)
+- Issue: `bump_version_files` silently returns 0 when no config file exists
+  (`lib/project_version_bump.sh:100`). This defensive guard is not exercised by any
+  current test case. A regression here (e.g., a crash instead of a silent return)
+  would go undetected.
 - Severity: LOW
-- Action: After a successful `run_stage_docs()` call in Test 3, assert that `DOCS_GIT_DIFF_STAT` is non-empty (the test repo has an unstaged README.md change) and that `DOCS_README_FILE` equals `"README.md"`.
+- Action: Add a test that calls `bump_version_files "patch"` with `PROJECT_DIR`
+  pointing at an empty temp directory (no `.claude/project_version.cfg`). Assert
+  the function exits 0 and no file is created or modified.
 
-#### COVERAGE: `PIPELINE_ORDER=standard + DOCS_AGENT_ENABLED=false` not tested
-- File: tests/test_docs_agent_pipeline_order.sh:78
-- Issue: Test 1.3 covers `test_first + DOCS_AGENT_ENABLED=false` (standard order is the implicit fallback), but `PIPELINE_ORDER=standard + DOCS_AGENT_ENABLED=false` is never explicitly asserted. The standard-disabled path is the default production configuration, so any regression in the base `PIPELINE_ORDER_STANDARD` constant would go undetected by this file.
-- Severity: LOW
-- Action: Add `PIPELINE_ORDER=standard DOCS_AGENT_ENABLED=false` → assert `get_pipeline_order` returns `"scout coder security review test_verify"`.
+#### INTEGRITY: None
+- All expected values are derived from implementation logic rather than hard-coded
+  independently. Semver expectations ("1.2.4", "1.3.0", "2.0.0") follow the arithmetic
+  in `lib/project_version_bump.sh:29-33`. Calver and datestamp expectations are
+  computed dynamically at test runtime using `date`, matching the same calls in the
+  implementation. No `assertTrue(True)` or always-passing assertions detected.
 
-#### COVERAGE: `should_run_stage "docs" "docs"` (self-resume) not tested
-- File: tests/test_docs_agent_pipeline_order.sh:126–159
-- Issue: Phases 4 and 5 test docs skipping and running relative to other stages, but never test `--start-at docs` (i.e., `should_run_stage "docs" "docs"`). This maps to `stage_pos(3) >= start_pos(3)` → true. While the implementation handles it correctly by the generic position comparison, this resume scenario is undocumented by any test.
-- Severity: LOW
-- Action: Add one `assert_true "should_run_stage: docs runs when start_at=docs"` case to both Phase 4 and Phase 5.
+#### EXERCISE: None
+- Tests source `lib/project_version.sh` and `lib/project_version_bump.sh` directly and
+  call the real functions (`compute_next_version`, `bump_version_files`) with real
+  inputs on real temp filesystem fixtures. Logging stubs (`log`, `warn`, `error`,
+  `success`, `header`) do not affect any correctness path. No test mocks away the
+  logic under test.
 
-#### COVERAGE: `PIPELINE_ORDER=auto` fallback with docs not tested
-- File: tests/test_docs_agent_pipeline_order.sh:56
-- Issue: `get_pipeline_order()` falls through to the `standard` branch for `auto` (and any unrecognized value). No test verifies that `PIPELINE_ORDER=auto + DOCS_AGENT_ENABLED=true` correctly inserts the docs stage. If the `auto` case were accidentally made a `;;` break instead of a fall-through, it would silently omit docs insertion.
-- Severity: LOW
-- Action: Add `PIPELINE_ORDER=auto DOCS_AGENT_ENABLED=true` → assert `get_pipeline_order` returns `"scout coder docs security review test_verify"`.
+#### ISOLATION: None
+- All fixture data is written to `TEST_TMPDIR=$(mktemp -d)` sub-directories with
+  `trap 'rm -rf "$TEST_TMPDIR"' EXIT` cleanup. No test reads `.tekhton/` reports,
+  `.claude/logs/`, live config state, or any mutable project file. `PROJECT_DIR`
+  is redirected to isolated temp fixtures for every `bump_version_files` invocation.
 
-### No Issues Found In These Categories
+#### WEAKENING: None
+- The tester added Cargo.toml and Chart.yaml cases (4 new assertions), consistent with
+  the TESTER_REPORT claim. The setup.py single/double-quote tests (assertions 17-18)
+  were added by the Senior Coder rework phase, not the tester — the tester's report
+  accurately scopes their contribution. No existing assertion was removed, broadened,
+  or relaxed.
 
-**INTEGRITY:** All 32 assertions derive expected values directly from implementation constants
-(`PIPELINE_ORDER_STANDARD`, `PIPELINE_ORDER_TEST_FIRST`, config defaults) and documented
-logic. No hard-coded magic values detached from implementation logic were found. The
-`run_agent` stub in the smoke test captures `"$1|$2|$3"` (name|model|turns), and the
-assertions verify these match the config variables in scope — not hard-coded strings.
+#### SCOPE: None
+- All sourced functions (`compute_next_version`, `bump_version_files`, `_bump_single_file`,
+  `_read_version_config`, `_write_version_config`, `_accessor_for_file`,
+  `_detect_version_from_file`) exist in the current implementation files. No orphaned
+  or stale references detected.
 
-**EXERCISE:** All three test files source and call the real implementation functions with no
-mocking of the functions under test. `run_agent` in the smoke test is legitimately stubbed
-because the audit scope is stage orchestration behavior, not agent invocation fidelity.
-`log/warn/success/error/header` stubs are appropriate — they are logging side effects, not
-behavioral output. `docs_agent_should_skip()` is called with a real git repo and real
-CLAUDE.md fixtures, not mocked.
-
-**ISOLATION:** No test reads mutable project state. All three files create their own
-fixtures in `mktemp -d` temp directories with `trap 'rm -rf "$TEST_TMPDIR"' EXIT` cleanup.
-The pipeline_order test uses only variable assignments — no filesystem reads beyond
-sourcing the implementation files. No `.tekhton/` reports, `.claude/logs/`, or pipeline
-run artifacts are accessed by any test.
-
-**WEAKENING:** All three test files are new (untracked per git status at audit time). No
-pre-existing test assertions were removed or broadened. N/A.
-
-**NAMING:** All 32 test cases encode both the scenario and the expected outcome. Examples:
-`"=== Test 4: internal-only changes → skip ==="`,
-`"4.1 should_run_stage: docs skipped when start_at=security (standard+docs)"`,
-`"returns 0 even when agent fails (non-blocking)"`. No opaque names detected.
-
-**SCOPE:** All functions under test exist in the implementation files as modified for M75:
-`docs_agent_should_skip()` in `lib/docs_agent.sh`, `run_stage_docs()` in `stages/docs.sh`,
-`get_pipeline_order/get_stage_count/get_stage_position/should_run_stage()` in
-`lib/pipeline_order.sh`. No orphaned or stale references found.
+#### NAMING: None
+- Pass/fail message strings encode both the scenario and the expected outcome:
+  `"semver patch strips prerelease suffix"`, `"user pre-bump preserved"`,
+  `"setup.py double-quoted bumped to 1.0.6"`. Appropriate for this bash test style.
