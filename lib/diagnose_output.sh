@@ -75,6 +75,20 @@ generate_diagnosis_report() {
         done
         echo ""
 
+        # Recommended recovery command (M82)
+        if command -v _diagnose_recovery_command &>/dev/null; then
+            local recovery_cmd
+            recovery_cmd=$(_diagnose_recovery_command 2>/dev/null || echo "")
+            if [[ -n "$recovery_cmd" ]]; then
+                echo "## Recommended Recovery"
+                echo ""
+                echo '```'
+                echo "$recovery_cmd"
+                echo '```'
+                echo ""
+            fi
+        fi
+
         # Recurring failure note
         if [[ -n "$_DIAG_RECURRING_NOTE" ]]; then
             echo "## Recurring Pattern"
@@ -175,6 +189,17 @@ print_diagnosis_summary() {
     if [[ -n "$_DIAG_RECURRING_NOTE" ]]; then
         echo -e "${BOLD}║${NC}"
         echo -e "${BOLD}║${NC}  ${YELLOW}${_DIAG_RECURRING_NOTE}${NC}"
+    fi
+
+    # Recommended recovery (M82)
+    if command -v _diagnose_recovery_command &>/dev/null; then
+        local recovery_cmd
+        recovery_cmd=$(_diagnose_recovery_command 2>/dev/null || echo "")
+        if [[ -n "$recovery_cmd" ]]; then
+            echo -e "${BOLD}║${NC}"
+            echo -e "${BOLD}║${NC}  ${BOLD}Recommended recovery:${NC}"
+            echo -e "${BOLD}║${NC}  ${GREEN}${recovery_cmd}${NC}"
+        fi
     fi
 
     echo -e "${BOLD}║${NC}"

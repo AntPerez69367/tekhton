@@ -5,10 +5,12 @@ PASS
 90
 
 ## Reasoning
-- Scope is tightly defined: one function rewritten, two helpers added, one array added, one config var, three files modified — all named explicitly
-- Acceptance criteria are specific and binary: section headers present, function pure and testable, shellcheck/tests pass, version string exact
-- Implementation plan is step-by-step with code samples for every non-trivial piece
-- Watch For section addresses the highest-risk areas (exec trap ordering, bash array global scope, banner length guard, CI TTY safety)
-- One minor discrepancy: Design Decision §2 table lists a `file_count < 50 AND README.md > 500 lines → --draft-milestones` branch, but `_init_pick_recommendation`'s code example and all four acceptance-criteria test scenarios omit that case. The acceptance criteria are the authoritative contract here — a developer following them produces a passing implementation. The README-length branch from the design table can be treated as a dropped design idea; no ambiguity blocks implementation.
-- No migration concern: `INIT_AUTO_PROMPT=false` is a new config var with a safe off-default. Existing installs see no behavior change.
-- UI testability: this is a CLI terminal-output milestone; Step 6 fixture test checking for the three header strings is the appropriate equivalent of a UI assertion.
+- Scope is tightly defined: 6 files listed explicitly (new + modified), 3 new helpers, 1 new subcommand, 0 new config vars
+- Function signatures are documented with globals read, return semantics, and fallback behavior — unusually complete spec
+- Decision table for `_compute_next_action()` covers all meaningful outcome combinations; the two `success|true|true` rows are distinguishable by context ("when no milestones remain" vs. "next frontier milestone via `dag_find_next()`")
+- Acceptance criteria are enumerated edge cases (no manifest, all-done, all-pending, mixed, split milestones, DAG disabled, `NO_COLOR=1`, UTF-8 vs ASCII) — all directly testable
+- `NO_COLOR` change to `lib/common.sh` is correctly characterized as non-breaking (only activates when env var is set)
+- Migration impact is declared explicitly ("Pure additive")
+- No UI components — UI testability criterion not applicable
+- M81 dependency is declared; DAG query functions (`load_manifest`, `dag_get_frontier`, `dag_find_next`, `dag_deps_satisfied`) and helpers (`_is_utf8_terminal`, `_BOX_H`, `parse_milestones_auto`, `_classify_failure`) are assumed present from prior milestones — reasonable for this codebase stage
+- Minor: `_setup_colors()` may or may not already exist in `lib/common.sh`; the parenthetical "(or create it if inlined)" covers this adequately

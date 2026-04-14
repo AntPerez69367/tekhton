@@ -40,6 +40,9 @@
 #   --draft-milestones [desc] Interactive milestone authoring: clarify, analyze, split, generate
 #   --add-milestone "desc"   (deprecated — alias for --draft-milestones)
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
+#   --milestones          Show milestone progress at a glance
+#   --milestones --all    Include completed milestones
+#   --milestones --deps   Show dependency edges
 #   --diagnose            Diagnose last failure and print recovery suggestions
 #   --report, report      Print one-screen summary of last pipeline run
 #   --health              Run standalone project health assessment and exit
@@ -818,6 +821,8 @@ source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
 source "${TEKHTON_HOME}/lib/draft_milestones.sh"
+source "${TEKHTON_HOME}/lib/milestone_progress_helpers.sh"
+source "${TEKHTON_HOME}/lib/milestone_progress.sh"
 source "${TEKHTON_HOME}/lib/context_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
@@ -962,6 +967,9 @@ usage() {
         echo ""
         echo "Inspection:"
         echo "  --status                  Print saved pipeline state (includes rollback availability)"
+        echo "  --milestones              Show milestone progress at a glance"
+        echo "  --milestones --all        Include completed milestones"
+        echo "  --milestones --deps       Show dependency edges"
         echo "  --metrics                 Print run metrics dashboard"
         echo "  --diagnose                Diagnose last failure with recovery suggestions"
         echo "  --report, report          Print summary of last pipeline run"
@@ -1022,6 +1030,7 @@ usage() {
         echo ""
         echo "Inspection:"
         echo "  --status            Show pipeline state + rollback availability"
+        echo "  --milestones        Show milestone progress at a glance"
         echo "  --metrics           Show run metrics dashboard"
         echo "  --diagnose          Diagnose last failure with recovery suggestions"
         echo "  --report            Summarize last run's results"
@@ -1140,9 +1149,24 @@ fi
 # --- Argument parsing --------------------------------------------------------
 
 START_AT="coder"  # default
+MILESTONES_CMD=false
+MILESTONES_ALL=false
+MILESTONES_DEPS=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --milestones)
+            MILESTONES_CMD=true
+            shift
+            ;;
+        --all)
+            MILESTONES_ALL=true
+            shift
+            ;;
+        --deps)
+            MILESTONES_DEPS=true
+            shift
+            ;;
         --status)
             if [ ! -f "$PIPELINE_STATE_FILE" ]; then
                 echo "No saved pipeline state found."
@@ -1180,6 +1204,35 @@ while [[ $# -gt 0 ]]; do
             else
                 echo "Rollback available: No (no checkpoint)"
                 echo
+            fi
+            # Milestone progress section (M82)
+            if has_milestone_manifest 2>/dev/null; then
+                if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+                    load_manifest 2>/dev/null || true
+                fi
+                if [[ "${_DAG_LOADED:-false}" == "true" ]]; then
+                    _st_total="${#_DAG_IDS[@]}"
+                    _st_done=0
+                    for (( _st_i = 0; _st_i < _st_total; _st_i++ )); do
+                        [[ "${_DAG_STATUSES[$_st_i]}" == "done" ]] && _st_done=$(( _st_done + 1 ))
+                    done
+                    _st_pct=0
+                    [[ "$_st_total" -gt 0 ]] && _st_pct=$(( _st_done * 100 / _st_total ))
+                    echo "Milestone Progress: ${_st_done}/${_st_total} (${_st_pct}%)"
+                    _st_active=$(dag_get_active 2>/dev/null | head -1) || _st_active=""
+                    if [[ -n "$_st_active" ]]; then
+                        _st_active_num=$(dag_id_to_number "$_st_active")
+                        _st_active_title=$(dag_get_title "$_st_active" 2>/dev/null || echo "")
+                        echo "  Current: m${_st_active_num} — ${_st_active_title}"
+                    fi
+                    _st_next=$(dag_find_next "${_st_active:-}" 2>/dev/null) || _st_next=""
+                    if [[ -n "$_st_next" ]] && [[ "$_st_next" != "${_st_active:-}" ]]; then
+                        _st_next_num=$(dag_id_to_number "$_st_next")
+                        _st_next_title=$(dag_get_title "$_st_next" 2>/dev/null || echo "")
+                        echo "  Next:    m${_st_next_num} — ${_st_next_title}"
+                    fi
+                    echo
+                fi
             fi
             exit 0
             ;;
@@ -1333,6 +1386,16 @@ EOF
         *) break ;;
     esac
 done
+
+# --- Early --milestones: show milestone progress and exit ----------------------
+if [ "$MILESTONES_CMD" = true ]; then
+    _ms_args=()
+    [[ "$MILESTONES_ALL" == "true" ]] && _ms_args+=(--all)
+    [[ "$MILESTONES_DEPS" == "true" ]] && _ms_args+=(--deps)
+    _render_milestone_progress "${_ms_args[@]+"${_ms_args[@]}"}"
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
 
 # --- Early --migrate-dag: convert inline milestones to DAG format and exit ----
 if [ "$MIGRATE_DAG" = true ]; then

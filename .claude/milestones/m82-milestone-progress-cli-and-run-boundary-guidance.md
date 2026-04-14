@@ -1,7 +1,7 @@
 # Milestone 82: Milestone Progress CLI & Run-Boundary Guidance
 <!-- milestone-meta
 id: "82"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

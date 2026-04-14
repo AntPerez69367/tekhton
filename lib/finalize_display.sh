@@ -169,4 +169,14 @@ _print_action_items() {
         echo -e "${CYAN}  Run 'tekhton --diagnose' for recovery suggestions.${NC}"
         echo
     fi
+
+    # Next-action guidance (M82)
+    if command -v _compute_next_action &>/dev/null; then
+        local next_action
+        next_action=$(_compute_next_action 2>/dev/null || echo "")
+        if [[ -n "$next_action" ]]; then
+            echo -e "${BOLD}${next_action}${NC}"
+            echo
+        fi
+    fi
 }

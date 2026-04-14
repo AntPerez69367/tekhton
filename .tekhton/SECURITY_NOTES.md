@@ -1,9 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-13 15:55:42
+Generated: 2026-04-13 20:13:51
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A03] [lib/draft_milestones_write.sh:133-136] fixable:yes — `$title` extracted from a milestone file via `grep | sed` is appended verbatim to the pipe-delimited MANIFEST.cfg (`echo "m${id}|${title}|..."`). A title containing `|` would corrupt manifest column parsing downstream (`IFS='|'` reads). Fix: strip pipe characters before interpolation — `title="${title//|/}"`.
-- [LOW] [category:A03] [lib/draft_milestones.sh:87] fixable:yes — `head -"$count"` where `$count="${DRAFT_MILESTONES_SEED_EXEMPLARS:-3}"`. `_clamp_config_value` enforces an upper bound but does not enforce the value is numeric. A non-integer config value would pass through to `head` as a malformed flag. Fix: add `[[ "$count" =~ ^[0-9]+$ ]] || count=3` before the `find` pipeline.
-- [LOW] [category:A03] [lib/draft_milestones.sh:143-144] fixable:unknown — The CLI seed argument is passed unvalidated to `get_repo_map_slice "$slice_keywords"`. If the indexer Python tool constructs shell commands from this argument, it could be a command-injection vector. Risk is low: (a) developer-facing tool requiring shell access; (b) call uses `|| true` so failures are non-fatal. Verify `get_repo_map_slice` passes the argument as data only.
-- [LOW] [category:A03] [lib/draft_milestones.sh:138] fixable:yes — `export DRAFT_SEED_DESCRIPTION="${seed}"` where `$seed` is raw CLI input, rendered directly into the LLM prompt via `{{DRAFT_SEED_DESCRIPTION}}`. A crafted seed string could attempt prompt injection. For an internal developer tool this risk is acceptable, but the prompt template should label this block as untrusted input.
+- [LOW] [category:A03] [lib/milestone_progress.sh:159-165] fixable:yes — `_diagnose_recovery_command` embeds `$milestone` and `$task` read verbatim from `PIPELINE_STATE.md` into a quoted command string (`"${milestone}"`, `"${task}"`). If either field contains a double-quote character the displayed suggestion is syntactically broken. Since the output is only echoed (never `eval`'d) there is no injection risk, but the suggested command will be unusable. Fix: strip or escape embedded double-quotes before interpolation: `milestone="${milestone//\"/\\\"}"` and `task="${task//\"/\\\"}"`.

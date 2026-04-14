@@ -14,6 +14,11 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+# NO_COLOR support (https://no-color.org/)
+if [[ "${NO_COLOR:-}" == "1" ]]; then
+    RED="" GREEN="" YELLOW="" CYAN="" BOLD="" NC=""
+fi
+
 # --- Logging -----------------------------------------------------------------
 
 log()    { echo -e "${CYAN}[tekhton]${NC} $*"; }

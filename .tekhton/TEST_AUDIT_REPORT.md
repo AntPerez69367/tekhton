@@ -1,87 +1,100 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 7 test functions
+Tests audited: 3 files, 26 test assertions
 Verdict: PASS
-
----
 
 ### Findings
 
-#### COVERAGE: Octal bug fix not regression-tested in manifest writer
-- File: tests/test_draft_milestones_write_manifest.sh (no matching test)
-- Issue: The coder summary explicitly calls out an octal interpretation bug fixed
-  in `draft_milestones_write_manifest()` at `lib/draft_milestones_write.sh:107`
-  — zero-padded IDs like m08/m09 caused bash to interpret the numeric suffix as
-  invalid octal. The fix uses `(( 10#$num > max_existing ))`. None of the seven
-  tests exercise this code path: the populated manifest in Tests 2, 3, and 4
-  contains only m01, m02, and m10 — none of which trigger octal interpretation.
-  A regression from `$num` back to `(( num > max_existing ))` arithmetic would
-  not be caught by this suite.
+#### COVERAGE: DAG-disabled fallback assertion never exercises the "dependency tracking requires" note
+- File: tests/test_milestone_progress_display.sh:139
+- Issue: Test 5 ("DAG disabled — fallback note") asserts
+  `grep -q "No milestones found\|dependency tracking requires"`. The string
+  "dependency tracking requires MILESTONE_DAG_ENABLED=true" is emitted only by
+  `_render_progress_inline` (milestone_progress_helpers.sh:157) when
+  `parse_milestones_auto` returns non-empty data. Since there is no CLAUDE.md in
+  TMPDIR, `parse_milestones_auto` always returns empty, causing the early-exit
+  "No milestones found" branch to fire instead. The OR-condition means the test
+  passes without ever showing the "dependency tracking requires" message. The
+  test confirms the function does not crash when DAG is disabled, which has
+  value, but the advertised "fallback note" behavior is never exercised.
 - Severity: MEDIUM
-- Action: Add a test case whose manifest contains entries like m08 and m09
-  (e.g. max entry is m09), then call `draft_milestones_write_manifest "10" "devx"`
-  and assert the new row's `depends_on` field is "m09". This directly exercises the
-  `10#$num` path. No implementation changes needed.
+- Action: Add a fixture that seeds a CLAUDE.md in TMPDIR containing inline
+  milestone entries, then call `_render_milestone_progress` with
+  `MILESTONE_DAG_ENABLED=false` and assert the output contains "dependency
+  tracking requires". Keep the existing test for the no-milestones variant.
 
-#### COVERAGE: depends_on field unverified when manifest is empty
-- File: tests/test_draft_milestones_write_manifest.sh:103-128
-- Issue: Test 1 uses an empty manifest (max_existing=0), causing `prev_dep="m0"`.
-  The test reads all six pipe-delimited fields into variables (`r_id`, `r_title`,
-  `r_status`, `r_dep`, `r_file`, `r_group`) but never asserts `r_dep`. The
-  behavior of `depends_on` when there are no prior milestones is not verified —
-  a regression that emits an empty or garbage value would not be caught.
+#### COVERAGE: Untested decision branch in _compute_next_action (milestone mode, not complete)
+- File: tests/test_next_action_computation.sh (no matching test)
+- Issue: `_compute_next_action` has a distinct code path at
+  milestone_progress.sh:93-96: when `_PIPELINE_EXIT_CODE=0` AND
+  `MILESTONE_MODE=true` AND `_CACHED_DISPOSITION` is neither
+  `COMPLETE_AND_CONTINUE` nor `COMPLETE_AND_WAIT` (pipeline ran in milestone
+  mode but the coder did not reach a completion disposition). The implementation
+  falls through to `echo "Run tekhton --status to review pipeline state."` —
+  the same text as the non-milestone success path — but via a structurally
+  separate branch that is not covered by any of the eight tests. Tests 1 and 2
+  set `COMPLETE_AND_CONTINUE`; Test 3 uses `MILESTONE_MODE=false`. No test
+  sets `MILESTONE_MODE=true` with an empty or non-completion disposition.
+- Severity: MEDIUM
+- Action: Add a test: `_PIPELINE_EXIT_CODE=0`, `MILESTONE_MODE=true`,
+  `_CACHED_DISPOSITION=""`. Verify output contains "tekhton --status". This
+  guards against unintended behavioral divergence if the branch is later
+  specialized.
+
+#### NAMING: Test labels missing expected outcome in test_next_action_computation.sh
+- File: tests/test_next_action_computation.sh:154, :178
+- Issue: Test 6 is labelled "Test 6: failure + API error" and Test 8 is labelled
+  "Test 8: failure + generic". Neither encodes the expected outcome, making
+  failure messages less informative. Compare Test 7: "failure + stuck/timeout →
+  --diagnose root cause", which states both stimulus and response.
 - Severity: LOW
-- Action: Add `if [[ "$r_dep" == "m0" ]]; then pass ...; else fail ...; fi`
-  after the existing field assertions in Test 1. Alternatively, if "m0" is not
-  the intended sentinel (e.g. empty string would be cleaner for first milestone),
-  correct both the implementation and the assertion together.
+- Action: Rename to "failure + API error → re-run message" and
+  "failure + generic → --diagnose" respectively.
 
-#### COVERAGE: Empty ID list edge case not tested
-- File: tests/test_draft_milestones_write_manifest.sh (no matching test)
-- Issue: `draft_milestones_write_manifest` accepts a space-separated ID list.
-  When called with an empty string or whitespace only, the `for id in $id_list`
-  loop does not execute and the function returns 0 with no writes. This graceful
-  no-op path is not tested. Callers (including `run_draft_milestones` when
-  `valid_ids` is empty) rely on this behavior.
+#### NAMING: Test labels missing expected outcome in test_diagnose_recovery_command.sh
+- File: tests/test_diagnose_recovery_command.sh:94, :105
+- Issue: Test 3 "Coder stage" and Test 4 "Tester stage" omit the expected
+  outcome. All other tests in this file include the expected result in the label
+  (e.g. "Reviewer stage maps to review", "No milestone → no --milestone flag").
 - Severity: LOW
-- Action: Add a test case that calls `draft_milestones_write_manifest "" "devx"`
-  on a populated manifest, then asserts the manifest is unchanged (same line
-  count) and the function returns 0.
+- Action: Rename to "Coder stage → --start-at coder" and
+  "Tester stage → --start-at tester".
 
----
+#### COVERAGE: --all and --deps flags never exercised simultaneously
+- File: tests/test_milestone_progress_display.sh (no matching test)
+- Issue: Tests 3 and 4 verify `--all` and `--deps` individually but no test
+  passes both flags together. `_render_progress_dag` processes them as
+  independent booleans: `show_all` controls whether the Done section is printed,
+  `show_deps` controls whether the "depends:" sub-line is printed per milestone.
+  The combined rendering path is structurally distinct.
+- Severity: LOW
+- Action: Add a test passing `--all --deps` against a mixed manifest and
+  asserting both a completed milestone title and a "depends:" line appear in
+  the same output.
 
-### Positive Observations
+### None (INTEGRITY, WEAKENING, SCOPE, EXERCISE, ISOLATION)
+No violations found in any of these categories.
 
-- **Isolation is sound.** All fixtures are created in a `mktemp -d` temp
-  directory with `trap 'rm -rf "$TMPDIR"' EXIT`. Each test uses its own
-  `local_dir` subdirectory under `$TMPDIR`. `PROJECT_DIR` is always pointed at
-  the temp directory. No pipeline logs, `.tekhton/` artifacts, or live project
-  files are read. ✓
+All three test files create fixtures exclusively inside a `mktemp -d` TMPDIR
+with `trap 'rm -rf "$TMPDIR"' EXIT`. No test reads from `.tekhton/`,
+`.claude/logs/`, pipeline run artifacts, or any other mutable project path.
+`BUILD_ERRORS_FILE`, `PIPELINE_STATE_FILE`, and `MILESTONE_STATE_FILE` are all
+pointed at paths inside TMPDIR.
 
-- **Assertions derive from implementation logic.** All expected values ("m81",
-  "My New Feature", "pending", "m10", "m11", field count 6) are directly
-  traceable to `draft_milestones_write_manifest()` behavior — the pipe-delimited
-  row format at line 138, the max-existing scan at lines 103–110, and the title
-  sanitization at line 136. No disconnected magic values. ✓
+All expected values are traceable to implementation logic: "3 done / 5 total
+(60%)" derives from 3 done rows out of 5 in the test manifest (3×100/5=60);
+"tekhton --start-at review" traces to the `reviewer) start_at="review" ;;`
+case in `_diagnose_recovery_command`; "re-run when API is available" traces
+verbatim to the `UPSTREAM` branch in `_compute_next_action`.
 
-- **Real implementation is called.** The library is sourced and the actual
-  function is invoked against real temp-directory fixtures. Only the common.sh
-  logging stubs (`log`, `warn`, `error`, `success`, `header`) are replaced with
-  no-ops — appropriate since they produce side-effect output only and are not
-  under test. ✓
+All implementation functions under test (`_render_milestone_progress`,
+`_compute_next_action`, `_diagnose_recovery_command`) are called with real
+source files — no core logic is mocked away. Only `run_build_gate` is stubbed
+to prevent gate side-effects during library sourcing, which is appropriate.
 
-- **Linear dependency chain is tested end-to-end.** Test 3 calls
-  `draft_milestones_write_manifest "11 12" "devx"` and independently reads both
-  rows to verify m11→m10 and m12→m11. This exercises the `prev_dep` update
-  at line 139 that makes chaining work. ✓
-
-- **Error path and sanitization paths are covered.** Tests 5 (missing file),
-  6 (pipe in title), and 7 (missing MANIFEST.cfg) cover three distinct failure
-  modes in addition to the happy-path tests. Test 7 verifies non-zero exit code;
-  Test 5 verifies silent skip; Test 6 verifies both content correctness and
-  structural field count. ✓
-
-- **Idempotency is verified.** Test 4 confirms no duplicate row is appended when
-  the ID already exists in the manifest, exercising the `grep -qE "^m${id}\|"`
-  guard at line 117. ✓
+All three test files are new (no modifications to existing tests), so no
+weakening check applies. All referenced functions exist at the expected paths in
+the implementation. Assertion counts match the tester's reported total of 26
+(test_milestone_progress_display.sh: 9, test_next_action_computation.sh: 8,
+test_diagnose_recovery_command.sh: 9).

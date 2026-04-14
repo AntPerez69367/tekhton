@@ -72,6 +72,8 @@ tekhton/
 │   ├── milestone_window.sh # Character-budgeted milestone sliding window
 │   ├── draft_milestones.sh # Interactive milestone authoring flow (--draft-milestones)
 │   ├── draft_milestones_write.sh # Validation and manifest writing for draft milestones
+│   ├── milestone_progress.sh # Milestone progress CLI + next-action guidance
+│   ├── milestone_progress_helpers.sh # Rendering helpers for milestone progress
 │   ├── indexer.sh          # Repo map orchestration + Python tool invocation
 │   ├── indexer_helpers.sh  # Language detection, config validation, file extraction
 │   ├── indexer_history.sh  # Task→file association tracking (JSONL)

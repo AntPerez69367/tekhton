@@ -1,14 +1,15 @@
 ## Planned Tests
-- [x] `tests/test_init_recommendation.sh` — add truncation test: >8 entries in _init_render_files_written shows "plus N more"
+- [x] `tests/test_milestone_progress_display.sh` — progress bar rendering, --all/--deps flags, DAG fallback
+- [x] `tests/test_next_action_computation.sh` — decision table for post-run guidance
+- [x] `tests/test_diagnose_recovery_command.sh` — recovery command from pipeline state
 
 ## Test Run Results
-Passed: 355  Failed: 0
+Passed: 26  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_init_recommendation.sh`
-
-## Known Gaps
-- `INIT_AUTO_PROMPT=true` code path (`_emit_auto_prompt`): requires an interactive TTY (`[[ -t 0 ]]` and `[[ -t 1 ]]`). Untestable in a non-interactive CI harness. Documented as known gap.
+- [x] `tests/test_milestone_progress_display.sh`
+- [x] `tests/test_next_action_computation.sh`
+- [x] `tests/test_diagnose_recovery_command.sh`
