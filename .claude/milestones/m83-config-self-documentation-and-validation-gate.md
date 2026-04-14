@@ -1,7 +1,7 @@
 # Milestone 83: Config Self-Documentation & Validation Gate
 <!-- milestone-meta
 id: "83"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
