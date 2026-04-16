@@ -215,6 +215,14 @@ set -euo pipefail
 : "${TRANSIENT_RETRY_BASE_DELAY:=30}"
 : "${TRANSIENT_RETRY_MAX_DELAY:=120}"
 
+# --- Adaptive rework turn escalation (Milestone 91) ---
+# Each consecutive AGENT_SCOPE/max_turns failure on the same stage within a
+# --complete run multiplies the effective turn budget by (1 + FACTOR * COUNT),
+# capped at REWORK_TURN_MAX_CAP. Successful runs reset the counter.
+: "${REWORK_TURN_ESCALATION_ENABLED:=true}"
+: "${REWORK_TURN_ESCALATION_FACTOR:=1.5}"
+: "${REWORK_TURN_MAX_CAP:=${CODER_MAX_TURNS_CAP}}"
+
 # --- Usage threshold defaults ---
 : "${USAGE_THRESHOLD_PCT:=0}"              # 0 = disabled; set to e.g. 90 to pause at 90% of session usage
 # AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
@@ -530,6 +538,8 @@ _clamp_config_value MAX_CONTINUATION_ATTEMPTS 10
 _clamp_config_value MAX_TRANSIENT_RETRIES 10
 _clamp_config_value TRANSIENT_RETRY_BASE_DELAY 300
 _clamp_config_value TRANSIENT_RETRY_MAX_DELAY 600
+_clamp_config_value REWORK_TURN_MAX_CAP 500
+_clamp_config_float REWORK_TURN_ESCALATION_FACTOR 0.1 10.0
 _clamp_config_value MILESTONE_WINDOW_PCT 80
 _clamp_config_value MILESTONE_WINDOW_MAX_CHARS 100000
 _clamp_config_value REPO_MAP_TOKEN_BUDGET 16384

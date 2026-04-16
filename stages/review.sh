@@ -280,7 +280,7 @@ REVIEW_EOF
                         run_agent \
                             "Jr Coder (cycle ${REVIEW_CYCLE})" \
                             "$CLAUDE_JR_CODER_MODEL" \
-                            "$JR_CODER_MAX_TURNS" \
+                            "${EFFECTIVE_JR_CODER_MAX_TURNS:-$JR_CODER_MAX_TURNS}" \
                             "$JR_REWORK_PROMPT" \
                             "$LOG_FILE" \
                             "$AGENT_TOOLS_JR_CODER"
@@ -297,7 +297,7 @@ REVIEW_EOF
                     run_agent \
                         "Jr Coder (cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_JR_CODER_MODEL" \
-                        "$JR_CODER_MAX_TURNS" \
+                        "${EFFECTIVE_JR_CODER_MAX_TURNS:-$JR_CODER_MAX_TURNS}" \
                         "$JR_REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_JR_CODER"

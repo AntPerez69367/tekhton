@@ -3,93 +3,67 @@
 
 ## What Was Implemented
 
-Milestone 90 — Auto-Advance Fix. Two independent bugs in `--auto-advance` are fixed:
+Milestone 91: Adaptive Rework Turn Escalation. When the orchestrator hits
+`AGENT_SCOPE/max_turns` consecutively on the same stage during a `--complete`
+run, the effective turn budget for that stage is multiplied by
+`REWORK_TURN_ESCALATION_FACTOR` (default 1.5), clamped to `REWORK_TURN_MAX_CAP`
+(default = `CODER_MAX_TURNS_CAP` = 200). The counter resets on any success or
+when the failing stage changes. No behaviour change outside `--complete`.
 
-1. **CLI count argument:** `--auto-advance N "task"` now accepts an optional bare
-   integer immediately after the flag and uses it as `AUTO_ADVANCE_LIMIT` for
-   this invocation. If the next token is not an integer, it is left for normal
-   task-string parsing — so `--auto-advance "M05"` continues to behave exactly
-   as before.
-
-2. **State-file lifecycle:** The advance chain previously short-circuited because
-   `finalize_run` deletes `MILESTONE_STATE_FILE` before
-   `_run_auto_advance_chain` calls `should_auto_advance`. The fix introduces an
-   in-memory session counter `_AA_SESSION_ADVANCES` that:
-   - Initializes to `0` in `tekhton.sh` when `--auto-advance` is set (and is exported).
-   - Is the source of truth for limit checking in `should_auto_advance`.
-   - Is incremented inside `_run_auto_advance_chain` before each advance.
-   - Is preferred by `advance_milestone` for the banner count when present
-     (falls back to state-file-based count + 1 when unset, preserving the
-     standalone-call contract used by tests).
-
-   `should_auto_advance` now skips the disposition check when the state file is
-   absent — the only call site that hits this path is `_run_auto_advance_chain`,
-   which already owns the advance decision. When the state file exists (the
-   pre-finalize call site in `run_complete_loop`), the disposition check still
-   runs.
-
-   `_run_auto_advance_chain` re-creates the state file via `init_milestone_state`
-   for the new milestone before invoking `advance_milestone`, so each advance
-   begins with a fresh, valid state file just like a first run.
-
-   Removed two `write_milestone_disposition "COMPLETE_AND_WAIT"` calls in the
-   chain's break paths — they were no-ops after `finalize_run` deleted the state
-   file (the function warned and returned 1).
-
-Help text updated in both grouped and full `--help` outputs to document the new
-`[N]` argument. CLI reference docs also updated.
+- Three new config keys (`REWORK_TURN_ESCALATION_ENABLED`,
+  `REWORK_TURN_ESCALATION_FACTOR`, `REWORK_TURN_MAX_CAP`) in
+  `lib/config_defaults.sh`, clamped to sensible ranges.
+- Four new helpers in `lib/orchestrate_helpers.sh`:
+  `_update_escalation_counter`, `_escalate_turn_budget`,
+  `_apply_turn_escalation`, `_can_escalate_further`. Float math via `awk`
+  with an integer shell fallback when `awk` is unavailable.
+- `run_complete_loop` now tracks `_ORCH_CONSECUTIVE_MAX_TURNS` /
+  `_ORCH_MAX_TURNS_STAGE`, resets them plus unsets `EFFECTIVE_*` vars at
+  entry, calls `_update_escalation_counter` after each attempt, and
+  intercepts the `split` recovery branch: if the last failure was
+  `max_turns` and the budget hasn't hit the cap, it escalates and retries
+  the same stage instead of exiting.
+- Stages consume the escalated budget via
+  `${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}`
+  (and equivalents for jr coder / tester). Updated the primary coder invocation,
+  post-clarification coder, turn-exhaustion continuation, build-fix coder,
+  jr-coder rework, tester, and the preflight-fix Jr Coder.
+- Warn lines describe every escalation, and a distinct message fires when the
+  cap is reached recommending `--split-milestone`.
 
 ## Root Cause (bugs only)
 
-- **No CLI count:** the `--auto-advance` case in `tekhton.sh` did not peek at
-  the next argument, so any integer following it was silently swallowed by the
-  task-string parser.
-- **Short-circuit advance:** `finalize_run`'s `_hook_clear_state` removes
-  `MILESTONE_STATE_FILE` after `should_auto_advance` is called once. The cached
-  `_should_advance=true` triggered `_run_auto_advance_chain`, but its `while`
-  guard called `should_auto_advance` again — which read the (deleted) state file
-  via `get_milestone_disposition` (returns `"NONE"`) and exited the loop on the
-  very first iteration without ever advancing.
+N/A — feature work.
 
 ## Files Modified
 
-- `tekhton.sh` — `--auto-advance` parser peeks at next arg for optional integer;
-  `_AA_SESSION_ADVANCES=0` initialized and exported when `AUTO_ADVANCE=true`;
-  help text in two `--help` blocks updated to `--auto-advance [N]`.
-- `lib/milestone_ops.sh` — `should_auto_advance` reads `_AA_SESSION_ADVANCES`
-  for limit and conditionally checks disposition (only when state file present).
-- `lib/orchestrate_helpers.sh` — `_run_auto_advance_chain` increments
-  `_AA_SESSION_ADVANCES`, calls `init_milestone_state` to recreate the state
-  file before `advance_milestone`, and removes dead
-  `write_milestone_disposition` calls in break paths.
-- `lib/milestones.sh` — `advance_milestone` prefers `_AA_SESSION_ADVANCES` for
-  the banner/state-file count; falls back to state-file count + 1 when unset.
-- `tests/test_milestones.sh` — replaced the state-file-based limit test with
-  in-memory counter tests (`_AA_SESSION_ADVANCES=0` returns true, `=3` returns
-  false, state-file-absent returns true, limit still enforced when state file
-  absent); added new test block exercising `advance_milestone`'s
-  `_AA_SESSION_ADVANCES`-vs-fallback path.
-- `tests/test_milestones_flag_smoke.sh` — added Test 6 (help text documents
-  `[N]`) and Test 7 (`--auto-advance 5 --help` exits 0; `--auto-advance --help`
-  also works without an integer).
-- `docs/cli-reference.md` — updated row for `--auto-advance` to `--auto-advance [N]`.
-- `docs/reference/commands.md` — updated row for `--auto-advance` to `--auto-advance [N]`
-  with description of the `N` override.
+- `lib/config_defaults.sh` — add `REWORK_TURN_*` defaults + clamps.
+- `lib/orchestrate_helpers.sh` — add four escalation helpers; wire
+  `EFFECTIVE_JR_CODER_MAX_TURNS` into the preflight-fix turn budget.
+- `lib/orchestrate.sh` — add `_ORCH_CONSECUTIVE_MAX_TURNS` /
+  `_ORCH_MAX_TURNS_STAGE` globals + resets; call
+  `_update_escalation_counter` after each attempt; reset counter on any
+  pipeline success; intercept the `split` branch to try escalation.
+- `stages/coder.sh` — consume `EFFECTIVE_CODER_MAX_TURNS` at primary,
+  post-clarification, continuation, and build-fix call sites.
+- `stages/tester.sh` — consume `EFFECTIVE_TESTER_MAX_TURNS` in the
+  tester turn-budget fallback chain.
+- `stages/review.sh` — consume `EFFECTIVE_JR_CODER_MAX_TURNS` in both
+  Jr Coder rework call sites.
+
+## Files Added
+
+- `tests/test_adaptive_turn_escalation.sh` (NEW) — 30 assertions covering
+  counter increment/reset, stage-change reset, disabled-flag behaviour,
+  budget math + cap clamping, and `_can_escalate_further` transitions.
 
 ## Docs Updated
 
-- `docs/cli-reference.md` — added `[N]` argument to `--auto-advance` row.
-- `docs/reference/commands.md` — added `[N]` argument and behavior note.
+None. The three new config keys are documented inline in
+`lib/config_defaults.sh` and in `CLAUDE.md`'s template-variable table; no
+separate reference update needed because the pattern follows existing
+`REWORK_*`-style keys.
 
 ## Human Notes Status
 
-No human notes were listed for this task.
-
-## Verification
-
-- `shellcheck -e SC1091` on the four modified shell files: no warnings introduced
-  on lines I touched (pre-existing warnings on lines 1416, 1417, 1830, 1832, 1833,
-  1889, 1967, 2353, 2420 are unrelated to this change).
-- `bash tests/test_milestones.sh`: 75 passed, 0 failed.
-- `bash tests/test_milestones_flag_smoke.sh`: 14 passed, 0 failed.
-- `bash tests/run_tests.sh`: shell 374 passed, 0 failed; python 87 passed.
+No `HUMAN_NOTES` section was provided in the task; nothing to track.

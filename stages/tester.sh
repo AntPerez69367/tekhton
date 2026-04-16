@@ -146,7 +146,7 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     _tester_stage_start=$(date +%s)
     local _tester_prompt_chars=${#TESTER_PROMPT}
     local _tester_prompt_tokens=$(( (_tester_prompt_chars + 3) / 4 ))
-    local _tester_turn_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
+    local _tester_turn_budget="${EFFECTIVE_TESTER_MAX_TURNS:-${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}}"
     log "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
     log "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
     if [[ "$START_AT" = "tester" ]]; then

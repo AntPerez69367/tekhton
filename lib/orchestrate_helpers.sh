@@ -85,7 +85,7 @@ _try_preflight_fix() {
 
     local _pf_max="${PREFLIGHT_FIX_MAX_ATTEMPTS:-2}"
     local _pf_model="${PREFLIGHT_FIX_MODEL:-${CLAUDE_JR_CODER_MODEL:-claude-sonnet-4-6}}"
-    local _pf_turns="${PREFLIGHT_FIX_MAX_TURNS:-${JR_CODER_MAX_TURNS:-40}}"
+    local _pf_turns="${EFFECTIVE_JR_CODER_MAX_TURNS:-${PREFLIGHT_FIX_MAX_TURNS:-${JR_CODER_MAX_TURNS:-40}}}"
     local _pf_attempt=0
 
     # Gather changed files for context
@@ -171,6 +171,107 @@ _try_preflight_fix() {
     fi
     warn "Pre-finalization fix: exhausted ${_pf_max} attempts. Falling through to full retry."
     return 1
+}
+
+# --- Adaptive turn escalation (Milestone 91) ----------------------------------
+#
+# When the orchestrator hits AGENT_SCOPE/max_turns consecutively on the same
+# stage within a --complete run, escalate the effective turn budget for the
+# next attempt. Counter is tracked by run_complete_loop in
+# _ORCH_CONSECUTIVE_MAX_TURNS / _ORCH_MAX_TURNS_STAGE.
+
+# _update_escalation_counter FAILED_STAGE ERROR_CATEGORY ERROR_SUBCATEGORY
+# Updates _ORCH_CONSECUTIVE_MAX_TURNS and _ORCH_MAX_TURNS_STAGE based on the
+# last iteration's outcome. Call once per iteration regardless of outcome.
+# Returns 0 if counter was incremented (escalation should apply), 1 otherwise.
+_update_escalation_counter() {
+    local _stage="${1:-}"
+    local _cat="${2:-}"
+    local _sub="${3:-}"
+
+    if [[ "${REWORK_TURN_ESCALATION_ENABLED:-true}" != "true" ]]; then
+        _ORCH_CONSECUTIVE_MAX_TURNS=0
+        _ORCH_MAX_TURNS_STAGE=""
+        unset EFFECTIVE_CODER_MAX_TURNS EFFECTIVE_JR_CODER_MAX_TURNS
+        unset EFFECTIVE_TESTER_MAX_TURNS
+        return 1
+    fi
+
+    if [[ "$_cat" = "AGENT_SCOPE" ]] && [[ "$_sub" = "max_turns" ]]; then
+        if [[ -n "$_stage" ]] && [[ "$_stage" = "$_ORCH_MAX_TURNS_STAGE" ]]; then
+            _ORCH_CONSECUTIVE_MAX_TURNS=$(( _ORCH_CONSECUTIVE_MAX_TURNS + 1 ))
+        else
+            _ORCH_CONSECUTIVE_MAX_TURNS=1
+            _ORCH_MAX_TURNS_STAGE="$_stage"
+        fi
+        return 0
+    fi
+
+    # Any other outcome (success or non-max_turns failure) resets the counter
+    _ORCH_CONSECUTIVE_MAX_TURNS=0
+    _ORCH_MAX_TURNS_STAGE=""
+    unset EFFECTIVE_CODER_MAX_TURNS EFFECTIVE_JR_CODER_MAX_TURNS
+    unset EFFECTIVE_TESTER_MAX_TURNS
+    return 1
+}
+
+# _escalate_turn_budget BASE_TURNS FACTOR COUNT CAP
+# Echoes the escalated integer budget clamped to CAP. Uses awk when available,
+# falls back to integer shell arithmetic (multiplying factor by 100).
+_escalate_turn_budget() {
+    local _base="$1"
+    local _factor="$2"
+    local _count="$3"
+    local _cap="$4"
+    local _multiplied
+
+    if command -v awk &>/dev/null; then
+        _multiplied=$(awk "BEGIN { printf \"%d\", int(${_base} * (1 + (${_factor} * ${_count}))) }")
+    else
+        # Fallback: multiply factor by 100 to avoid fractional math
+        local _factor_x100
+        _factor_x100=$(printf '%s' "$_factor" | awk -F. '{ if (NF==2) { sub(/0+$/,"",$2); printf "%d", $1*100 + ($2 "0" )/10**(length($2)-2) } else printf "%d", $1*100 }' 2>/dev/null || echo "150")
+        [[ "$_factor_x100" =~ ^[0-9]+$ ]] || _factor_x100=150
+        _multiplied=$(( _base + (_base * _factor_x100 * _count) / 100 ))
+    fi
+
+    [[ "$_multiplied" =~ ^[0-9]+$ ]] || _multiplied="$_base"
+    if [[ "$_multiplied" -gt "$_cap" ]]; then
+        _multiplied="$_cap"
+    fi
+    printf '%s\n' "$_multiplied"
+}
+
+# _apply_turn_escalation COUNT
+# Computes and exports EFFECTIVE_CODER_MAX_TURNS, EFFECTIVE_JR_CODER_MAX_TURNS,
+# and EFFECTIVE_TESTER_MAX_TURNS based on the current consecutive-max-turns
+# count. Emits a warn line describing the new budget.
+_apply_turn_escalation() {
+    local _count="${1:-1}"
+    local _factor="${REWORK_TURN_ESCALATION_FACTOR:-1.5}"
+    local _cap="${REWORK_TURN_MAX_CAP:-${CODER_MAX_TURNS_CAP:-200}}"
+
+    EFFECTIVE_CODER_MAX_TURNS=$(_escalate_turn_budget "${CODER_MAX_TURNS:-80}" "$_factor" "$_count" "$_cap")
+    EFFECTIVE_JR_CODER_MAX_TURNS=$(_escalate_turn_budget "${JR_CODER_MAX_TURNS:-40}" "$_factor" "$_count" "$_cap")
+    EFFECTIVE_TESTER_MAX_TURNS=$(_escalate_turn_budget "${TESTER_MAX_TURNS:-50}" "$_factor" "$_count" "$_cap")
+    export EFFECTIVE_CODER_MAX_TURNS EFFECTIVE_JR_CODER_MAX_TURNS EFFECTIVE_TESTER_MAX_TURNS
+
+    local _stage="${_ORCH_MAX_TURNS_STAGE:-unknown}"
+    if [[ "$EFFECTIVE_CODER_MAX_TURNS" -ge "$_cap" ]]; then
+        warn "[orchestrate] max_turns hit ${_count}x for ${_stage} — escalated to cap (${_cap}). Further failures will not escalate; consider --split-milestone."
+    else
+        warn "[orchestrate] max_turns hit ${_count}x for ${_stage} — escalating coder to ${EFFECTIVE_CODER_MAX_TURNS} turns (jr=${EFFECTIVE_JR_CODER_MAX_TURNS}, tester=${EFFECTIVE_TESTER_MAX_TURNS})."
+    fi
+}
+
+# _can_escalate_further
+# Returns 0 when escalation is enabled AND the current budget has not hit the cap.
+# Used by the recovery branch to decide whether to retry with escalated budget
+# instead of falling through to save_exit.
+_can_escalate_further() {
+    [[ "${REWORK_TURN_ESCALATION_ENABLED:-true}" = "true" ]] || return 1
+    local _cap="${REWORK_TURN_MAX_CAP:-${CODER_MAX_TURNS_CAP:-200}}"
+    [[ "${EFFECTIVE_CODER_MAX_TURNS:-0}" -lt "$_cap" ]]
 }
 
 # --- State persistence helper -------------------------------------------------

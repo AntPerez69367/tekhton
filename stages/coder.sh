@@ -631,12 +631,13 @@ ${nb_notes}"
     _phase_end "coder_prompt"
     _phase_end "context_assembly"
 
-    log "Invoking coder agent (max ${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS} turns)..."
+    local _coder_turns="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}"
+    log "Invoking coder agent (max ${_coder_turns} turns)..."
     _phase_start "coder_agent"
     run_agent \
         "Coder" \
         "$CLAUDE_CODER_MODEL" \
-        "${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}" \
+        "$_coder_turns" \
         "$CODER_PROMPT" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
@@ -713,7 +714,7 @@ ${nb_notes}"
         if is_substantive_work; then
             warn "Coder did not produce ${CODER_SUMMARY_FILE} but substantive work detected."
             _reconstruct_coder_summary
-        elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}" ]]; then
+        elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}}" ]]; then
             # Coder exhausted its turn budget without producing a summary and
             # without substantive tracked/untracked changes. This is a scope
             # problem (too much exploration, not enough implementation), not a
@@ -812,7 +813,7 @@ ${nb_notes}"
             run_agent \
                 "Coder (post-clarification)" \
                 "$CLAUDE_CODER_MODEL" \
-                "${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}" \
+                "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}" \
                 "$CODER_PROMPT" \
                 "$LOG_FILE" \
                 "$AGENT_TOOLS_CODER"
@@ -861,7 +862,7 @@ ${nb_notes}"
                 log_decision "Continuing coder" "turn limit hit, progress detected (attempt ${_cont_attempt}/${_cont_max})" "CONTINUATION_ENABLED=true"
 
                 # Build continuation context and inject into prompt
-                local _next_budget="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+                local _next_budget="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}"
                 export CONTINUATION_CONTEXT
                 CONTINUATION_CONTEXT=$(build_continuation_context "coder" "$_cont_attempt" "$_cont_max" "$_cumulative_turns" "$_next_budget")
 
@@ -1120,10 +1121,11 @@ ${GIT_DIFF_STAT}
             fi
             BUILD_FIX_PROMPT=$(render_prompt "build_fix")
 
+            local _bf_base="${EFFECTIVE_CODER_MAX_TURNS:-$CODER_MAX_TURNS}"
             run_agent \
                 "Coder (build fix)" \
                 "$CLAUDE_CODER_MODEL" \
-                "$((CODER_MAX_TURNS / 3))" \
+                "$((_bf_base / 3))" \
                 "$BUILD_FIX_PROMPT" \
                 "$LOG_FILE" \
                 "$AGENT_TOOLS_BUILD_FIX"

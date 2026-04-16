@@ -52,8 +52,12 @@ _ORCH_AGENT_100_WARNED=false
 _ORCH_CAUSAL_LOG_BASELINE=0
 _ORCH_LAST_ACCEPTANCE_HASH=""
 _ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
+# M91: Adaptive rework turn escalation — consecutive max_turns counter + stage
+_ORCH_CONSECUTIVE_MAX_TURNS=0
+_ORCH_MAX_TURNS_STAGE=""
 
 export _ORCH_ATTEMPT _ORCH_AGENT_CALLS _ORCH_ELAPSED _ORCH_ATTEMPT_LOG
+export _ORCH_CONSECUTIVE_MAX_TURNS _ORCH_MAX_TURNS_STAGE
 
 
 # --- Progress detection and recovery are in orchestrate_recovery.sh -----------
@@ -73,6 +77,11 @@ run_complete_loop() {
     _ORCH_ATTEMPT_LOG=""
     _ORCH_LAST_ACCEPTANCE_HASH=""
     _ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
+    # M91: Reset escalation counter + unset any inherited EFFECTIVE_* vars so the
+    # first attempt always uses the configured base turn budget.
+    _ORCH_CONSECUTIVE_MAX_TURNS=0
+    _ORCH_MAX_TURNS_STAGE=""
+    unset EFFECTIVE_CODER_MAX_TURNS EFFECTIVE_JR_CODER_MAX_TURNS EFFECTIVE_TESTER_MAX_TURNS
     local _build_retried=false
 
     # Restore orchestration state from prior run (resume support)
@@ -213,6 +222,11 @@ run_complete_loop() {
         _files_changed=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]' || echo "0")
 
         if [[ "$pipeline_exit" -eq 0 ]]; then
+            # M91: Pipeline succeeded — reset escalation counter (any success
+            # resets, regardless of acceptance outcome). Pass empty category so
+            # the helper's "anything-but-max_turns" branch fires.
+            _update_escalation_counter "${START_AT:-}" "" "" || true
+
             # Pipeline succeeded — check acceptance
             local acceptance_pass=true
 
@@ -357,6 +371,9 @@ run_complete_loop() {
                 "failed:${AGENT_ERROR_CATEGORY:-unknown}/${AGENT_ERROR_SUBCATEGORY:-unknown}" \
                 "$_iter_turns" "$_files_changed"
 
+            # M91: Update consecutive-max_turns counter before classifying recovery
+            _update_escalation_counter "${START_AT:-}" "${AGENT_ERROR_CATEGORY:-}" "${AGENT_ERROR_SUBCATEGORY:-}" || true
+
             local recovery
             recovery=$(_classify_failure)
             log_decision "Recovery: ${recovery}" "failure class ${AGENT_ERROR_CATEGORY:-unknown}/${AGENT_ERROR_SUBCATEGORY:-unknown}" ""
@@ -387,6 +404,16 @@ run_complete_loop() {
                     continue
                     ;;
                 split)
+                    # M91: Before giving up, try adaptive turn-budget escalation —
+                    # but only for max_turns (not null_run). Split's already exhausted
+                    # so retrying with MORE turns on the same stage is the last lever.
+                    if [[ "${AGENT_ERROR_SUBCATEGORY:-}" = "max_turns" ]] \
+                       && [[ "$_ORCH_CONSECUTIVE_MAX_TURNS" -gt 0 ]] \
+                       && _can_escalate_further; then
+                        _apply_turn_escalation "$_ORCH_CONSECUTIVE_MAX_TURNS"
+                        START_AT="${_ORCH_MAX_TURNS_STAGE:-coder}"
+                        continue
+                    fi
                     # M11 handles splitting automatically. If we get here, it already
                     # tried. Save state and exit.
                     warn "Split/continuation exhausted. Saving state."
