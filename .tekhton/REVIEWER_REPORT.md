@@ -1,4 +1,4 @@
-# Reviewer Report — M95
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,14 +10,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `_route_audit_verdict()` (`lib/test_audit_verdict.sh:40`) has no `*)` wildcard in the case statement — an unexpected verdict (not PASS/CONCERNS/NEEDS_WORK) silently returns 0. Callers sanitize via `_parse_audit_verdict`, so it cannot fire today, but a catch-all `*) warn "Unknown verdict: ${verdict}"; return 0 ;;` would make the fail-safe explicit.
-- Milestone acceptance criteria (`m95-test-audit-sh-file-split.md:131`) says "All four extracted functions" but the implementation correctly extracted seven (2+2+3). The criterion was written before the helpers extraction was decided. Minor doc gap — no functional issue.
+- Note 2 (m95 doc: "four" → "seven" extracted functions) remains unaddressed due to permission gate on `.claude/milestones/*.md`; requires a manual one-line edit — no functional impact.
+- Three additional hardcoded `get_milestone_count "CLAUDE.md"` call sites remain at `tekhton.sh:2018`, `tekhton.sh:2031`, and `stages/coder.sh:34` — only the one explicitly called out in Note 3 was in scope, but these are candidates for a follow-up normalisation pass.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- None
-
-## ACP Verdicts
-(No ACP section in CODER_SUMMARY.md — omitted.)
+- `stages/review.sh` — 355 lines, 55 lines over the 300-line soft ceiling. Pre-existing; the single-line change in this task did not cause the overage. Candidate for extraction when the file next needs significant work.

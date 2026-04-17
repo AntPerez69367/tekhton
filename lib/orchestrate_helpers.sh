@@ -36,7 +36,7 @@ _run_auto_advance_chain() {
         # finalize_run already deleted MILESTONE_STATE_FILE; recreate it for the
         # new milestone before advance_milestone reads/writes it.
         local _total
-        _total=$(get_milestone_count "CLAUDE.md")
+        _total=$(get_milestone_count "${PROJECT_RULES_FILE:-CLAUDE.md}")
         init_milestone_state "$next_ms" "$_total"
 
         advance_milestone "$_CURRENT_MILESTONE" "$next_ms"
@@ -120,13 +120,19 @@ _escalate_turn_budget() {
     local _cap="$4"
     local _multiplied
 
-    if command -v awk &>/dev/null; then
-        _multiplied=$(awk "BEGIN { printf \"%d\", int(${_base} * (1 + (${_factor} * ${_count}))) }")
+    if command -v awk &>/dev/null && _multiplied=$(awk "BEGIN { printf \"%d\", int(${_base} * (1 + (${_factor} * ${_count}))) }" 2>/dev/null); then
+        :  # awk succeeded, _multiplied is set
     else
-        # Fallback: multiply factor by 100 to avoid fractional math
-        local _factor_x100
-        _factor_x100=$(printf '%s' "$_factor" | awk -F. '{ if (NF==2) { sub(/0+$/,"",$2); printf "%d", $1*100 + ($2 "0" )/10**(length($2)-2) } else printf "%d", $1*100 }' 2>/dev/null || echo "150")
-        [[ "$_factor_x100" =~ ^[0-9]+$ ]] || _factor_x100=150
+        # Fallback: parse factor as X or X.Y[Z] with pure shell arithmetic,
+        # scaled to hundredths so the multiplication stays integer.
+        local _factor_x100=150
+        if [[ "$_factor" =~ ^([0-9]+)(\.([0-9]+))?$ ]]; then
+            local _int_part="${BASH_REMATCH[1]}"
+            local _frac_part="${BASH_REMATCH[3]:-}"
+            _frac_part="${_frac_part}00"
+            _frac_part="${_frac_part:0:2}"
+            _factor_x100=$(( 10#$_int_part * 100 + 10#$_frac_part ))
+        fi
         _multiplied=$(( _base + (_base * _factor_x100 * _count) / 100 ))
     fi
 

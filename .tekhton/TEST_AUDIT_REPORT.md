@@ -1,60 +1,77 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 5 test blocks
+Tests audited: 4 files, 16 test functions
 Verdict: PASS
 
 ### Findings
 
-None
+#### SCOPE: test_orchestrate_helpers_milestone_count does not exercise the fixed call site
+- File: tests/test_orchestrate_helpers_milestone_count.sh:49–77
+- Issue: Note 3's fix changed `get_milestone_count "CLAUDE.md"` to
+  `get_milestone_count "${PROJECT_RULES_FILE:-CLAUDE.md}"` at
+  `lib/orchestrate_helpers.sh:39`. The test sources `milestones.sh` and calls
+  `get_milestone_count` directly — it never sources `orchestrate_helpers.sh` and
+  never exercises the fixed call site. `test_milestone_count_custom_rules_file`
+  manually interpolates `${PROJECT_RULES_FILE:-CLAUDE.md}` itself, verifying
+  only that the function accepts a custom path, not that `orchestrate_helpers.sh:39`
+  passes the right argument. A typo reintroducing the hardcoded literal there
+  would not be caught.
+- Severity: MEDIUM
+- Action: Add a grep assertion confirming `lib/orchestrate_helpers.sh` contains
+  `get_milestone_count "${PROJECT_RULES_FILE` at the relevant line (matching the
+  pattern used in `test_review_effective_coder_turns.sh`), or source
+  `orchestrate_helpers.sh`, stub its collaborators, and invoke
+  `_run_auto_advance_chain` with `PROJECT_RULES_FILE` pointing to a custom file.
 
----
+#### EXERCISE: test_review_effective_coder_turns uses static grep rather than code execution
+- File: tests/test_review_effective_coder_turns.sh:13–64
+- Issue: All three test functions are static grep checks on the live source file
+  `stages/review.sh`. No code is invoked — there is no `run_agent` call and no
+  observable runtime output. The tests confirm the fix is textually present but
+  cannot detect regressions in how the variable is actually consumed.
+  `test_review_jr_coder_escalation` (lines 28–43) compares an
+  `EFFECTIVE_JR_CODER_MAX_TURNS` grep count against a `"Jr Coder` grep count;
+  the two patterns target different line types so any quoting-style divergence
+  silently under-counts one side.
+- Severity: MEDIUM
+- Action: These tests are acceptable as change-verification snapshots. Supplement
+  with at least one test that stubs `run_agent`, sets `EFFECTIVE_CODER_MAX_TURNS`,
+  and confirms the argument passed to `run_agent` reflects the escalated value.
 
-**tests/test_test_audit_split.sh** (lines 1–113)
+#### ISOLATION: cd without subshell in test_orchestrate_helpers_milestone_count
+- File: tests/test_orchestrate_helpers_milestone_count.sh:43–44, 74–75, 117–118
+- Issue: Each test function calls `cd "$PROJECT_DIR"` then `cd - > /dev/null`.
+  The `cd -` does not execute when the function returns early on assertion
+  failure (e.g., lines 39–41, 71–73, 113–115). Under `set -euo pipefail` the
+  script exits immediately so subsequent tests are not reached, but any future
+  refactor relaxing that would leave the harness in the wrong directory.
+- Severity: LOW
+- Action: Wrap each function body in a subshell `( ... )` so `cd` never escapes,
+  or use `pushd`/`popd` with a `trap`.
 
-**1. Assertion Honesty — PASS**
-All assertions derive from real implementation behavior. The line-count check
-uses `wc -l` on the actual `lib/test_audit.sh` (269 lines, ≤ 300 limit). The
-`declare -F` checks confirm real function definitions after sourcing real files.
-`_parse_audit_verdict` returning `"PASS"` on a missing-file path matches the
-implementation at `lib/test_audit_verdict.sh:18-21`. `_build_test_audit_context`
-setting `TEST_AUDIT_CONTEXT` to non-empty matches the implementation which always
-emits at minimum the "## Test Files Under Audit" header scaffold. No hard-coded
-values unconnected to implementation logic.
+#### EXERCISE: Opaque exit-code capture for NEEDS_WORK in test_audit_verdict_unknown_catch_all
+- File: tests/test_audit_verdict_unknown_catch_all.sh:104–105
+- Issue: The two-line pattern:
+    `output=$(_route_audit_verdict "$verdict" 2>&1) || exit_code=$?`
+    `[[ -z "${exit_code:-}" ]] && exit_code=$?`
+  is functionally correct but relies on a coincidence: when `exit_code="1"`,
+  `[[ -z "1" ]]` returns 1, the `&&` short-circuits, and `exit_code` is not
+  overwritten. Line 2 captures the exit code of the `[[` expression, not of
+  `_route_audit_verdict`. No assertion honesty violation — the expected value
+  (1) is derived from the implementation's documented `return 1` for NEEDS_WORK.
+- Severity: LOW
+- Action: Replace with an explicit pattern:
+    `set +e; _route_audit_verdict "$verdict" >/dev/null 2>&1; exit_code=$?; set -e`
 
-**2. Edge Case Coverage — PASS (appropriate for scope)**
-This is a structural refactor smoke test, not a behavioral test. Detection
-functions are exercised on empty-input early-exit paths — the relevant behavioral
-coverage lives in the existing test files (test_audit_tests.sh,
-test_audit_coverage_gaps.sh, test_audit_standalone.sh) which are out of scope
-for this audit. Verdict function tests the missing-file path (PASS default) and
-the PASS routing path. Appropriate for the purpose.
-
-**3. Implementation Exercise — PASS**
-All four subshells source and directly invoke real implementation modules. No
-mocking. Functions receive controlled stub inputs.
-
-**4. Test Weakening — N/A**
-`tests/test_test_audit_split.sh` is a new file. The four maintenance updates to
-existing test files (adding companion module sources) are not in the audit
-context and no assertion content was altered in them.
-
-**5. Naming — PASS**
-`pass`/`fail` labels encode the module under test and the property being
-verified. The overall block is named "M95 split — each extracted function
-callable from its new home" which accurately describes the test intent.
-
-**6. Scope Alignment — PASS**
-No references to the deleted `.tekhton/JR_CODER_SUMMARY.md`. All sourced paths
-reference the three new companion modules and the updated parent — exactly the
-files M95 created. Implementation claims (269-line parent, three extracted
-functions per module) verified and accurate.
-
-**7. Test Isolation — PASS**
-A fresh `mktemp -d` temp directory is used as `PROJECT_DIR` throughout with a
-clean `git init`. `TESTER_REPORT_FILE` and `CODER_SUMMARY_FILE` point to
-non-existent files inside the temp dir (intentionally tests missing-file
-robustness). The only external file read is `${TEKHTON_HOME}/lib/test_audit.sh`
-for the line-count assertion — this is an implementation source file, not a
-mutable pipeline state artifact, and is appropriate for a structural verification
-test.
+#### None: test_escalate_turn_budget_shell_fallback
+- File: tests/test_escalate_turn_budget_shell_fallback.sh
+- Issue: None. All seven test functions verify arithmetic directly derivable from
+  the implementation formula `_base + (_base * _factor_x100 * _count) / 100`.
+  Factors 1.5, 1.2, 1.75, 2.0, 2 (integer), and "invalid" all match the
+  implementation paths exactly. The cap-clamp test correctly uses 200 as both
+  cap argument and expected value. The fake-awk mechanism reliably forces the
+  shell fallback branch. Isolation is good — all tests run in a subshell with a
+  controlled fake `awk` binary.
+- Severity: N/A
+- Action: None.

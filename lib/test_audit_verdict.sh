@@ -67,5 +67,9 @@ _route_audit_verdict() {
             warn "Test audit verdict: NEEDS_WORK — routing to tester for rework."
             return 1
             ;;
+        *)
+            warn "Unknown test audit verdict: '${verdict}' — treating as PASS."
+            return 0
+            ;;
     esac
 }

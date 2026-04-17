@@ -263,7 +263,7 @@ REVIEW_EOF
                     run_agent \
                         "Coder (rework cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_CODER_MODEL" \
-                        "$CODER_MAX_TURNS" \
+                        "${EFFECTIVE_CODER_MAX_TURNS:-$CODER_MAX_TURNS}" \
                         "$REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_CODER"
