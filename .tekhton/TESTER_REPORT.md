@@ -1,12 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_dashboard_parsers_bugfix.sh` — Fixed missing environment variable exports in test setup
+- [x] `tests/test_save_orchestration_state.sh` — _save_orchestration_state() end-to-end: resume_flags uses _RESUME_NEW_START_AT, Notes field augmented on restoration
 
 ## Test Run Results
-Passed: 468  Failed: 0
-(Shell: 381 passed, Python: 87 passed)
+Passed: 383  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_dashboard_parsers_bugfix.sh` — Added missing CODER_SUMMARY_FILE and REVIEWER_REPORT_FILE exports
+- [x] `tests/test_save_orchestration_state.sh`

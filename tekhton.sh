@@ -1943,6 +1943,13 @@ if ! git diff --quiet; then
     warn "Uncommitted changes detected. The coder will work on top of these."
 fi
 
+# M93: Track destinations of archived reports so _save_orchestration_state can
+# restore the right one when the next failure suggests a smarter --start-at.
+# Only set when START_AT is coder/intake (review uses these intentionally).
+_ARCHIVED_REVIEWER_REPORT_PATH=""
+_ARCHIVED_TESTER_REPORT_PATH=""
+export _ARCHIVED_REVIEWER_REPORT_PATH _ARCHIVED_TESTER_REPORT_PATH
+
 # Only archive prior reports when starting fresh from the coder stage
 if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
     for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ${INTAKE_REPORT_FILE}; do
@@ -1951,6 +1958,10 @@ if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
             mkdir -p "${LOG_DIR}/archive"
             mv "$f" "$ARCHIVE_NAME"
             log "Archived previous ${f}"
+            case "$f" in
+                *REVIEWER_REPORT*) _ARCHIVED_REVIEWER_REPORT_PATH="$ARCHIVE_NAME" ;;
+                *TESTER_REPORT*)   _ARCHIVED_TESTER_REPORT_PATH="$ARCHIVE_NAME" ;;
+            esac
         fi
     done
 elif [ "$START_AT" = "review" ]; then

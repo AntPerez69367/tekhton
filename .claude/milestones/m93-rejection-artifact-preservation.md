@@ -1,7 +1,7 @@
 # Milestone 93: Rejection Artifact Preservation & Smart Resume Routing
 <!-- milestone-meta
 id: "93"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

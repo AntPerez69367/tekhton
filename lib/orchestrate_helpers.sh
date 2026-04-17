@@ -175,6 +175,51 @@ _can_escalate_further() {
     [[ "${EFFECTIVE_CODER_MAX_TURNS:-0}" -lt "$_cap" ]]
 }
 
+# --- Smart resume routing (M93) -----------------------------------------------
+#
+# When the orchestrator hits a save-and-exit, the dumbest possible Resume
+# Command is "--start-at coder" — it forces the user to redo work that may
+# already have produced a usable artifact. _choose_resume_start_at inspects
+# what's on disk (or what was archived at startup) and picks the smartest
+# resume point. Side effects: may restore an archived report into place; sets
+# _RESUME_NEW_START_AT and (if applicable) _RESUME_RESTORED_ARTIFACT as globals.
+# Sets globals (not echo) so file-system + variable side effects share the
+# same shell scope as the caller.
+_choose_resume_start_at() {
+    _RESUME_NEW_START_AT="${START_AT:-coder}"
+    _RESUME_RESTORED_ARTIFACT=""
+
+    if [[ -f "${REVIEWER_REPORT_FILE:-/dev/null}" ]]; then
+        _RESUME_NEW_START_AT="test"
+        return 0
+    fi
+    if [[ -n "${_ARCHIVED_REVIEWER_REPORT_PATH:-}" ]] && \
+       [[ -f "${_ARCHIVED_REVIEWER_REPORT_PATH}" ]] && \
+       [[ -n "${REVIEWER_REPORT_FILE:-}" ]]; then
+        if cp "${_ARCHIVED_REVIEWER_REPORT_PATH}" "${REVIEWER_REPORT_FILE}" 2>/dev/null; then
+            log "[orchestrate] Restored archived REVIEWER_REPORT.md — resume with --start-at test."
+            _RESUME_RESTORED_ARTIFACT="REVIEWER_REPORT.md from ${_ARCHIVED_REVIEWER_REPORT_PATH}"
+            _RESUME_NEW_START_AT="test"
+            return 0
+        fi
+    fi
+    if [[ -f "${TESTER_REPORT_FILE:-/dev/null}" ]]; then
+        _RESUME_NEW_START_AT="tester"
+        return 0
+    fi
+    if [[ -n "${_ARCHIVED_TESTER_REPORT_PATH:-}" ]] && \
+       [[ -f "${_ARCHIVED_TESTER_REPORT_PATH}" ]] && \
+       [[ -n "${TESTER_REPORT_FILE:-}" ]]; then
+        if cp "${_ARCHIVED_TESTER_REPORT_PATH}" "${TESTER_REPORT_FILE}" 2>/dev/null; then
+            log "[orchestrate] Restored archived TESTER_REPORT.md — resume with --start-at tester."
+            _RESUME_RESTORED_ARTIFACT="TESTER_REPORT.md from ${_ARCHIVED_TESTER_REPORT_PATH}"
+            _RESUME_NEW_START_AT="tester"
+            return 0
+        fi
+    fi
+    return 0
+}
+
 # --- State persistence helper -------------------------------------------------
 
 _save_orchestration_state() {
@@ -186,12 +231,17 @@ _save_orchestration_state() {
     # Run finalize hooks for failure path (metrics, archiving, but no commit)
     finalize_run 1
 
+    # M93: Pick the smartest --start-at given what's on disk / archived.
+    # _choose_resume_start_at sets _RESUME_NEW_START_AT and may also set
+    # _RESUME_RESTORED_ARTIFACT after copying an archived report back into place.
+    _choose_resume_start_at
+
     # Build resume command with appropriate flags
     local resume_flags="--complete"
     if [[ "$MILESTONE_MODE" = true ]]; then
         resume_flags="--complete --milestone"
     fi
-    resume_flags="${resume_flags} --start-at ${START_AT}"
+    resume_flags="${resume_flags} --start-at ${_RESUME_NEW_START_AT}"
 
     # Safety-bound exits (max_attempts, timeout, agent_cap) should write zeroed
     # counters so the next invocation starts with a fresh budget. The counter in
@@ -206,12 +256,17 @@ _save_orchestration_state() {
             ;;
     esac
 
+    local _state_notes="Orchestration: ${detail} (attempt ${_saved_attempt}/${MAX_PIPELINE_ATTEMPTS:-5}, ${_ORCH_ELAPSED}s elapsed, ${_saved_calls} agent calls)"
+    if [[ -n "${_RESUME_RESTORED_ARTIFACT:-}" ]]; then
+        _state_notes="${_state_notes} | Restored ${_RESUME_RESTORED_ARTIFACT}"
+    fi
+
     write_pipeline_state \
         "${START_AT}" \
         "complete_loop_${outcome}" \
         "$resume_flags" \
         "$TASK" \
-        "Orchestration: ${detail} (attempt ${_saved_attempt}/${MAX_PIPELINE_ATTEMPTS:-5}, ${_ORCH_ELAPSED}s elapsed, ${_saved_calls} agent calls)" \
+        "$_state_notes" \
         "${_CURRENT_MILESTONE:-}"
 
     # Restore for metrics/logging if anything reads them after this
