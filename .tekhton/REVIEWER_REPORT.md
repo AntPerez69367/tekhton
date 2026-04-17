@@ -1,31 +1,21 @@
-# Reviewer Report — M93: Rejection Artifact Preservation
+# Reviewer Report — M94: Failure Recovery CLI Guidance
 
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- `_save_orchestration_state` is not directly unit-tested — the test suite covers `_choose_resume_start_at` exhaustively, but there is no assertion that the `Notes` field in `PIPELINE_STATE.md` actually contains the restoration string, nor that `resume_flags` uses `_RESUME_NEW_START_AT` rather than `START_AT`. An integration test that stubs `finalize_run` and `write_pipeline_state` would close this gap, but the logic is simple and correct on inspection.
+- `_rule_max_turns` reads the Exit Reason section from the state file directly (its own `awk` call) even though `_read_diagnostic_context` already populates `_DIAG_EXIT_REASON` for that purpose. Minor duplication — not a bug, but `_DIAG_EXIT_REASON` could be used instead to keep rule reads consistent with the module contract.
+- In `test_diagnose.sh` test 2b.6, `sed -i 's/## Notes/## Notes\nHit max_turns in coder/'` inserts via GNU sed newline syntax — correct for WSL/Linux but would silently fail on BSD sed. Low risk given the platform, but worth noting for portability.
 
 ## Coverage Gaps
-- No test exercises `_save_orchestration_state()` end-to-end (Notes field augmentation, resume_flags value). The stubbing overhead is non-trivial; log as a coverage gap for future hardening.
+- `test_recovery_block.sh` covers `max_attempts`, `timeout`, `pre_existing_failure`, and the fallback but does not test the `agent_cap` outcome. The case branch exists in `_print_recovery_block` (uses `MAX_AUTONOMOUS_AGENT_CALLS` in `what_happened`) and should be exercised.
 
 ## Drift Observations
-None
-
----
-
-**Review notes:**
-
-`_choose_resume_start_at` (orchestrate_helpers.sh:188–221) — Logic is correct. Resolution order (in-run reviewer → archived reviewer → in-run tester → archived tester → START_AT fallback) is implemented cleanly with early returns and no shared-state clobbering. Using `cp` (not `mv`) to restore the archived report is the right call — the archive entry stays intact.
-
-`tekhton.sh` archive loop — The `case "$f"` pattern arms (`*REVIEWER_REPORT*`, `*TESTER_REPORT*`) match correctly against the original full-path value of `$f`, and `$ARCHIVE_NAME` (the destination after `mv`) is what gets recorded. Ordering is correct.
-
-`_save_orchestration_state` integration — The call to `_choose_resume_start_at` happens after `finalize_run` (which may archive additional files) and before `write_pipeline_state` (which consumes `resume_flags`). The sequence is correct.
-
-Test file — 8 scenarios, 20 assertions. Scenario 6.3 correctly verifies the tester file is NOT restored when the reviewer wins. Test 8 correctly uses a subshell capture for log verification only (globals from a subshell would not propagate back, but test 8 doesn't assert on globals). All `assert_eq` / `assert_file_eq` checks are well-formed.
+- `tests/test_diagnose.sh` is 666 lines — well over the 300-line soft ceiling. This was pre-existing before M94 (M94 added ~50 lines for suite 2b). Worth tracking; the fixture/helper functions could eventually be extracted into a shared test helper.
+- `_rule_turn_exhaustion` in `diagnose_rules_extra.sh` reads `AGENT_SCOPE/max_turns` from the pipeline state file and is now superseded by `_rule_max_turns` whenever `LAST_FAILURE_CONTEXT.json` is present (which is the normal post-M93 path). Kept for backward-compatibility per coder note, but it is effectively dead code for post-M93 runs. Worth a comment or eventual removal.

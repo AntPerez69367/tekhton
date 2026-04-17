@@ -48,6 +48,8 @@ _DIAG_PIPELINE_STAGE=""      # Stage where failure occurred
 _DIAG_PIPELINE_TASK=""       # Task description
 _DIAG_PIPELINE_MILESTONE=""  # Active milestone
 _DIAG_AGENT_LOG_TAILS=""     # Last 20 lines of agent logs
+_DIAG_LAST_CLASSIFICATION="" # classification from LAST_FAILURE_CONTEXT.json
+_DIAG_EXIT_REASON=""         # Exit Reason from PIPELINE_STATE.md
 
 # --- Context reader ----------------------------------------------------------
 
@@ -73,31 +75,36 @@ _read_diagnostic_context() {
     _DIAG_PIPELINE_TASK=""
     _DIAG_PIPELINE_MILESTONE=""
     _DIAG_AGENT_LOG_TAILS=""
+    _DIAG_LAST_CLASSIFICATION=""
+    _DIAG_EXIT_REASON=""
 
     # --- Pipeline state -------------------------------------------------------
     if [[ -f "$state_file" ]]; then
         _DIAG_PIPELINE_STAGE=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
         _DIAG_PIPELINE_TASK=$(awk '/^## Task$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+        _DIAG_EXIT_REASON=$(awk '/^## Exit Reason$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
     fi
 
-    # --- RUN_SUMMARY.json -----------------------------------------------------
+    # --- LAST_FAILURE_CONTEXT.json (primary source on failure) ----------------
+    # Always-written-on-failure file. Read before RUN_SUMMARY so classification
+    # and stage/outcome populate even when the run hasn't emitted a summary.
+    if [[ -f "$failure_ctx" ]]; then
+        _DIAG_LAST_CLASSIFICATION=$(grep -oP '"classification"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
+        _DIAG_PIPELINE_OUTCOME=$(grep -oP '"outcome"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
+        if [[ -z "$_DIAG_PIPELINE_STAGE" ]]; then
+            _DIAG_PIPELINE_STAGE=$(grep -oP '"stage"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
+        fi
+    fi
+
+    # --- RUN_SUMMARY.json (enrichment) ----------------------------------------
     if [[ -f "$summary_file" ]]; then
-        _DIAG_PIPELINE_OUTCOME=$(grep -oP '"outcome"\s*:\s*"\K[^"]+' "$summary_file" 2>/dev/null || true)
+        if [[ -z "$_DIAG_PIPELINE_OUTCOME" ]]; then
+            _DIAG_PIPELINE_OUTCOME=$(grep -oP '"outcome"\s*:\s*"\K[^"]+' "$summary_file" 2>/dev/null || true)
+        fi
         _DIAG_PIPELINE_MILESTONE=$(grep -oP '"milestone"\s*:\s*"\K[^"]+' "$summary_file" 2>/dev/null || true)
         local rework
         rework=$(grep -oP '"rework_cycles"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || true)
         _DIAG_REVIEW_CYCLES="${rework:-0}"
-    fi
-
-    # --- LAST_FAILURE_CONTEXT.json (fast path) --------------------------------
-    if [[ -f "$failure_ctx" ]]; then
-        # Fill gaps from cached context
-        if [[ -z "$_DIAG_PIPELINE_OUTCOME" ]]; then
-            _DIAG_PIPELINE_OUTCOME=$(grep -oP '"outcome"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
-        fi
-        if [[ -z "$_DIAG_PIPELINE_STAGE" ]]; then
-            _DIAG_PIPELINE_STAGE=$(grep -oP '"stage"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
-        fi
     fi
 
     # --- Causal log -----------------------------------------------------------

@@ -1,7 +1,7 @@
 # Milestone 94: Failure Recovery CLI Guidance & --diagnose Overhaul
 <!-- milestone-meta
 id: "94"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

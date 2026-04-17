@@ -103,7 +103,10 @@ _reset_fixture() {
     DIAG_SUGGESTIONS=()
     _DIAG_PIPELINE_OUTCOME=""
     _DIAG_PIPELINE_STAGE=""
+    _DIAG_PIPELINE_TASK=""
     _DIAG_CAUSAL_EVENTS=""
+    _DIAG_LAST_CLASSIFICATION=""
+    _DIAG_EXIT_REASON=""
 }
 
 _create_pipeline_state() {
@@ -167,10 +170,11 @@ EOF
 # =============================================================================
 echo "=== Test Suite 1: Rule priority ordering ==="
 
-assert_eq "1.1 DIAGNOSE_RULES has 13 entries" "13" "${#DIAGNOSE_RULES[@]}"
+assert_eq "1.1 DIAGNOSE_RULES has 14 entries" "14" "${#DIAGNOSE_RULES[@]}"
 assert_eq "1.2 first rule is _rule_build_failure" "_rule_build_failure" "${DIAGNOSE_RULES[0]}"
-assert_eq "1.3 second rule is _rule_review_loop" "_rule_review_loop" "${DIAGNOSE_RULES[1]}"
-assert_eq "1.4 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[12]}"
+assert_eq "1.3 second rule is _rule_max_turns" "_rule_max_turns" "${DIAGNOSE_RULES[1]}"
+assert_eq "1.4 third rule is _rule_review_loop" "_rule_review_loop" "${DIAGNOSE_RULES[2]}"
+assert_eq "1.5 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[13]}"
 
 # =============================================================================
 # Test Suite 2: _rule_build_failure
@@ -194,6 +198,58 @@ _rule_build_failure 2>/dev/null && r=0 || r=1
 assert_eq "2.3 matches with non-empty BUILD_ERRORS.md" "0" "$r"
 assert_eq "2.4 classification is BUILD_FAILURE" "BUILD_FAILURE" "$DIAG_CLASSIFICATION"
 assert_eq "2.5 confidence is high" "high" "$DIAG_CONFIDENCE"
+
+# =============================================================================
+# Test Suite 2b: _rule_max_turns
+# =============================================================================
+echo "=== Test Suite 2b: _rule_max_turns ==="
+
+_reset_fixture
+
+# No state, no failure_ctx — should not match
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.1 no match without state or failure_ctx" "1" "$r"
+
+# Fires from LAST_FAILURE_CONTEXT.json with AGENT_SCOPE/max_turns
+cat > "$TMPDIR/.claude/LAST_FAILURE_CONTEXT.json" << 'EOF'
+{
+  "classification": "MAX_TURNS_EXHAUSTED",
+  "category": "AGENT_SCOPE",
+  "subcategory": "max_turns",
+  "stage": "coder",
+  "outcome": "failure",
+  "consecutive_count": 1
+}
+EOF
+_DIAG_PIPELINE_TASK="M88"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.2 matches from LAST_FAILURE_CONTEXT.json AGENT_SCOPE/max_turns" "0" "$r"
+assert_eq "2b.3 classification is MAX_TURNS_EXHAUSTED" "MAX_TURNS_EXHAUSTED" "$DIAG_CLASSIFICATION"
+assert_eq "2b.4 confidence is high" "high" "$DIAG_CONFIDENCE"
+assert "2b.5 suggestions include task in runnable command" \
+    "$(printf '%s\n' "${DIAG_SUGGESTIONS[@]}" | grep -q 'tekhton .* "M88"' && echo 0 || echo 1)"
+
+# Fires from PIPELINE_STATE.md Notes containing 'max_turns'
+_reset_fixture
+_create_pipeline_state "coder" "Pipeline halted"
+sed -i 's/## Notes/## Notes\nHit max_turns in coder/' "$PIPELINE_STATE_FILE"
+_DIAG_PIPELINE_TASK="M88"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.6 matches from PIPELINE_STATE.md Notes max_turns" "0" "$r"
+assert_eq "2b.7 classification is MAX_TURNS_EXHAUSTED" "MAX_TURNS_EXHAUSTED" "$DIAG_CLASSIFICATION"
+
+# Fires from Exit Reason containing complete_loop_max_attempts
+_reset_fixture
+_create_pipeline_state "coder" "complete_loop_max_attempts: 5 attempts hit turn limit"
+_DIAG_PIPELINE_TASK="M88"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.8 matches from Exit Reason complete_loop_max_attempts" "0" "$r"
+
+# Non-matching fixture — should not match
+_reset_fixture
+_create_pipeline_state "coder" "Normal exit"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.9 no match on unrelated exit reason" "1" "$r"
 
 # =============================================================================
 # Test Suite 3: _rule_review_loop

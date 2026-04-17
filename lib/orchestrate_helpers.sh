@@ -274,4 +274,10 @@ _save_orchestration_state() {
     _ORCH_AGENT_CALLS="$_saved_calls"
 
     warn "State saved. Resume with: tekhton ${resume_flags} \"${TASK}\""
+
+    # M94: inline recovery block — always present, zero dependencies.
+    if command -v _print_recovery_block &>/dev/null; then
+        _print_recovery_block "$outcome" "$detail" \
+            "tekhton ${resume_flags} \"${TASK}\"" "$TASK"
+    fi
 }

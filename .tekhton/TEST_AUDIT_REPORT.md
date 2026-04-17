@@ -1,43 +1,30 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 5 files (2 modified this run, 1 new coder-written test, 3 freshness samples), 21 test functions
+Tests audited: 4 files (1 modified by tester, 3 freshness samples), 27 test assertions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: In-run tester path missing from end-to-end test
-- File: tests/test_save_orchestration_state.sh (absent scenario)
-- Issue: Five scenarios (A–E) cover no-artifacts, in-run reviewer, archived reviewer, milestone-mode, and archived tester. There is no scenario for in-run `TESTER_REPORT_FILE` (no reviewer) at the end-to-end level. `_choose_resume_start_at()` returns "tester" for this case, so the state file should contain `--start-at tester`, but no assertion verifies it. The path is covered at the unit level by `test_rejection_artifact_preservation.sh` scenario 4; the gap is solely at the integration level.
+#### COVERAGE: Missing negative assertions for timeout and pre_existing_failure outcomes
+- File: tests/test_recovery_block.sh:60–96
+- Issue: Test 4 (agent_cap) correctly verifies the outcome does NOT emit MORE TURNS or DISABLE (assertions 4.8–4.9). Tests 2 (timeout) and 3 (pre_existing_failure) lack symmetric negative checks. The implementation's case statement makes these guarantees implicitly, but a regression that accidentally extends those branches would go undetected.
 - Severity: LOW
-- Action: Add Scenario F — create `TESTER_REPORT_FILE` without a reviewer, call `_save_orchestration_state "build_exhausted" "..."`, assert the extracted Resume Command contains `--start-at tester` and Notes has no `| Restored` line.
+- Action: Add a negative assertion to Test 2 (timeout must not emit "MORE TURNS") and to Test 3 (pre_existing_failure must not emit "MORE TURNS").
 
-#### COVERAGE: Counter-zeroing for budget-exhausted outcomes not asserted
-- File: tests/test_save_orchestration_state.sh (absent assertion)
-- Issue: `_save_orchestration_state()` (orchestrate_helpers.sh:252–257) zeroes `_ORCH_ATTEMPT` and `_ORCH_AGENT_CALLS` before calling `write_pipeline_state` when outcome is `max_attempts`, `timeout`, or `agent_cap`, then restores them afterward. The zeroed values appear in the `## Orchestration Context` section of the written state file. No assertion verifies that those counters are written as 0; a regression here would go undetected.
+#### COVERAGE: Fallback outcome missing negative guard assertions
+- File: tests/test_recovery_block.sh:139–151
+- Issue: Test 5 (unknown/fallback) verifies the detail string and resume command appear but does not assert that MORE TURNS and DISABLE are absent. A regression that adds those branches to the default case would go undetected.
 - Severity: LOW
-- Action: In Scenario A (`max_attempts` outcome), add an assertion that the `## Orchestration Context` section of `PIPELINE_STATE.md` contains `Pipeline attempt: 0`.
+- Action: Add two negative assertions analogous to 4.8–4.9 for the fallback path.
 
-#### SCOPE: Freshness samples unaffected by M93 changes
-- File: tests/test_architect_multiline_bullets.sh, tests/test_architect_stage.sh, tests/test_artifact_handler_ops.sh
-- Issue: None. M93 added `_choose_resume_start_at()` and rewired `_save_orchestration_state()` in `orchestrate_helpers.sh` — no functions were removed or renamed. All three freshness-sample tests source unmodified libraries (architect, drift, artifact_handler_ops) with no references to M93 symbols. No orphaned, stale, or misaligned test code detected.
-- Severity: N/A
-- Action: None required.
+#### SCOPE: test_diagnose.sh modified by coder but not claimed by tester
+- File: tests/test_diagnose.sh (not listed in tester's modified files)
+- Issue: The coder summary documents modifications to tests/test_diagnose.sh (rule-count assertions updated 13→14, new Test Suite 2b for _rule_max_turns), but TESTER_REPORT.md does not list it and the audit context does not include it as tester-modified. No integrity issues were found on inspection — Suite 2b assertions match the implementation in lib/diagnose_rules.sh exactly, _reset_fixture correctly clears _DIAG_LAST_CLASSIFICATION and _DIAG_EXIT_REASON, and the rule-count check (14 entries) matches the DIAGNOSE_RULES array. The hand-off between coder self-test and tester scope is opaque.
+- Severity: LOW
+- Action: No code change required. The tester should claim test_diagnose.sh in TESTER_REPORT.md on the next run, or the coder should annotate that those tests were left in self-tested state.
 
-#### EXERCISE: Stubs are appropriate and minimal
-- File: tests/test_save_orchestration_state.sh:25–29
-- Issue: None. `finalize_run` is stubbed to `return 0` and `suggest_recovery` to a no-op echo. Both are legitimately out of scope for testing `_save_orchestration_state()` end-to-end — they operate on external state unrelated to the resume-routing logic under test. The stubs do not suppress any assertion relevant to M93 behavior.
-- Severity: N/A
-- Action: None.
-
-#### ISOLATION: Verified clean for all M93 test files
-- File: tests/test_save_orchestration_state.sh, tests/test_rejection_artifact_preservation.sh
-- Issue: None. Both files create a temp directory via `mktemp -d`, export all report paths into it (`REVIEWER_REPORT_FILE`, `TESTER_REPORT_FILE`, `PIPELINE_STATE_FILE`), and register `trap 'rm -rf "$TMPDIR"' EXIT`. No live pipeline files or `.tekhton/` artifacts are read. Each file's `_reset_state()` helper clears fixtures and global variables between scenarios, preventing inter-scenario contamination.
-- Severity: N/A
-- Action: None.
-
-#### INTEGRITY: Assertions derive from real implementation paths
-- File: tests/test_save_orchestration_state.sh, tests/test_rejection_artifact_preservation.sh
-- Issue: None. All expected values are derived from the implementation's resolution logic in `_choose_resume_start_at()` (orchestrate_helpers.sh:188–221) and `_save_orchestration_state()` (orchestrate_helpers.sh:225–277). The resume values "test", "tester", "coder" map directly to the `if/elif` branches in the implementation. The `| Restored` string checked in Notes assertions matches the literal string interpolation at orchestrate_helpers.sh:261. No hard-coded magic values detected.
-- Severity: N/A
-- Action: None.
+### No issues found in freshness samples
+tests/test_audit_coverage_gaps.sh, tests/test_audit_sampler.sh, tests/test_audit_standalone.sh
+all exercise lib/test_audit*.sh which was not touched in M94. No stale references, orphaned
+imports, or misaligned assertions detected.

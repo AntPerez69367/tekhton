@@ -5,10 +5,10 @@ PASS
 92
 
 ## Reasoning
-- Scope is tightly defined: exactly 2 files modified, 1 test file added, with a scope table
-- Implementation plan includes working code stubs for both `tekhton.sh` and `lib/orchestrate_helpers.sh`
-- Acceptance criteria are specific and testable — each maps to a concrete observable outcome
-- Design Decisions section explicitly addresses all edge cases: in-run vs cross-run, absent artifacts, `--start-at review` guard
-- Watch For section covers the key risk of incorrectly setting `_ARCHIVED_*` when `--start-at review` is used
-- No new user-facing config keys or format changes, so no Migration Impact section needed
-- Shell-only milestone with no UI components, so no UI testability criteria needed
+- Scope is tightly defined: 3 modified files, 1 modified test, 1 new test — no ambiguity about what's in/out
+- Pseudocode skeletons for both `_print_recovery_block()` and `_rule_max_turns()` eliminate interpretation drift
+- Acceptance criteria are fully testable: shell test files named, classification string specified (`MAX_TURNS_EXHAUSTED`), shellcheck pass required
+- Design decisions section explicitly resolves the two non-obvious architectural choices (where to call the block, priority ordering of LAST_FAILURE_CONTEXT.json vs RUN_SUMMARY.json)
+- Watch For section pre-empts the two most likely implementation bugs (unset color vars in test context, empty `_DIAG_PIPELINE_TASK`)
+- No new config keys or user-facing file formats introduced — no Migration Impact section required
+- No UI components — UI testability criterion not applicable
