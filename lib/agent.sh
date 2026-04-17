@@ -159,15 +159,15 @@ run_agent() {
                 elapsed=$(( now - start_ts ))
                 mins=$(( elapsed / 60 ))
                 secs=$(( elapsed % 60 ))
-                # Read turns from turns file if available
-                _cur_turns=0
+                # Read turns from turns file — only populated after agent exits
+                _turns_display="--"
                 if [[ -f "$_turns_file" ]]; then
-                    _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "0")
-                    [[ "$_cur_turns" =~ ^[0-9]+$ ]] || _cur_turns=0
+                    _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "")
+                    [[ "$_cur_turns" =~ ^[0-9]+$ ]] && _turns_display="$_cur_turns"
                 fi
                 printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
                     "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
-                    "$_cur_turns" "$max_turns" > /dev/tty
+                    "$_turns_display" "$max_turns" > /dev/tty
                 i=$(( i + 1 ))
                 # Dashboard heartbeat: refresh run_state.js periodically
                 if (( elapsed - _last_refresh >= _refresh_interval )); then
