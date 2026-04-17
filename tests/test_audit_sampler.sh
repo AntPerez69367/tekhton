@@ -21,6 +21,9 @@ git config user.name test
 git commit --allow-empty -m init -q
 
 # Source units under test
+source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
+source "${TEKHTON_HOME}/lib/test_audit_detection.sh"
+source "${TEKHTON_HOME}/lib/test_audit_verdict.sh"
 source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/lib/test_audit_sampler.sh"
 

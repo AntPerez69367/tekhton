@@ -164,6 +164,10 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/preflight_services_infer.sh`** — Service inference from project manifests. `_pf_infer_from_compose()` parses docker-compose for service images and port mappings. `_pf_infer_from_packages()` checks package manifests (Node, Python, Go) for database client libraries. `_pf_infer_from_env()` scans `.env.example` for service-related variable patterns. Sourced by `tekhton.sh` after `preflight_services.sh`.
 - **`lib/mcp.sh`** — MCP server lifecycle management for Serena LSP integration (v3 Milestone 6). `start_mcp_server()`, `stop_mcp_server()`, `check_mcp_health()`, `get_mcp_config_path()`. Claude CLI manages the actual server process; this module handles config generation and availability tracking. Consumed by `agent.sh` to add `--mcp-config` flag.
 - **`lib/orchestrate_preflight.sh`** — Pre-finalization preflight fix retry. `_try_preflight_fix()` spawns a Jr Coder pass when TEST_CMD fails before the main pipeline runs. Sourced by `orchestrate.sh` after `orchestrate_helpers.sh`.
+- **`lib/test_audit.sh`** — Test integrity audit orchestration. `run_test_audit()` is the main pipeline integration entry point; `run_standalone_test_audit()` powers `--audit-tests`. Detection, verdict, and context helpers live in companion modules (see below). Sourced by `tekhton.sh` after its companion modules.
+- **`lib/test_audit_helpers.sh`** — Pre-audit file collection and context assembly (Milestone 95). `_collect_audit_context()`, `_discover_all_test_files()`, `_build_test_audit_context()`. Sourced by `tekhton.sh` before `test_audit.sh`.
+- **`lib/test_audit_detection.sh`** — Shell-based orphan and weakening detection (Milestone 95). `_detect_orphaned_tests()`, `_detect_test_weakening()`. Sourced by `tekhton.sh` before `test_audit.sh`.
+- **`lib/test_audit_verdict.sh`** — Test audit verdict parsing and routing (Milestone 95). `_parse_audit_verdict()`, `_route_audit_verdict()`. Sourced by `tekhton.sh` before `test_audit.sh`.
 
 ### Layer 4: Prompt Templates (`prompts/*.prompt.md`)
 Declarative agent instructions with `{{VAR}}` placeholders. Rendered by `lib/prompts.sh`.

@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_pristine_state_enforcement.sh` — M92 config defaults, acceptance/completion gate strictness, pre-run sweep enable/skip/fix-success/fix-failure
+- [x] `tests/test_test_audit_split.sh` — verify M95 split: each extracted function callable from its new home, parent ≤ 300 lines
 
 ## Test Run Results
-Passed: 14  Failed: 0
+Passed: 377  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_pristine_state_enforcement.sh`
+- [x] `tests/test_test_audit_split.sh`

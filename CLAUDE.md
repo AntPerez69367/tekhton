@@ -81,6 +81,9 @@ tekhton/
 │   ├── causality.sh        # Causal event log infrastructure + query layer
 │   ├── causality_query.sh  # Causal log query helpers
 │   ├── test_audit.sh       # Test integrity audit orchestration
+│   ├── test_audit_helpers.sh # Pre-audit file collection + context assembly
+│   ├── test_audit_detection.sh # Shell-based orphan + weakening detection
+│   ├── test_audit_verdict.sh # Audit verdict parsing + routing
 │   ├── test_audit_symbols.sh # Symbol-level stale reference detection (M88)
 │   ├── test_baseline.sh    # Test baseline capture + pre-existing failure detection
 │   ├── mcp.sh              # MCP server lifecycle management (Serena)

@@ -59,6 +59,9 @@ BOLD=""
 NC=""
 
 # --- Source test_audit.sh ---
+source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
+source "${TEKHTON_HOME}/lib/test_audit_detection.sh"
+source "${TEKHTON_HOME}/lib/test_audit_verdict.sh"
 source "${TEKHTON_HOME}/lib/test_audit.sh"
 
 PASS=0
