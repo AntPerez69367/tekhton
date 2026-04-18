@@ -1,51 +1,102 @@
 # Coder Summary
+
 ## Status: COMPLETE
 
 ## What Was Implemented
-Addressed the single open non-blocking note — a stale acceptance criterion in
-`.claude/milestones/m95-test-audit-sh-file-split.md` line 131 that reads
-"All four extracted functions" but should read "All seven extracted functions"
-(M95 ultimately extracted seven helpers across three companion modules:
-`test_audit_detection.sh`, `test_audit_verdict.sh`, `test_audit_helpers.sh`).
 
-The underlying fix is a one-line doc edit inside `.claude/milestones/*.md`,
-which is gated by the harness permission policy — a second attempt from this
-continuation confirmed the gate is still active. Rather than leave the note
-looping open across future runs (each retrying the same blocked edit), I:
+M98 TUI Redesign — Layout, Run Context, Logo Animation & Completion Hold.
 
-1. Escalated the item to `.tekhton/HUMAN_ACTION_REQUIRED.md` with a precise
-   description of the needed edit (file path, line number, old string, new
-   string, and the reason the count changed). This gives the human a single
-   actionable entry instead of an ever-reopening non-blocking note.
-2. Moved the NON_BLOCKING_LOG entry from `## Open` to `## Resolved` with a
-   dated resolution note explaining the escalation — the issue is tracked,
-   just in the right queue.
+- **§1 Spinner bleed fix** — `_TUI_ACTIVE` is now `export`-ed in `lib/tui.sh` so
+  child processes (test harnesses, plan batch runs) can read the sidecar-active
+  signal. The spinner subshell in `lib/plan_batch.sh` now guards its
+  `/dev/tty` write behind `[[ "${_TUI_ACTIVE:-false}" != "true" ]]` so it stops
+  writing raw text when the rich alternate-screen buffer owns the terminal.
 
-Net effect: the open-count drops to 0, the issue is not lost, and the
-pipeline no longer spends coder turns retrying a permission-blocked edit.
+- **§2 Layout consolidation** — `tools/tui.py` replaced the 4-panel layout
+  (stage/pipeline/agent/events) with a 2-zone layout: a fixed `size=8` header
+  and a `ratio=1` events panel that fills the rest of the terminal. The two
+  now-dead helpers `_build_stage_panel` and `_build_pipeline_panel` were
+  removed; their data was folded into the new header bar.
+
+- **§3 Header bar** — New `_build_header_bar` renders a Panel with two
+  columns: a 14-char logo column and a ratio-1 context grid. Context grid
+  has five rows: title (TEKHTON + milestone + title), meta (run_mode · Pass
+  N/M · cli_flags), task line, stage-pills row, and active-stage bar
+  (label, model, progress bar, turns, elapsed, spinner).
+
+- **§4 Run context wiring** — New `tui_set_context RUN_MODE FLAGS STAGE…`
+  function in `lib/tui.sh` populates three new globals (`_TUI_RUN_MODE`,
+  `_TUI_CLI_FLAGS`, `_TUI_STAGE_ORDER`). `tekhton.sh` derives these
+  immediately before `tui_start` from the parsed CLI flags
+  (`--auto-advance`, `--skip-audit`, `--skip-security`, `--skip-docs`,
+  `--human`, `--no-commit`, `--start-at`) and milestone/fix/complete mode
+  bools. New JSON fields (`run_mode`, `cli_flags`, `stage_order`) are
+  emitted by `_tui_json_build_status`. `TUI_EVENT_LINES` default changed
+  8→60 (ring-buffer depth; display height is terminal-driven).
+
+- **§5 Logo animation** — Introduced a 5-row × 12-char Unicode block-art
+  arch logo (`_ARCH_WALLS` + `_LOGO_FRAMES` in `tools/tui_render.py`).
+  Animated 3-frame cycle (ghost → floating → seated keystone) driven by
+  `int(time.time() * 0.6) % 3` when `current_agent_status == running`.
+  Idle state collapses to the seated-keystone frame in dim white; complete
+  state uses gold styling. A 5-line ASCII fallback (`_SIMPLE_LOGO_LINES`)
+  is selected via `TUI_SIMPLE_LOGO=true` and passed to `tools/tui.py` via
+  `--simple-logo`.
+
+- **§6 Hold-on-complete** — `tui_complete` now polls `kill -0 $_TUI_PID`
+  in 100ms ticks up to `TUI_COMPLETE_HOLD_TIMEOUT=120` seconds, allowing
+  the sidecar to run its final hold before teardown. The new
+  `tools/tui_hold.py` module exits Live context, prints a
+  `console.rule("Tekhton — Run Complete")` banner, renders the verdict +
+  elapsed + milestone + task summary, dumps the full event log in normal
+  scroll, and waits on `/dev/tty` for Enter. Non-interactive envs
+  (no `/dev/tty`) fall back to a 3-second pause.
+
+- **§7 Status JSON schema** — Added `run_mode`, `cli_flags`, `stage_order`
+  (string array), and retained `stage_start_ts` for wall-clock elapsed
+  calculation in the active-stage bar.
 
 ## Root Cause (bugs only)
-N/A — documentation-only correction. The M95 milestone was authored before
-the implementation plan's Step 3 extracted a third companion module
-(`test_audit_helpers.sh`), so the "four extracted functions" count in the
-acceptance criterion became stale once seven helpers ended up being extracted
-across three files.
+
+N/A — feature milestone (M98).
 
 ## Files Modified
-- `.tekhton/NON_BLOCKING_LOG.md` — moved the single open note to Resolved with
-  a dated escalation note.
-- `.tekhton/HUMAN_ACTION_REQUIRED.md` — added an action item with the exact
-  manual edit required in `.claude/milestones/m95-test-audit-sh-file-split.md`
-  line 131 (`four` → `seven`).
+
+- `lib/tui.sh` — `export _TUI_ACTIVE`; new `tui_set_context` fn; run-context
+  globals (`_TUI_RUN_MODE`, `_TUI_CLI_FLAGS`, `_TUI_STAGE_ORDER`);
+  `tui_start` builds arg array and accepts `--simple-logo`; `tui_complete`
+  waits up to `TUI_COMPLETE_HOLD_TIMEOUT` for the sidecar; ring-buffer
+  fallback default aligned to 60.
+- `lib/tui_helpers.sh` — new `_tui_stage_order_json` helper; three new
+  JSON fields (`run_mode`, `cli_flags`, `stage_order`) in
+  `_tui_json_build_status`.
+- `lib/plan_batch.sh` — spinner subshell now guards against writing to
+  `/dev/tty` when the TUI owns the terminal.
+- `lib/config_defaults.sh` — `TUI_EVENT_LINES` default 8→60; new
+  `TUI_COMPLETE_HOLD_TIMEOUT` (120) and `TUI_SIMPLE_LOGO` (false).
+- `tekhton.sh` — derive run_mode / cli_flags / stage_order and call
+  `tui_set_context` before `tui_start`.
+- `tools/tui.py` — rewritten as thin main (~150 lines): signal handling,
+  status read, 2-zone layout construction, Live loop, hand-off to
+  `_hold_on_complete`. Re-exports render helpers for test discovery.
+- `tools/tui_render.py` — new file: `_fmt_duration`, logo builders, stage
+  pills, active-stage bar, header bar, events panel (~280 lines).
+- `tools/tui_hold.py` — new file: `_hold_on_complete` + verdict styling
+  (~70 lines).
+- `tools/tests/test_tui.py` — refreshed `_sample_status` to include new
+  fields; replaced panel tests with tests for header bar, 3-frame logo
+  animation, idle/complete logo, simple logo, panel-removal guard, and
+  a smoke test for `_hold_on_complete` in non-interactive mode.
+- `CLAUDE.md` — registered `tools/tui_render.py` and `tools/tui_hold.py`
+  in the Repository Layout; updated `TUI_EVENT_LINES` description; added
+  rows for `TUI_COMPLETE_HOLD_TIMEOUT` and `TUI_SIMPLE_LOGO`.
 
 ## Human Notes Status
-No human notes (`HUMAN_NOTES.md`) were in scope for this run.
 
-## Docs Updated
-None — no public-surface changes in this task. The stale count is inside a
-milestone definition file, which is a pipeline artifact rather than
-user-facing documentation. No CLI flags, config keys, exported functions,
-or templates changed.
+No active human notes for this milestone.
 
-## Observed Issues (out of scope)
-None.
+## Architecture Change Proposals
+
+None. This milestone is additive (new context fields, new sidecar module
+split) and refactors only the TUI rendering path. No cross-cutting contract
+changes.

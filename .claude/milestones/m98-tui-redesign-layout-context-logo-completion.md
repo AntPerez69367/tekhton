@@ -1,8 +1,7 @@
 # Milestone 98: TUI Redesign — Layout, Run Context, Logo Animation & Completion Hold
 <!-- milestone-meta
 id: "98"
-status: "pending"
-depends: "97"
+status: "done"
 -->
 
 ## Overview

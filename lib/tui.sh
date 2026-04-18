@@ -17,7 +17,9 @@ source "${TEKHTON_HOME}/lib/tui_helpers.sh"
 
 # --- Activation state --------------------------------------------------------
 
-_TUI_ACTIVE=false
+# Exported so child processes (e.g. tests spawned via `bash tests/...`) see the
+# sidecar-active signal and can suppress their own direct-to-/dev/tty writes.
+export _TUI_ACTIVE=false
 _TUI_PID=""
 _TUI_STATUS_FILE=""
 _TUI_STATUS_TMP=""
@@ -38,6 +40,13 @@ _TUI_STAGE_START_TS=0
 _TUI_PIPELINE_START_TS=0
 _TUI_COMPLETE=false
 _TUI_VERDICT=""
+
+# Run context (set by tui_set_context before tui_start). These are surfaced
+# in the JSON status so the Python sidecar can render run_mode, non-default
+# CLI flags, and the stage-pills row in the header.
+_TUI_RUN_MODE="task"
+_TUI_CLI_FLAGS=""
+declare -a _TUI_STAGE_ORDER=()
 
 # --- Activation check --------------------------------------------------------
 
@@ -94,14 +103,21 @@ tui_start() {
     _tui_write_status
 
     local tick_ms="${TUI_TICK_MS:-500}"
+    local -a _tui_args=(
+        "${TEKHTON_HOME}/tools/tui.py"
+        --status-file "$_TUI_STATUS_FILE"
+        --tick-ms "$tick_ms"
+        --event-lines "${TUI_EVENT_LINES:-60}"
+        --watchdog-secs "${TUI_WATCHDOG_TIMEOUT:-300}"
+    )
+    if [[ "${TUI_SIMPLE_LOGO:-false}" == "true" ]]; then
+        _tui_args+=(--simple-logo)
+    fi
     # Redirect only stderr to the sidecar log so Python tracebacks are
     # captured for debugging.  tui.py opens /dev/tty directly for rendering
     # and does not depend on fd 1, but we leave stdout unredirected anyway
     # to avoid silently swallowing any output it cannot write to /dev/tty.
-    "$_TUI_PYTHON" "${TEKHTON_HOME}/tools/tui.py" \
-        --status-file "$_TUI_STATUS_FILE" \
-        --tick-ms "$tick_ms" \
-        --event-lines "${TUI_EVENT_LINES:-8}" \
+    "$_TUI_PYTHON" "${_tui_args[@]}" \
         2>"${session_dir}/tui_sidecar.log" &
     _TUI_PID=$!
     _TUI_ACTIVE=true
@@ -130,16 +146,46 @@ tui_stop() {
     tput cnorm 2>/dev/null || true
 }
 
-# tui_complete VERDICT — mark complete, give sidecar a final tick, then stop.
+# tui_complete VERDICT — mark complete, wait for the sidecar to finish its
+# hold-on-complete prompt (user presses Enter), then force-stop after
+# TUI_COMPLETE_HOLD_TIMEOUT seconds. Set the timeout to 0 for the pre-M98
+# behaviour (brief pause + kill, suitable for CI / non-interactive wrappers).
 tui_complete() {
     [[ "$_TUI_ACTIVE" == "true" ]] || return 0
     _TUI_VERDICT="${1:-}"
     _TUI_COMPLETE=true
     _TUI_AGENT_STATUS="complete"
     _tui_write_status
-    # Small pause so the sidecar reads the final state before we kill it
-    sleep 0.3
+
+    local hold_timeout="${TUI_COMPLETE_HOLD_TIMEOUT:-120}"
+    if [[ "$hold_timeout" =~ ^[0-9]+$ ]] && (( hold_timeout > 0 )) && [[ -n "$_TUI_PID" ]]; then
+        local deadline=$(( $(date +%s) + hold_timeout ))
+        while kill -0 "$_TUI_PID" 2>/dev/null; do
+            (( $(date +%s) >= deadline )) && break
+            sleep 0.1
+        done
+    else
+        sleep 0.3
+    fi
     tui_stop
+}
+
+# tui_set_context RUN_MODE FLAGS_STRING STAGE1 [STAGE2 ...]
+#
+# Populate the run-context globals that flow into the JSON status file.  Must
+# be called before tui_start (if called afterward the first header render
+# will use defaults).  The stage list is the ordered set of pipeline stages
+# for this run (e.g. intake scout coder security review tester), used by the
+# sidecar to render the stage-pills row.
+tui_set_context() {
+    _TUI_RUN_MODE="${1:-task}"
+    _TUI_CLI_FLAGS="${2:-}"
+    if (( $# >= 2 )); then
+        shift 2
+    else
+        shift "$#"
+    fi
+    _TUI_STAGE_ORDER=("$@")
 }
 
 # --- Update functions --------------------------------------------------------
@@ -193,7 +239,7 @@ tui_append_event() {
     local ts
     ts=$(date +"%H:%M:%S")
     _TUI_RECENT_EVENTS+=("${ts}|${level}|${msg}")
-    local max="${TUI_EVENT_LINES:-8}"
+    local max="${TUI_EVENT_LINES:-60}"
     local overflow=$(( ${#_TUI_RECENT_EVENTS[@]} - max ))
     if (( overflow > 0 )); then
         _TUI_RECENT_EVENTS=("${_TUI_RECENT_EVENTS[@]:overflow}")

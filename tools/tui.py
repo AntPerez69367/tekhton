@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Tekhton TUI sidecar: reads tui_status.json and renders a rich.live layout.
 
-Runs as a background process spawned by lib/tui.sh. Reads the status file on a
-tick, re-renders, and exits when the status file marks complete=true or when
-the parent kills it (SIGTERM/SIGINT).
+Runs as a background process spawned by lib/tui.sh. Reads the status file on
+a tick, re-renders, and exits when the status file marks complete=true or
+when the parent kills it (SIGTERM/SIGINT). On complete, exits the Live
+alternate screen and dumps the final event log via tui_hold._hold_on_complete
+so the user can read the full run history before the finalize banner prints.
+
+Layout (M98): size=8 header panel (logo + run context + stage pills +
+active-stage bar) above a ratio=1 events panel that fills the rest of the
+terminal. See .claude/milestones/m98-tui-redesign-layout-context-logo-completion.md.
 """
 
 from __future__ import annotations
@@ -19,10 +25,17 @@ from typing import Any
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
-from rich.panel import Panel
-from rich.progress_bar import ProgressBar
-from rich.table import Table
-from rich.text import Text
+
+# Re-export render helpers so tests that `import tui` can access
+# `tui._build_logo`, `tui._build_header_bar`, etc.
+from tui_render import (  # noqa: F401 — re-exports for tests
+    _build_events_panel,
+    _build_header_bar,
+    _build_logo,
+    _build_simple_logo,
+    _fmt_duration,
+)
+from tui_hold import _hold_on_complete  # noqa: F401 — re-export for tests
 
 _STOP = False
 
@@ -30,18 +43,6 @@ _STOP = False
 def _handle_signal(_signum, _frame):
     global _STOP
     _STOP = True
-
-
-def _fmt_duration(secs: int) -> str:
-    if secs <= 0:
-        return "0s"
-    hours, rem = divmod(int(secs), 3600)
-    mins, s = divmod(rem, 60)
-    if hours:
-        return f"{hours}h{mins}m{s}s"
-    if mins:
-        return f"{mins}m{s}s"
-    return f"{s}s"
 
 
 def _read_status(path: Path) -> dict[str, Any] | None:
@@ -57,141 +58,14 @@ def _read_status(path: Path) -> dict[str, Any] | None:
         return None
 
 
-def _build_header(status: dict[str, Any]) -> Panel:
-    milestone = status.get("milestone") or "?"
-    title = status.get("milestone_title") or status.get("task") or ""
-    clock = time.strftime("%H:%M:%S")
-    text = Text()
-    text.append("Tekhton  ", style="bold cyan")
-    text.append(f"M{milestone}", style="bold white")
-    if title:
-        text.append(f" — {title}", style="white")
-    pad = max(1, 50 - len(title))
-    text.append(" " * pad)
-    text.append(clock, style="dim")
-    return Panel(text, border_style="cyan", padding=(0, 1))
-
-
-def _build_stage_panel(status: dict[str, Any]) -> Panel:
-    label = status.get("stage_label") or "—"
-    num = status.get("stage_num", 0) or 0
-    total = status.get("stage_total", 0) or 0
-    model = status.get("agent_model") or ""
-    used = int(status.get("agent_turns_used", 0) or 0)
-    maxt = int(status.get("agent_turns_max", 0) or 0)
-    # Compute elapsed from stage_start_ts so the timer ticks on every
-    # render cycle — even during non-agent phases like prerun test checks.
-    stage_start_ts = int(status.get("stage_start_ts", 0) or 0)
-    if stage_start_ts > 0:
-        elapsed = max(0, int(time.time()) - stage_start_ts)
-    else:
-        elapsed = int(status.get("agent_elapsed_secs", 0) or 0)
-    agent_status = status.get("current_agent_status", "idle")
-
-    grid = Table.grid(padding=(0, 1))
-    grid.add_column(no_wrap=True)
-    stage_line = f"Stage {num} / {total} — {label}" if total else label
-    grid.add_row(Text(stage_line, style="bold"))
-    if model:
-        grid.add_row(Text(model, style="dim"))
-    grid.add_row("")
-
-    bar_total = max(maxt, 1)
-    bar = ProgressBar(total=bar_total, completed=min(used, bar_total), width=20)
-    turns_text = Text()
-    turns_text.append("Turns   ")
-    turns_row = Table.grid(padding=(0, 1))
-    turns_row.add_column(no_wrap=True)
-    turns_row.add_column(no_wrap=True)
-    turns_row.add_column(no_wrap=True)
-    turns_row.add_row("Turns", bar, f"{used}/{maxt}" if maxt else f"{used}")
-    grid.add_row(turns_row)
-
-    grid.add_row(Text(f"Time    {_fmt_duration(elapsed)}"))
-
-    if agent_status == "running":
-        spin_frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-        frame = spin_frames[int(time.time() * 10) % len(spin_frames)]
-        grid.add_row(Text(f"{frame} Running...", style="yellow"))
-    elif agent_status == "complete":
-        grid.add_row(Text("✓ Complete", style="green"))
-    else:
-        grid.add_row(Text("idle", style="dim"))
-
-    return Panel(grid, title="Current stage", border_style="blue", padding=(0, 1))
-
-
-def _build_pipeline_panel(status: dict[str, Any]) -> Panel:
-    elapsed = int(status.get("pipeline_elapsed_secs", 0) or 0)
-    attempt = status.get("attempt", 1) or 1
-    max_attempts = status.get("max_attempts", 1) or 1
-    stages = status.get("stages_complete", []) or []
-
-    grid = Table.grid(padding=(0, 1))
-    grid.add_column(no_wrap=True)
-    grid.add_row(Text(f"Elapsed:   {_fmt_duration(elapsed)}"))
-    grid.add_row(Text(f"Attempt:   {attempt} / {max_attempts}"))
-    grid.add_row("")
-    grid.add_row(Text(f"Stages complete: {len(stages)}", style="bold"))
-    for s in stages:
-        label = s.get("label", "?")
-        tm = s.get("time", "")
-        verdict = s.get("verdict")
-        mark = "✓"
-        style = "green"
-        if verdict and verdict.upper() in ("FAIL", "BLOCKED"):
-            mark = "✗"
-            style = "red"
-        grid.add_row(Text(f"  {label:<8} {mark}  {tm}", style=style))
-    return Panel(grid, title="Pipeline", border_style="blue", padding=(0, 1))
-
-
-def _build_events_panel(status: dict[str, Any], max_lines: int) -> Panel:
-    events = status.get("recent_events", []) or []
-    events = events[-max_lines:]
-    grid = Table.grid(padding=(0, 1))
-    grid.add_column(no_wrap=True, style="dim")
-    grid.add_column(no_wrap=False)
-    if not events:
-        grid.add_row("", Text("(no events yet)", style="dim italic"))
-    else:
-        for ev in events:
-            ts = ev.get("ts", "")
-            level = ev.get("level", "info")
-            msg = ev.get("msg", "")
-            style = {
-                "info": "white",
-                "warn": "yellow",
-                "error": "red",
-                "success": "green",
-            }.get(level, "white")
-            grid.add_row(ts, Text(msg, style=style))
-    return Panel(grid, title="Recent events", border_style="cyan", padding=(0, 1))
-
-
-def _build_layout(status: dict[str, Any], event_lines: int) -> Layout:
-    layout = Layout()
-    layout.split_column(
-        Layout(name="header", size=3),
-        Layout(name="middle", ratio=1),
-        Layout(name="events", size=event_lines + 2),
-    )
-    layout["middle"].split_row(
-        Layout(name="stage", ratio=1),
-        Layout(name="pipeline", ratio=1),
-    )
-    layout["header"].update(_build_header(status))
-    layout["stage"].update(_build_stage_panel(status))
-    layout["pipeline"].update(_build_pipeline_panel(status))
-    layout["events"].update(_build_events_panel(status, event_lines))
-    return layout
-
-
 def _empty_status() -> dict[str, Any]:
     return {
         "version": 1,
         "milestone": "",
         "milestone_title": "Starting...",
+        "task": "",
+        "attempt": 1,
+        "max_attempts": 1,
         "stage_label": "",
         "stage_num": 0,
         "stage_total": 0,
@@ -203,49 +77,118 @@ def _empty_status() -> dict[str, Any]:
         "stages_complete": [],
         "current_agent_status": "idle",
         "recent_events": [],
+        "run_mode": "task",
+        "cli_flags": "",
+        "stage_order": ["intake", "scout", "coder", "security", "review", "tester"],
         "complete": False,
     }
+
+
+def _build_layout(status: dict[str, Any], event_lines: int) -> Layout:
+    layout = Layout()
+    layout.split_column(
+        Layout(name="header", size=8),
+        Layout(name="events", ratio=1),
+    )
+    layout["header"].update(_build_header_bar(status))
+    layout["events"].update(_build_events_panel(status, event_lines))
+    return layout
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--status-file", required=True, type=Path)
     parser.add_argument("--tick-ms", type=int, default=500)
-    parser.add_argument("--event-lines", type=int, default=8)
+    parser.add_argument("--event-lines", type=int, default=60)
+    parser.add_argument("--simple-logo", action="store_true")
+    parser.add_argument(
+        "--watchdog-secs",
+        type=int,
+        default=0,
+        help=(
+            "Self-terminate after this many seconds of status-file inactivity "
+            "when agent_status is idle and complete is still false. "
+            "0 = disabled. Prevents the sidecar from hanging indefinitely when "
+            "the parent shell blocks (e.g. on a slow git pre-commit hook) before "
+            "it can send the complete signal."
+        ),
+    )
     args = parser.parse_args()
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
     tick = max(0.05, args.tick_ms / 1000.0)
-    event_lines = max(3, args.event_lines)
+    event_lines = max(0, args.event_lines)
+    simple_logo = args.simple_logo
+    watchdog_secs = max(0, args.watchdog_secs)
 
-    # Always write to the controlling terminal directly (/dev/tty) so the
-    # rich display appears even when the parent shell has redirected fd 1
-    # (e.g. to a sidecar log file).  Fall back to stdout if /dev/tty is
-    # unavailable — the caller already verified the terminal is interactive.
     try:
-        _tty = open("/dev/tty", "w")  # noqa: WPS515 — must stay open for sidecar lifetime
+        _tty = open("/dev/tty", "w")  # noqa: SIM115 — lifetime = sidecar
         console = Console(file=_tty, force_terminal=True)
     except OSError:
         console = Console(force_terminal=True)
+
+    last_status: dict[str, Any] = _empty_status()
+    if simple_logo:
+        last_status["simple_logo"] = True
+
+    # Watchdog: track when the status file was last modified so we can
+    # self-terminate if the parent shell stops updating it while idle.
+    _last_mtime: float = 0.0
+    _last_mtime_time: float = time.monotonic()
+    try:
+        _last_mtime = args.status_file.stat().st_mtime
+    except OSError:
+        pass
+
     with Live(
-        _build_layout(_empty_status(), event_lines),
+        _build_layout(last_status, event_lines),
         console=console,
         refresh_per_second=max(1, int(1 / tick)),
         screen=True,
         transient=True,
     ) as live:
         while not _STOP:
-            status = _read_status(args.status_file) or _empty_status()
+            status = _read_status(args.status_file) or last_status
+            if simple_logo:
+                status["simple_logo"] = True
             try:
                 live.update(_build_layout(status, event_lines))
-            except Exception:  # noqa: BLE001 - render failures must not crash sidecar
+            except Exception:  # noqa: BLE001 - render failures must not crash
                 pass
+            last_status = status
             if status.get("complete"):
                 time.sleep(tick)
                 break
+
+            # Watchdog: if the status file hasn't been touched for watchdog_secs
+            # while the pipeline is idle (all stages done, no agent running),
+            # self-terminate so the terminal isn't stuck indefinitely when the
+            # parent shell blocks before sending the complete signal.
+            if watchdog_secs > 0:
+                try:
+                    cur_mtime = args.status_file.stat().st_mtime
+                    if cur_mtime != _last_mtime:
+                        _last_mtime = cur_mtime
+                        _last_mtime_time = time.monotonic()
+                except OSError:
+                    pass
+                if (
+                    status.get("current_agent_status") == "idle"
+                    and status.get("agent_turns_used", 0) > 0
+                    and time.monotonic() - _last_mtime_time > watchdog_secs
+                ):
+                    break
+
             time.sleep(tick)
+
+    if last_status.get("complete"):
+        try:
+            _hold_on_complete(last_status, console)
+        except Exception:  # noqa: BLE001 — never block finalize
+            pass
+
     return 0
 
 

@@ -163,11 +163,14 @@ set -euo pipefail
 : "${REPO_MAP_HISTORY_MAX_RECORDS:=200}"
 : "${SCOUT_REPO_MAP_TOOLS_ONLY:=true}"    # Reduce scout tools when repo map available
 
-# --- TUI mode (M97: rich.live sidecar display) ---
+# --- TUI mode (M97: rich.live sidecar display; M98: layout redesign) ---
 : "${TUI_ENABLED:=auto}"                  # auto | true | false
 : "${TUI_TICK_MS:=500}"                   # status file poll interval
-: "${TUI_EVENT_LINES:=8}"                 # recent event lines shown
+: "${TUI_EVENT_LINES:=60}"                # ring-buffer depth; display height is terminal-driven
 : "${TUI_VENV_DIR:=${REPO_MAP_VENV_DIR}}" # share indexer venv by default
+: "${TUI_COMPLETE_HOLD_TIMEOUT:=120}"     # max secs to hold sidecar after complete before SIGKILL
+: "${TUI_SIMPLE_LOGO:=false}"             # use ASCII fallback instead of block-char arch logo
+: "${TUI_WATCHDOG_TIMEOUT:=300}"          # secs of status-file inactivity before self-terminating when idle (0=disabled)
 
 # --- Serena LSP / MCP defaults (optional, future Milestone 6) ---
 : "${SERENA_ENABLED:=false}"

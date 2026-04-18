@@ -1879,6 +1879,26 @@ if declare -f flush_role_template_warnings &>/dev/null; then
 fi
 # M97: start the rich.live TUI sidecar (no-op unless enabled + TTY + venv).
 if declare -f tui_start &>/dev/null; then
+    # M98: surface run context to the sidecar header.
+    _tui_run_mode="task"
+    [[ "$MILESTONE_MODE"         = true ]] && _tui_run_mode="milestone"
+    [[ "$FIX_NONBLOCKERS_MODE"   = true ]] && _tui_run_mode="fix-nb"
+    [[ "$FIX_DRIFT_MODE"         = true ]] && _tui_run_mode="fix-drift"
+    [[ "$COMPLETE_MODE"          = true ]] && [[ "$MILESTONE_MODE" != true ]] \
+        && _tui_run_mode="complete"
+    _tui_cli_flags=""
+    [[ "${AUTO_ADVANCE:-false}"   = true ]] && _tui_cli_flags+=" --auto-advance"
+    [[ "${SKIP_AUDIT:-false}"     = true ]] && _tui_cli_flags+=" --skip-audit"
+    [[ "${SKIP_SECURITY:-false}"  = true ]] && _tui_cli_flags+=" --skip-security"
+    [[ "${SKIP_DOCS:-false}"      = true ]] && _tui_cli_flags+=" --skip-docs"
+    [[ "${HUMAN_MODE:-false}"     = true ]] && _tui_cli_flags+=" --human"
+    [[ "${AUTO_COMMIT:-true}"     = false ]] && _tui_cli_flags+=" --no-commit"
+    [[ "${START_AT:-coder}"      != coder ]] && _tui_cli_flags+=" --start-at ${START_AT}"
+    _tui_cli_flags="${_tui_cli_flags# }"
+    if declare -f tui_set_context &>/dev/null; then
+        tui_set_context "$_tui_run_mode" "$_tui_cli_flags" \
+            intake scout coder security review tester
+    fi
     tui_start
 fi
 log "Task: ${BOLD}${TASK}${NC}"

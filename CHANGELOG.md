@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.31] - 2026-04-18
+
+### Added
+- M98 TUI Redesign — Layout, Run Context, Logo Animation & Completion Hold. (M98)
 ## [0.1.30] - 2026-04-18
 
 ### Added

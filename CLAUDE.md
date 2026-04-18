@@ -227,7 +227,9 @@ tekhton/
 │   ├── setup_indexer.sh    # Indexer virtualenv setup script
 │   ├── setup_serena.sh     # Serena MCP server setup script
 │   ├── serena_config_template.json  # MCP config template
-│   ├── tui.py              # M97 TUI sidecar — rich.live status renderer
+│   ├── tui.py              # TUI sidecar main — rich.live loop + layout assembly
+│   ├── tui_render.py       # TUI render helpers — logo, header bar, stage pills, events
+│   ├── tui_hold.py         # TUI hold-on-complete — final event log dump + Enter wait
 │   └── tests/              # Python unit tests
 │       ├── conftest.py
 │       ├── test_repo_map.py
@@ -235,7 +237,7 @@ tekhton/
 │       ├── test_history.py
 │       ├── test_tree_sitter_languages.py
 │       ├── test_extract_tags_integration.py
-│       └── test_tui.py     # M97 TUI sidecar renderer tests
+│       └── test_tui.py     # TUI sidecar renderer tests
 ├── platforms/              # Platform-specific UI knowledge (M57–M60)
 │   ├── _base.sh            # Platform resolution + universal helpers
 │   ├── _universal/         # Cross-platform UI guidance (always included)
@@ -462,8 +464,11 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DRAFT_MILESTONES_SEED_EXEMPLARS` | Number of recent milestones shown as format examples (default: 3) |
 | `TUI_ENABLED` | TUI sidecar: auto (on interactive TTY + venv), true, or false (default: auto) |
 | `TUI_TICK_MS` | Sidecar status-file poll interval in ms (default: 500) |
-| `TUI_EVENT_LINES` | Recent event lines shown in scroll panel (default: 8) |
+| `TUI_EVENT_LINES` | Ring-buffer depth of recent events retained for the events panel (default: 60) |
 | `TUI_VENV_DIR` | Python venv for sidecar (default: shares `REPO_MAP_VENV_DIR`) |
+| `TUI_COMPLETE_HOLD_TIMEOUT` | Max seconds to hold sidecar at completion waiting for Enter before SIGKILL (default: 120) |
+| `TUI_SIMPLE_LOGO` | Use 5-line ASCII fallback logo instead of Unicode block-char arch (default: false) |
+| `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
 
 ## Testing
 
