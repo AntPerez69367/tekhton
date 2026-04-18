@@ -213,7 +213,15 @@ def main() -> int:
     tick = max(0.05, args.tick_ms / 1000.0)
     event_lines = max(3, args.event_lines)
 
-    console = Console()
+    # Always write to the controlling terminal directly (/dev/tty) so the
+    # rich display appears even when the parent shell has redirected fd 1
+    # (e.g. to a sidecar log file).  Fall back to stdout if /dev/tty is
+    # unavailable — the caller already verified the terminal is interactive.
+    try:
+        _tty = open("/dev/tty", "w")  # noqa: WPS515 — must stay open for sidecar lifetime
+        console = Console(file=_tty, force_terminal=True)
+    except OSError:
+        console = Console(force_terminal=True)
     with Live(
         _build_layout(_empty_status(), event_lines),
         console=console,

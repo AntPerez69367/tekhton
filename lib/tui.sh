@@ -93,11 +93,15 @@ tui_start() {
     _tui_write_status
 
     local tick_ms="${TUI_TICK_MS:-500}"
+    # Redirect only stderr to the sidecar log so Python tracebacks are
+    # captured for debugging.  tui.py opens /dev/tty directly for rendering
+    # and does not depend on fd 1, but we leave stdout unredirected anyway
+    # to avoid silently swallowing any output it cannot write to /dev/tty.
     "$_TUI_PYTHON" "${TEKHTON_HOME}/tools/tui.py" \
         --status-file "$_TUI_STATUS_FILE" \
         --tick-ms "$tick_ms" \
         --event-lines "${TUI_EVENT_LINES:-8}" \
-        >"${session_dir}/tui_sidecar.log" 2>&1 &
+        2>"${session_dir}/tui_sidecar.log" &
     _TUI_PID=$!
     _TUI_ACTIVE=true
     log_verbose "[tui] Sidecar started (pid ${_TUI_PID}, status=${_TUI_STATUS_FILE})"
