@@ -75,11 +75,48 @@ _tui_notify() {
     fi
 }
 
-log()    { echo -e "${CYAN}[tekhton]${NC} $*"; _tui_notify info    "$*"; }
-success(){ echo -e "${GREEN}[✓]${NC} $*";     _tui_notify success "[✓] $*"; }
-warn()   { echo -e "${YELLOW}[!]${NC} $*";    _tui_notify warn    "[!] $*"; }
-error()  { echo -e "${RED}[✗]${NC} $*";       _tui_notify error   "[✗] $*"; }
-header() { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"; echo -e "${BOLD}${CYAN}  $*${NC}"; echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"; _tui_notify info "$*"; }
+log() {
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        echo -e "${CYAN}[tekhton]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[tekhton] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    _tui_notify info "$*"
+}
+success() {
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        echo -e "${GREEN}[✓]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[✓] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    _tui_notify success "[✓] $*"
+}
+warn() {
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        echo -e "${YELLOW}[!]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[!] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    _tui_notify warn "[!] $*"
+}
+error() {
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        echo -e "${RED}[✗]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[✗] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    _tui_notify error "[✗] $*"
+}
+header() {
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"
+        echo -e "${BOLD}${CYAN}  $*${NC}"
+        echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '\n=== %s ===\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    _tui_notify info "$*"
+}
 
 # log_verbose — write an informational diagnostic line that stays off stdout
 # unless VERBOSE_OUTPUT=true. The message is always appended to ${LOG_FILE}
