@@ -62,11 +62,24 @@ fi
 
 # --- Logging -----------------------------------------------------------------
 
-log()    { echo -e "${CYAN}[tekhton]${NC} $*"; }
-success(){ echo -e "${GREEN}[✓]${NC} $*"; }
-warn()   { echo -e "${YELLOW}[!]${NC} $*"; }
-error()  { echo -e "${RED}[✗]${NC} $*"; }
-header() { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"; echo -e "${BOLD}${CYAN}  $*${NC}"; echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"; }
+# M97: strip ANSI SGR sequences before forwarding to TUI event feed.
+_tui_strip_ansi() {
+    local s="$*"
+    # shellcheck disable=SC2001
+    printf '%s' "$s" | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g'
+}
+_tui_notify() {
+    local level="$1"; shift
+    if declare -f tui_append_event &>/dev/null; then
+        tui_append_event "$level" "$(_tui_strip_ansi "$*")" 2>/dev/null || true
+    fi
+}
+
+log()    { echo -e "${CYAN}[tekhton]${NC} $*"; _tui_notify info    "$*"; }
+success(){ echo -e "${GREEN}[✓]${NC} $*";     _tui_notify success "[✓] $*"; }
+warn()   { echo -e "${YELLOW}[!]${NC} $*";    _tui_notify warn    "[!] $*"; }
+error()  { echo -e "${RED}[✗]${NC} $*";       _tui_notify error   "[✗] $*"; }
+header() { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"; echo -e "${BOLD}${CYAN}  $*${NC}"; echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"; _tui_notify info "$*"; }
 
 # log_verbose — write an informational diagnostic line that stays off stdout
 # unless VERBOSE_OUTPUT=true. The message is always appended to ${LOG_FILE}

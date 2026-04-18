@@ -1,44 +1,89 @@
+# Coder Summary
 ## Status: COMPLETE
 
-## Summary
-Senior coder rework cycle for M96 (CLI Output Hygiene). The reviewer's three
-remaining Complex Blockers are now resolved:
+## What Was Implemented
 
-1. **IA2 — Version bump in Pipeline Complete banner.** `bump_version_files`
-   now exports `_BUMPED_VERSION_OLD`, `_BUMPED_VERSION_NEW`, and
-   `_BUMPED_VERSION_TYPE` after a successful bump. `_hook_commit` reads them
-   and emits a `Version: <old> → <new> (<type>)` line directly under the
-   Milestone line in the banner. No display when no bump occurred.
-2. **IA3 — `What's next:` promoted to final printed line.** Removed the
-   `_compute_next_action` block from `_print_action_items` and added a small
-   helper `_print_next_action` in `lib/finalize_display.sh`. `_hook_commit`
-   invokes it after each terminal `print_run_summary` + commit-confirmation
-   path (commit, edit-then-commit, and skip).
-3. **Coverage gap closed.** `tests/test_cli_output_hygiene.sh` now exists.
-   Two assertions: (a) runtime smoke — sourcing causality.sh and calling
-   `emit_event >/dev/null` produces no event ID on stdout; (b) static —
-   every `emit_event` call site in `lib/` and `stages/` either captures via
-   command substitution or redirects stdout (a bare `2>/dev/null` is rejected,
-   confirmed by manual regression-injection).
+Milestone 97 — TUI Mode (rich.live sidecar). Opt-in full-screen status display
+that runs as a decoupled Python sidecar while the shell pipeline executes
+unchanged. Falls back silently to the plain M96 output when the venv, `rich`,
+or an interactive TTY is unavailable.
+
+- `lib/tui.sh` — sidecar lifecycle (`tui_start`, `tui_stop`, `tui_complete`,
+  `tui_update_stage`, `tui_finish_stage`, `tui_update_agent`,
+  `tui_append_event`). All update calls are no-ops unless `_TUI_ACTIVE=true`,
+  so hook sites can call them unconditionally. Activation gate
+  (`_tui_should_activate`) checks `TUI_ENABLED`, TTY, venv, `rich`, and
+  `tools/tui.py`. Each failure mode sets a human-readable reason.
+- `lib/tui_helpers.sh` — pure-bash JSON builders (`_tui_json_build_status`,
+  `_tui_json_stage`, `_tui_recent_events_json`, `_tui_stages_json`,
+  `_tui_escape`). Status is written atomically via `.tmp` + `mv`.
+- `tools/tui.py` — rich-based sidecar. Polls `tui_status.json` on a tick
+  (default 500ms), renders header / stage / pipeline / events panels via
+  `rich.live` + `rich.layout`. Exits on `complete=true`, SIGTERM, or SIGINT.
+  Renders into an alternate screen (`screen=True, transient=True`) so the
+  original terminal scrollback survives.
+- Integration wiring: `tekhton.sh` sources `lib/tui.sh` alongside the other
+  libs, calls `tui_start` just after the startup banner, calls
+  `tui_update_stage` / `tui_finish_stage` around each stage dispatch, and
+  invokes `tui_stop` from the EXIT trap. `lib/agent.sh` calls `tui_update_agent`
+  from the existing spinner tick. `lib/common.sh` bridges `log` / `warn` /
+  `success` / `error` / `header` into the event feed via `_tui_notify` (with
+  ANSI stripping). `lib/finalize.sh` registers `_hook_tui_complete` as the last
+  finalize hook.
+- Config: four keys added in `lib/config_defaults.sh` — `TUI_ENABLED`,
+  `TUI_TICK_MS`, `TUI_EVENT_LINES`, `TUI_VENV_DIR` (defaults auto-share
+  `REPO_MAP_VENV_DIR`).
+- Dependencies: `rich>=13.0.0` added to `tools/requirements.txt`.
+- Tests: `tests/test_tui_fallback.sh` (9 assertions — activation gate, no-op
+  paths, JSON schema round-trip) and `tools/tests/test_tui.py` (15 pytest
+  cases — `_fmt_duration`, `_read_status` edge cases, layout construction with
+  full / empty / partial / failed-stage status).
 
 ## Files Modified
-- `lib/finalize.sh` — Added Version line in banner; added `_print_next_action`
-  call after each commit/skip case.
-- `lib/finalize_display.sh` — Removed the inline next-action block from
-  `_print_action_items`; added `_print_next_action` helper.
-- `lib/project_version_bump.sh` — Export `_BUMPED_VERSION_*` after bump so
-  the banner can read them.
 
-## New Files Created
-- `tests/test_cli_output_hygiene.sh` — Hygiene contract test (M96 AC-1).
+- `lib/tui.sh` (NEW, 201 lines)
+- `lib/tui_helpers.sh` (NEW, 137 lines)
+- `tools/tui.py` (NEW, 238 lines)
+- `tests/test_tui_fallback.sh` (NEW, 153 lines)
+- `tools/tests/test_tui.py` (NEW, 154 lines)
+- `tekhton.sh` — sourced `lib/tui.sh`; added `tui_start` after banner;
+  `tui_update_stage`/`tui_finish_stage` bracketing stage dispatch; `tui_stop`
+  in EXIT trap.
+- `lib/common.sh` — added `_tui_strip_ansi` + `_tui_notify`; wired
+  `log`/`success`/`warn`/`error`/`header` into the event feed.
+- `lib/agent.sh` — wired `tui_update_agent` into the existing spinner tick
+  loop (safe no-op when TUI inactive).
+- `lib/finalize.sh` — registered `_hook_tui_complete` as the final finalize
+  hook.
+- `lib/config_defaults.sh` — added `TUI_ENABLED`, `TUI_TICK_MS`,
+  `TUI_EVENT_LINES`, `TUI_VENV_DIR` defaults.
+- `tools/requirements.txt` — pinned `rich>=13.0.0`.
+- `tests/test_finalize_run.sh` — updated hook-count assertions from 24→25 and
+  index constants, since `_hook_tui_complete` is a new 25th registered hook.
+  Required because my change added a new registered hook; no test weakening.
+- `CLAUDE.md` — new files documented under the Repository Layout section;
+  four new config keys added to the template variables table.
+- `ARCHITECTURE.md` — added `lib/tui.sh` and `lib/tui_helpers.sh` to Layer 3
+  module listing.
 
-## Tests Run
-- `tests/test_cli_output_hygiene.sh` — 2/2 PASS
-- `tests/test_finalize_run.sh` — 106/106 PASS
-- `tests/test_next_action_computation.sh` — 8/8 PASS
-- `tests/test_project_version_bump.sh` — 22/22 PASS
-- `shellcheck lib/finalize.sh lib/finalize_display.sh lib/project_version_bump.sh tests/test_cli_output_hygiene.sh` — clean
+## Human Notes Status
 
-## Remaining Work
-None for this rework. Reviewer's non-blocking notes (NR2 archival under-emission,
-IA4/IA5 deferral) are out of scope for this cycle per the report.
+No human notes block provided for this task.
+
+## Docs Updated
+
+- `CLAUDE.md` — repository layout gained `lib/tui.sh`, `lib/tui_helpers.sh`,
+  `tools/tui.py`, `tools/tests/test_tui.py`; template variables table gained
+  `TUI_ENABLED`, `TUI_TICK_MS`, `TUI_EVENT_LINES`, `TUI_VENV_DIR`.
+- `ARCHITECTURE.md` — Layer 3 module listing gained `lib/tui.sh` and
+  `lib/tui_helpers.sh` entries describing public functions and sourcing order.
+
+## Validation
+
+- `shellcheck lib/tui.sh lib/tui_helpers.sh tests/test_tui_fallback.sh` — clean.
+- `shellcheck -S warning tekhton.sh lib/common.sh lib/agent.sh lib/finalize.sh
+  lib/config_defaults.sh` — only pre-existing SC2034 warnings; no new warnings
+  attributable to the TUI integration.
+- `bash tests/test_tui_fallback.sh` — 9 passed, 0 failed.
+- `python3 -m pytest tools/tests/test_tui.py -q` — 15 passed.
+- `bash tests/run_tests.sh` — 386 shell passed / 0 failed; 102 Python passed.

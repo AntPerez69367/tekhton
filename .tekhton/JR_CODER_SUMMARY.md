@@ -1,22 +1,18 @@
-# Jr Coder Summary — M96 Simple Blockers
+# M97 Junior Coder Summary
 
 ## What Was Fixed
 
-- **Bug 3 Fix Completed** — Senior coder removed all duplicate `progress_status` calls from Security, Reviewer, Tester TDD, and Tester stages. These calls were generating pre-announcement log lines before their `stage_header` banners, causing inconsistent behavior vs. Coder and Docs stages. All six stages now behave consistently: `progress_status` removed, `stage_header` banner only.
+- Added `set -euo pipefail` to `lib/tui.sh` (immediately after header comment, before source directive)
+- Added `set -euo pipefail` to `lib/tui_helpers.sh` (immediately after header comment, before first function)
+
+Both files now conform to Non-Negotiable Rule 2 (Bash 4.3+ with `set -euo pipefail` required in all scripts).
 
 ## Files Modified
 
-- `tekhton.sh` — removed 6 `progress_status` calls total:
-  - Coder stage: 1 line removed
-  - Docs stage: 1 line removed
-  - Security stage: 1 line removed (simple blocker item)
-  - Reviewer stage: 1 line removed (simple blocker item)
-  - Tester TDD stage: 1 line removed (simple blocker item)
-  - Tester stage: 1 line removed (simple blocker item)
+- `lib/tui.sh`
+- `lib/tui_helpers.sh`
 
 ## Verification
 
-- ✓ `bash -n` syntax check passed
-- ✓ No shellcheck errors (info-level SC1091 follow-up messages are expected)
-- ✓ All `progress_status` calls verified removed from file
-- ✓ No duplicate log announcements — stage_header is now the single announcement
+- Syntax check: ✓ (bash -n)
+- Shellcheck: ✓ (zero warnings)

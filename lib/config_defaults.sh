@@ -163,6 +163,12 @@ set -euo pipefail
 : "${REPO_MAP_HISTORY_MAX_RECORDS:=200}"
 : "${SCOUT_REPO_MAP_TOOLS_ONLY:=true}"    # Reduce scout tools when repo map available
 
+# --- TUI mode (M97: rich.live sidecar display) ---
+: "${TUI_ENABLED:=auto}"                  # auto | true | false
+: "${TUI_TICK_MS:=500}"                   # status file poll interval
+: "${TUI_EVENT_LINES:=8}"                 # recent event lines shown
+: "${TUI_VENV_DIR:=${REPO_MAP_VENV_DIR}}" # share indexer venv by default
+
 # --- Serena LSP / MCP defaults (optional, future Milestone 6) ---
 : "${SERENA_ENABLED:=false}"
 : "${SERENA_PATH:=.claude/serena}"

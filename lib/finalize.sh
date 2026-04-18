@@ -528,6 +528,17 @@ register_finalize_hook "_hook_commit"
 register_finalize_hook "_hook_project_version_tag"
 register_finalize_hook "_hook_update_check"
 register_finalize_hook "_hook_final_dashboard_status"
+
+# M97: stop the TUI sidecar cleanly as the very last hook.
+_hook_tui_complete() {
+    local exit_code="${1:-0}"
+    if declare -f tui_complete &>/dev/null; then
+        local verdict="SUCCESS"
+        [[ "$exit_code" -ne 0 ]] && verdict="FAIL"
+        tui_complete "$verdict" 2>/dev/null || true
+    fi
+}
+register_finalize_hook "_hook_tui_complete"
 # --- Orchestrator ---
 # finalize_run PIPELINE_EXIT_CODE
 # Executes all registered hooks in order. Each hook receives the exit code

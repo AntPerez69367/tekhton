@@ -155,7 +155,9 @@ tekhton/
 │   ├── drift_prune.sh      # Drift log pruning
 │   ├── quota.sh            # API quota management
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
-│   └── preflight.sh        # Pre-flight environment validation
+│   ├── preflight.sh        # Pre-flight environment validation
+│   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
+│   └── tui_helpers.sh      # M97 JSON builders for tui_status.json
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate
@@ -225,13 +227,15 @@ tekhton/
 │   ├── setup_indexer.sh    # Indexer virtualenv setup script
 │   ├── setup_serena.sh     # Serena MCP server setup script
 │   ├── serena_config_template.json  # MCP config template
+│   ├── tui.py              # M97 TUI sidecar — rich.live status renderer
 │   └── tests/              # Python unit tests
 │       ├── conftest.py
 │       ├── test_repo_map.py
 │       ├── test_tag_cache.py
 │       ├── test_history.py
 │       ├── test_tree_sitter_languages.py
-│       └── test_extract_tags_integration.py
+│       ├── test_extract_tags_integration.py
+│       └── test_tui.py     # M97 TUI sidecar renderer tests
 ├── platforms/              # Platform-specific UI knowledge (M57–M60)
 │   ├── _base.sh            # Platform resolution + universal helpers
 │   ├── _universal/         # Cross-platform UI guidance (always included)
@@ -456,6 +460,10 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DRAFT_MILESTONES_MAX_TURNS` | Turn budget for draft milestones agent (default: 40) |
 | `DRAFT_MILESTONES_AUTO_WRITE` | Skip confirmation prompt before writing (default: false) |
 | `DRAFT_MILESTONES_SEED_EXEMPLARS` | Number of recent milestones shown as format examples (default: 3) |
+| `TUI_ENABLED` | TUI sidecar: auto (on interactive TTY + venv), true, or false (default: auto) |
+| `TUI_TICK_MS` | Sidecar status-file poll interval in ms (default: 500) |
+| `TUI_EVENT_LINES` | Recent event lines shown in scroll panel (default: 8) |
+| `TUI_VENV_DIR` | Python venv for sidecar (default: shares `REPO_MAP_VENV_DIR`) |
 
 ## Testing
 

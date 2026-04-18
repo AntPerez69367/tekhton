@@ -176,6 +176,12 @@ run_agent() {
                     fi
                     _last_refresh=$elapsed
                 fi
+                # M97: TUI sidecar tick — update turns / elapsed on status file.
+                if declare -f tui_update_agent &>/dev/null; then
+                    _tui_turns=0
+                    [[ "$_turns_display" =~ ^[0-9]+$ ]] && _tui_turns="$_turns_display"
+                    tui_update_agent "$_tui_turns" "$max_turns" "$elapsed" 2>/dev/null || true
+                fi
                 sleep 0.2
             done
         ) &

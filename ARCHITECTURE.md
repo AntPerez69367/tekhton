@@ -168,6 +168,8 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/test_audit_helpers.sh`** — Pre-audit file collection and context assembly (Milestone 95). `_collect_audit_context()`, `_discover_all_test_files()`, `_build_test_audit_context()`. Sourced by `tekhton.sh` before `test_audit.sh`.
 - **`lib/test_audit_detection.sh`** — Shell-based orphan and weakening detection (Milestone 95). `_detect_orphaned_tests()`, `_detect_test_weakening()`. Sourced by `tekhton.sh` before `test_audit.sh`.
 - **`lib/test_audit_verdict.sh`** — Test audit verdict parsing and routing (Milestone 95). `_parse_audit_verdict()`, `_route_audit_verdict()`. Sourced by `tekhton.sh` before `test_audit.sh`.
+- **`lib/tui.sh`** — TUI sidecar lifecycle (Milestone 97). `tui_start()` spawns `tools/tui.py` as a background process; `tui_stop()` / `tui_complete()` tear it down. Update functions `tui_update_stage()`, `tui_finish_stage()`, `tui_update_agent()`, `tui_append_event()` are no-ops unless the sidecar is active. Sources `tui_helpers.sh`.
+- **`lib/tui_helpers.sh`** — JSON builders for `tui_status.json` (Milestone 97). `_tui_json_build_status()` emits the full status object; `_tui_json_stage()`, `_tui_recent_events_json()`, `_tui_stages_json()`, `_tui_escape()` are internal helpers. Sourced by `tui.sh` — do not run directly.
 
 ### Layer 4: Prompt Templates (`prompts/*.prompt.md`)
 Declarative agent instructions with `{{VAR}}` placeholders. Rendered by `lib/prompts.sh`.

@@ -5,7 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [x] [2026-04-17 | "M96"] `lib/finalize.sh` is 559 lines — well over the 300-line soft ceiling. Pre-existed this rework (this cycle added ~10 lines). Candidate for extraction in a future cleanup pass.
+- [ ] [2026-04-17 | "M97"] `_tui_json_build_status` emits both `"stage"` and `"stage_label"` with identical values (both sourced from `$stage_label`). The Python renderer uses only `stage_label`; the `stage` key is dead weight. Not broken — carry forward for cleanup.
 - [ ] [2026-04-17 | "M96"] NR2 archival under-emission (archive_reports() emits 0 lines) — unchanged from prior cycle, acceptable per prior report.
 - [ ] [2026-04-17 | "M96"] IA4 and IA5 (prefix semantics, commit diff truncation) — unchanged, still deferred, remain non-blocking.
 - [ ] [2026-04-17 | "M94"] `_rule_max_turns` reads the Exit Reason section from the state file directly (its own `awk` call) even though `_read_diagnostic_context` already populates `_DIAG_EXIT_REASON` for that purpose. Minor duplication — not a bug, but `_DIAG_EXIT_REASON` could be used instead to keep rule reads consistent with the module contract.

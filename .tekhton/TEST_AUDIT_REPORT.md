@@ -1,94 +1,37 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 11 files, ~385 test functions/assertions
+Tests audited: 1 file, 5 test sections (23 assertions)
 Verdict: PASS
-
----
 
 ### Findings
 
-#### EXERCISE: Agent invocation counter tests exercise inline arithmetic, not implementation
-- File: tests/test_orchestrate.sh:396–406
-- Issue: Tests 9.1–9.3 simulate `run_agent()` counter behavior by incrementing
-  `TOTAL_AGENT_INVOCATIONS` inline in the test body (`$(( n + 1 ))`), then asserting
-  the arithmetic is correct. No implementation code is called — the test verifies
-  that bash integer arithmetic works. The actual orchestration counter propagation
-  (how `TOTAL_AGENT_INVOCATIONS` is threaded into `_ORCH_AGENT_CALLS`) is not
-  exercised.
+#### COVERAGE: No active-path test for tui_append_event ring buffer
+- File: tests/test_tui_active_path.sh (no matching section)
+- Issue: `tui_append_event` is only exercised as a no-op in the fallback suite. The active-path write cycle — ring-buffer append, overflow trimming at `TUI_EVENT_LINES`, JSON emission of `recent_events` — is not covered in the file under audit. `lib/tui.sh:184-190` contains the trim logic; it is untested when `_TUI_ACTIVE=true`.
 - Severity: LOW
-- Action: Replace inline arithmetic with a call to a real run_agent stub that
-  auto-increments (as other test suites do) and assert the resulting
-  `_ORCH_AGENT_CALLS` value from `_hook_emit_run_summary` output rather than the
-  intermediate global. Alternatively, remove suite 9 if the orchestration loop
-  integration is already covered by suites 1–8.
+- Action: Add a Test 6 section that calls `tui_append_event` several times past the default limit and verifies (a) `_TUI_RECENT_EVENTS` is trimmed to `TUI_EVENT_LINES` and (b) `recent_events` in the status JSON reflects the trimmed array.
 
-#### ISOLATION: Indexer cache test uses /tmp as PROJECT_DIR
-- File: tests/test_indexer_cache.sh:18–19
-- Issue: `PROJECT_DIR="/tmp"` is a hard-coded, globally-shared path rather than a
-  test-scoped temp directory. Indexer helpers that resolve paths relative to
-  `PROJECT_DIR` (e.g., virtualenv detection via `_indexer_find_venv_python`) could
-  pick up real project state from `/tmp` if any exists. Cache files themselves use
-  the correctly scoped `TMPDIR_CACHE`, so no test assertions are currently affected,
-  but the practice violates isolation.
+#### COVERAGE: No active-path test for tui_complete verdict field
+- File: tests/test_tui_active_path.sh (no matching section)
+- Issue: `tui_complete VERDICT` is called unconditionally from `finalize.sh` via `_hook_tui_complete`. Its effects — `_TUI_COMPLETE=true`, `_TUI_VERDICT` population, `complete` and `verdict` fields in the status JSON — are not verified in the active-path suite. `lib/tui.sh:124-133` contains this logic.
 - Severity: LOW
-- Action: Replace `PROJECT_DIR="/tmp"` with `PROJECT_DIR="$TMPDIR_CACHE"` (the
-  already-created temp dir). No assertions need to change.
+- Action: Add a test section that calls `tui_complete "SUCCESS"` (after forcing `_TUI_ACTIVE=true` and stubbing `tui_stop`) and asserts `_TUI_COMPLETE=true`, `_TUI_VERDICT="SUCCESS"`, and the JSON `complete` field is `true` with a non-null `verdict`.
 
 ---
 
-### Per-File Notes
+### Notes (non-findings)
 
-**tests/test_cli_output_hygiene.sh** (new, M96 AC-1)
-Both tests are structurally sound. Test 1 sources `causality.sh` in a subprocess
-with `emit_event` stdout-redirected to `/dev/null`, asserting no event ID leaks
-to the outer stdout. Test 2 is static analysis over all call sites in `lib/` and
-`stages/`, with correct regex that accepts `>/dev/null`, `1>/dev/null`, and
-`&>/dev/null` while correctly rejecting bare `2>/dev/null`. The regex for
-excluding digit-prefixed redirects is non-trivial but the comment documents the
-intent and manual regression injection was performed per CODER_SUMMARY.md. PASS.
+**Assertion honesty (PASS):** All 23 assertions derive their expected values from arguments passed to the function under test and from globals set by those functions. No hard-coded magic numbers appear that are disconnected from implementation logic.
 
-**tests/test_orchestrate.sh**
-Test 4.1 ANSI-strip fix is correct: `report_orchestration_status` wraps the
-attempt number in `${BOLD}...${NC}`, so a raw grep for "2 / 5" would fail; the
-sed strip before assertion is required and appropriate. Test 4.2 correctly skips
-stripping for the elapsed line (no ANSI codes present). Test 4.3 correctly
-verifies "Agent calls:" is absent from the banner (the parameter is accepted in
-the function signature but never echoed — a valid regression guard). PASS (see
-suite 9 EXERCISE note above).
+**Implementation exercise (PASS):** Tests source `lib/tui.sh` (which sources `lib/tui_helpers.sh`), invoke the real `tui_update_stage`, `tui_update_agent`, and `tui_finish_stage` functions, and read back JSON written atomically to a temp-dir status file. No mocking of the functions under test.
 
-**tests/test_context_accounting.sh**
-The `VERBOSE_OUTPUT=true` addition to all `log_context_report` subshell tests is
-the correct adapter for the M96 NR3 change that moved the context breakdown from
-`log()` to `log_verbose()`. All assertions are unchanged and remain valid. PASS.
+**Test isolation (PASS):** All file I/O goes to `$TMPDIR` created by `mktemp -d` and removed on EXIT. Log helpers (`log`, `warn`, `error`, etc.) are stubbed inline. No live pipeline files (`.tekhton/`, `.claude/`) are read.
 
-**tests/test_coder_scout_tools_integration.sh,
-tests/test_coder_stage_split_wiring.sh,
-tests/test_docs_agent_stage_smoke.sh,
-tests/test_review_cache_invalidation.sh,
-tests/test_run_memory_emission.sh,
-tests/test_finalize_summary_escaping.sh,
-tests/test_indexer_cache.sh**
-All received only stub additions (`stage_header() { :; }`, `log_verbose() { :; }`)
-required because M96 introduced these call sites into sourced production code.
-Core assertions are unchanged, no weakening detected. PASS (see ISOLATION note
-for test_indexer_cache.sh above).
+**Scope alignment (PASS):** Every function name, global variable, and JSON field key referenced in the tests matches the current implementation in `lib/tui.sh` and `lib/tui_helpers.sh`. No orphaned or stale references detected.
 
-**tests/test_m88_emit_symbol_map_happy_path.sh**
-The change maps `log_verbose` to the same `_CAPTURED_LOG` accumulator as `log()`,
-which is correct: M96 moved the "Test symbol map written" message from `log()` to
-`log_verbose()`. The assertion `grep -q "Test symbol map written"` now correctly
-validates against the new call site. PASS.
+**Weakening (PASS):** The tester added a new file; no existing tests were modified by the tester.
 
----
+**Naming (PASS):** Section headers encode both scenario and expected outcome (e.g., "tui_update_stage writes correct fields", "tui_finish_stage with empty verdict produces null"). Individual pass/fail messages are specific and diagnostic.
 
-### Symbol Orphan Notes
-All `STALE-SYM` warnings reference standard POSIX utilities and bash builtins
-(`bash`, `cd`, `echo`, `grep`, `mktemp`, `set`, `trap`, etc.). These are false
-positives — the shell-based orphan scanner cannot distinguish builtins and
-externals from user-defined symbols. No action required.
-
-The single user-defined symbol flagged — `_base_run_stage_coder` in
-`test_coder_stage_split_wiring.sh:188` — is created dynamically via
-`declare -f run_stage_coder | sed '1s/run_stage_coder/_base_run_stage_coder/'`
-and is therefore invisible to static analysis. This is intentional and correct.
+**_activate_tui helper (PASS):** Forcing `_TUI_ACTIVE=true` and setting `_TUI_STATUS_FILE` directly — bypassing `_tui_should_activate` — is the correct strategy for testing the write cycle in a non-interactive CI environment. The fallback tests separately verify the activation gate.

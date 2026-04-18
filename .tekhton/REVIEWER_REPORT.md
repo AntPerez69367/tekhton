@@ -1,3 +1,5 @@
+# Reviewer Report — M97 TUI Mode (Cycle 2 Re-review)
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,29 +10,23 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/finalize.sh` is 559 lines — well over the 300-line soft ceiling. Pre-existed this rework (this cycle added ~10 lines). Candidate for extraction in a future cleanup pass.
-- NR2 archival under-emission (archive_reports() emits 0 lines) — unchanged from prior cycle, acceptable per prior report.
-- IA4 and IA5 (prefix semantics, commit diff truncation) — unchanged, still deferred, remain non-blocking.
+- `_tui_json_build_status` emits both `"stage"` and `"stage_label"` with identical values (both sourced from `$stage_label`). The Python renderer uses only `stage_label`; the `stage` key is dead weight. Not broken — carry forward for cleanup.
 
 ## Coverage Gaps
-- None
+- No shell-level test for the active-path write cycle: `tui_update_stage` / `tui_update_agent` / `tui_finish_stage` active paths have no assertions beyond "no error returned". Tester can add active-path assertions for at least one update function.
 
 ## ACP Verdicts
-
-No `## Architecture Change Proposals` section in CODER_SUMMARY.md.
+(no ACP section in CODER_SUMMARY.md — omitted)
 
 ## Drift Observations
-- None
+- `tui_helpers.sh:_tui_json_build_status` — the `"stage"` field (line 122) duplicates `"stage_label"` (line 125), both set to `$stage_label`. The test fixture in `tools/tests/test_tui.py` uses distinct values (`stage="coder"`, `stage_label="Coder"`), implying the schema intended them to differ. Worth resolving when the JSON schema is next touched.
 
 ---
 
 ## Prior Blocker Verification
 
-**IA2 — Version bump in Pipeline Complete banner: FIXED**
-`lib/project_version_bump.sh:145-149` now exports `_BUMPED_VERSION_OLD`, `_BUMPED_VERSION_NEW`, and `_BUMPED_VERSION_TYPE` after a successful bump. `lib/finalize.sh:225-228` reads those variables and emits `Version: <old> → <new> (<type>)` in the banner. Hook ordering is correct: `_hook_project_version_bump` (line 525) registered before `_hook_commit` (line 527).
+**Blocker: `set -euo pipefail` missing from `lib/tui.sh` and `lib/tui_helpers.sh`**
+- `lib/tui.sh` line 13: `set -euo pipefail` — FIXED ✓
+- `lib/tui_helpers.sh` line 9: `set -euo pipefail` — FIXED ✓
 
-**IA3 — `What's next:` promoted to final printed line: FIXED**
-`_compute_next_action` block removed from `_print_action_items` entirely (no call present in `finalize_display.sh:38-172`). New `_print_next_action` helper at `finalize_display.sh:174-187` calls `_compute_next_action` behind a `command -v` guard with error suppression. It is invoked at `finalize.sh:280` (commit), `finalize.sh:299` (edit-then-commit), and `finalize.sh:305` (skip) — in all three terminal paths, after the final `print_run_summary` / `log` line.
-
-**Coverage gap — `tests/test_cli_output_hygiene.sh`: FIXED**
-File exists at `tests/test_cli_output_hygiene.sh`. Contains two assertions: (1) runtime smoke — redirected `emit_event` call produces no event ID on stdout; (2) static analysis — every `emit_event` call site in `lib/` and `stages/` either captures via `$(...)` or redirects stdout (pattern correctly distinguishes `>/dev/null`/`1>/dev/null`/`&>/dev/null` from stderr-only `2>/dev/null`).
+No regressions introduced. The fix was two lines added to the correct positions (after the shebang/header, before any executable code).

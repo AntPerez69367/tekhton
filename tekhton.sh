@@ -144,6 +144,11 @@ _tekhton_cleanup() {
         fi
     fi
 
+    # --- TUI sidecar cleanup (M97) --------------------------------------------
+    if command -v tui_stop &>/dev/null; then
+        tui_stop 2>/dev/null || true
+    fi
+
     # --- MCP server cleanup: stop Serena if running ----------------------------
     if command -v stop_mcp_server &>/dev/null; then
         stop_mcp_server 2>/dev/null || true
@@ -903,6 +908,7 @@ source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/causality_query.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"
+source "${TEKHTON_HOME}/lib/tui.sh"           # M97 — rich.live sidecar manager (also sources tui_helpers.sh)
 source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
@@ -1871,6 +1877,10 @@ header "Tekhton — ${PROJECT_NAME} — Starting at: ${START_AT}"
 if declare -f flush_role_template_warnings &>/dev/null; then
     flush_role_template_warnings
 fi
+# M97: start the rich.live TUI sidecar (no-op unless enabled + TTY + venv).
+if declare -f tui_start &>/dev/null; then
+    tui_start
+fi
 log "Task: ${BOLD}${TASK}${NC}"
 log "Log:  ${LOG_FILE}"
 log "Senior Coder Model: ${CLAUDE_CODER_MODEL}"
@@ -2256,6 +2266,13 @@ _run_pipeline_stages() {
         _stage_idx=$((_stage_idx + 1))
         export PIPELINE_STAGE_POS="$_stage_idx"
 
+        # M97: notify TUI sidecar of stage change (no-op when TUI inactive).
+        if declare -f tui_update_stage &>/dev/null; then
+            local _tui_stage_label
+            _tui_stage_label="$(echo "$_stage_name" | sed 's/_/ /g')"
+            tui_update_stage "$_stage_idx" "$PIPELINE_STAGE_COUNT" "$_tui_stage_label" "${CLAUDE_STANDARD_MODEL:-}"
+        fi
+
         case "$_stage_name" in
 
         coder)
@@ -2409,6 +2426,16 @@ _run_pipeline_stages() {
             fi
             ;;
         esac
+
+        # M97: mark stage complete in TUI sidecar (no-op when TUI inactive).
+        if declare -f tui_finish_stage &>/dev/null; then
+            local _tui_finish_label _tui_finish_dur
+            _tui_finish_label="$(echo "$_stage_name" | sed 's/_/ /g')"
+            _tui_finish_dur="${_STAGE_DURATION[$_stage_name]:-0}s"
+            tui_finish_stage "$_tui_finish_label" "${CLAUDE_STANDARD_MODEL:-}" \
+                "${_STAGE_TURNS[$_stage_name]:-0}/${_STAGE_BUDGET[$_stage_name]:-0}" \
+                "$_tui_finish_dur" ""
+        fi
     done
 
     if [ ! -f "${TESTER_REPORT_FILE}" ]; then

@@ -1,7 +1,7 @@
 # Milestone 97: TUI Mode — Rich Live Display
 <!-- milestone-meta
 id: "97"
-status: "done"
+status: "in_progress"
 -->
 <!-- PM-tweaked: 2026-04-17 -->
 
@@ -204,7 +204,7 @@ existing `pipeline.conf` requires changes.]
 |------|-------|-------|
 | New shell files | 1 | `lib/tui.sh` |
 | New Python files | 1 | `tools/tui.py` |
-| Shell files modified | 6 | `tekhton.sh`, `lib/common.sh`, `lib/agent_monitor.sh`, `lib/agent.sh`, `lib/finalize.sh`, `lib/config_defaults.sh` [PM: corrected from 4 — Integration Points names `lib/agent.sh` (tui_update_agent) and `lib/finalize.sh` (tui_complete) which were absent from the original count] |
+| Shell files modified | 4 | `tekhton.sh`, `lib/common.sh`, `lib/agent_monitor.sh`, `lib/config_defaults.sh` |
 | New config keys | 4 | `TUI_ENABLED`, `TUI_TICK_MS`, `TUI_EVENT_LINES`, `TUI_VENV_DIR` |
 | Shell tests added | 1 | `tests/test_tui_fallback.sh` — verifies no crash and correct plain-output fallback when venv absent |
 | Python tests added | 1 | `tools/tests/test_tui.py` — status file parsing, layout rendering smoke test |

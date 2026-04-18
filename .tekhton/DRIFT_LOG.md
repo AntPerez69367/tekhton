@@ -2,11 +2,9 @@
 
 ## Metadata
 - Last audit: 2026-04-17
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-04-17 | "M97"] `tui_helpers.sh:_tui_json_build_status` — the `"stage"` field (line 122) duplicates `"stage_label"` (line 125), both set to `$stage_label`. The test fixture in `tools/tests/test_tui.py` uses distinct values (`stage="coder"`, `stage_label="Coder"`), implying the schema intended them to differ. Worth resolving when the JSON schema is next touched.
 
 ## Resolved
-- [RESOLVED 2026-04-17] `tests/test_diagnose.sh` is 666 lines — well over the 300-line soft ceiling. This was pre-existing before M94 (M94 added ~50 lines for suite 2b). Worth tracking; the fixture/helper functions could eventually be extracted into a shared test helper.
-- [RESOLVED 2026-04-17] `_rule_turn_exhaustion` in `diagnose_rules_extra.sh` reads `AGENT_SCOPE/max_turns` from the pipeline state file and is now superseded by `_rule_max_turns` whenever `LAST_FAILURE_CONTEXT.json` is present (which is the normal post-M93 path). Kept for backward-compatibility per coder note, but it is effectively dead code for post-M93 runs. Worth a comment or eventual removal.
-- [RESOLVED 2026-04-17] `stages/review.sh` — 355 lines, 55 lines over the 300-line soft ceiling. Pre-existing; the single-line change in this task did not cause the overage. Candidate for extraction when the file next needs significant work.
