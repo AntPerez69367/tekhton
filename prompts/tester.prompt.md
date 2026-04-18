@@ -76,6 +76,30 @@ Task implemented: {{TASK}}
   produced X") belong in the commit message or {{CODER_SUMMARY_FILE}}, not the
   test suite. Tests must verify code behavior, not pipeline state.
 
+## CRITICAL: Primary Behavior Coverage
+
+Before planning any tests, answer this question: **what is the primary
+observable behavior this task was meant to deliver — what does a user see, or
+what system state changes, when the feature works correctly?** That outcome
+must have at least one test.
+
+**Enable/disable pattern:** If a feature has an enabled/disabled config flag
+or a fallback-when-absent path, tests for the disabled or fallback branches
+alone are **insufficient**. You MUST include at least one test that exercises
+the enabled/active/happy path — the path where the feature actually does its
+job.
+
+**Red flag — incomplete plan:** If every entry in your Planned Tests list only
+covers "feature is off", "dependency is missing", or "error/fallback" code
+paths, your plan is incomplete. Stop and add a happy-path test before
+proceeding.
+
+**Acceptance criteria mapping:** Work through each criterion stated in the task
+or milestone spec. Each criterion must map to at least one test. If a criterion
+cannot be automated (e.g., requires visual or interactive verification), add it
+as an explicit manual verification item in `## Planned Tests` — do NOT silently
+omit it.
+
 ## Critical: Read Before You Write
 Before writing any test that instantiates a model or calls a method, read the
 actual source file for that class. Do not assume constructor signatures.
