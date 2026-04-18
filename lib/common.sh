@@ -63,10 +63,14 @@ fi
 # --- Logging -----------------------------------------------------------------
 
 # M97: strip ANSI SGR sequences before forwarding to TUI event feed.
+# Handles both actual ESC bytes (0x1b) and the literal \033 octal notation
+# that bash produces when BOLD/NC variables use single-quoted '\033[...'.
 _tui_strip_ansi() {
     local s="$*"
     # shellcheck disable=SC2001
-    printf '%s' "$s" | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g'
+    printf '%s' "$s" \
+        | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
+        | sed 's/\\033\[[0-9;]*[a-zA-Z]//g'
 }
 _tui_notify() {
     local level="$1"; shift

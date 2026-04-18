@@ -58,6 +58,11 @@ export GIT_CONFIG_COUNT=1
 export GIT_CONFIG_KEY_0="commit.gpgsign"
 export GIT_CONFIG_VALUE_0="false"
 
+# Force TUI off — if a parent shell has `_TUI_ACTIVE=true` exported (e.g. a
+# previous pipeline run that didn't clean up), `log()` silently redirects to
+# LOG_FILE and tests that capture stdout get empty output.
+export _TUI_ACTIVE=false
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'

@@ -106,8 +106,9 @@ def test_build_layout_full():
     assert layout is not None
     # Render into a string to ensure it doesn't crash
     from rich.console import Console
-    console = Console(file=open("/dev/null", "w"), width=100)
-    console.print(layout)
+    with open("/dev/null", "w") as devnull:
+        console = Console(file=devnull, width=100)
+        console.print(layout)
 
 
 def test_build_layout_empty_status():

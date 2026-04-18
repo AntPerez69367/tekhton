@@ -1881,11 +1881,11 @@ fi
 if declare -f tui_start &>/dev/null; then
     # M98: surface run context to the sidecar header.
     _tui_run_mode="task"
+    [[ "$COMPLETE_MODE"          = true ]] && [[ "$MILESTONE_MODE" != true ]] \
+        && _tui_run_mode="complete"
     [[ "$MILESTONE_MODE"         = true ]] && _tui_run_mode="milestone"
     [[ "$FIX_NONBLOCKERS_MODE"   = true ]] && _tui_run_mode="fix-nb"
     [[ "$FIX_DRIFT_MODE"         = true ]] && _tui_run_mode="fix-drift"
-    [[ "$COMPLETE_MODE"          = true ]] && [[ "$MILESTONE_MODE" != true ]] \
-        && _tui_run_mode="complete"
     _tui_cli_flags=""
     [[ "${AUTO_ADVANCE:-false}"   = true ]] && _tui_cli_flags+=" --auto-advance"
     [[ "${SKIP_AUDIT:-false}"     = true ]] && _tui_cli_flags+=" --skip-audit"

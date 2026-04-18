@@ -58,6 +58,10 @@ _tui_should_activate() {
         _TUI_DISABLED_REASON="TUI_ENABLED=false"
         return 1
     fi
+    # Conservative: gate on stdout being a TTY even though the sidecar
+    # writes directly to /dev/tty. Keeps `tekhton.sh | tee log` predictable
+    # (plain output to the log, no TUI) rather than leaking escape sequences
+    # through /dev/tty while stdout captures log text.
     if [[ ! -t 1 ]]; then
         _TUI_DISABLED_REASON="non-interactive TTY"
         return 1
@@ -159,10 +163,14 @@ tui_complete() {
 
     local hold_timeout="${TUI_COMPLETE_HOLD_TIMEOUT:-120}"
     if [[ "$hold_timeout" =~ ^[0-9]+$ ]] && (( hold_timeout > 0 )) && [[ -n "$_TUI_PID" ]]; then
-        local deadline=$(( $(date +%s) + hold_timeout ))
+        # Counter-based wait avoids forking `date +%s` on every 100ms tick
+        # (up to ~1200 forks over the default 120s hold).
+        local ticks=0
+        local max_ticks=$(( hold_timeout * 10 ))
         while kill -0 "$_TUI_PID" 2>/dev/null; do
-            (( $(date +%s) >= deadline )) && break
+            (( ticks < max_ticks )) || break
             sleep 0.1
+            ticks=$(( ticks + 1 ))
         done
     else
         sleep 0.3
