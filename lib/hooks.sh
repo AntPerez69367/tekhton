@@ -152,9 +152,21 @@ ${root_cause}"
         # Last line of diff --stat is the summary (e.g., "7 files changed, 73 insertions(+), 54 deletions(-)")
         local diff_summary
         diff_summary=$(echo "$diff_stat" | tail -1 | sed 's/^ *//')
-        # File lines are everything except the summary
+        # File lines are everything except the summary.
+        # M96 IA5: show only the top 5 by lines changed + a "... N more files" tail.
         local diff_files
-        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//' | head -20)
+        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//')
+        local total_files
+        total_files=$(printf '%s\n' "$diff_files" | grep -c '|' || true)
+        if [ "$total_files" -gt 5 ]; then
+            local top_files omitted
+            top_files=$(printf '%s\n' "$diff_files" | awk -F'|' '
+                { raw=$2; sub(/^ +/,"",raw); n=raw+0; printf "%d\t%s\n", n, $0 }' \
+                | sort -rn -k1,1 | head -5 | cut -f2-)
+            omitted=$(( total_files - 5 ))
+            diff_files="${top_files}
+... ${omitted} more files"
+        fi
         if [ -n "$diff_summary" ]; then
             body="${body:+${body}
 }

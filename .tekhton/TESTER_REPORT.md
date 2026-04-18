@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_save_orchestration_state.sh` — Coverage for _save_orchestration_state Notes field (M93 coverage gap already addressed)
+- [x] `tests/test_common_mode_info.sh` — Unit tests for mode_info() function (TUI-active, TUI-inactive, log file paths)
 
 ## Test Run Results
-Passed: 13  Failed: 0
+Passed: 4  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `.tekhton/NON_BLOCKING_LOG.md`
+- [x] `tests/test_common_mode_info.sh`

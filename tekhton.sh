@@ -1889,11 +1889,11 @@ log "Reviewer Model: ${CLAUDE_STANDARD_MODEL}"
 log "Tester Model: ${CLAUDE_TESTER_MODEL}"
 
 if [ "$MILESTONE_MODE" = true ]; then
-    warn "MILESTONE MODE — Review cycles: ${MAX_REVIEW_CYCLES}, Coder turns: ${CODER_MAX_TURNS}, Tester turns: ${TESTER_MAX_TURNS}"
+    mode_info "MILESTONE MODE — Review cycles: ${MAX_REVIEW_CYCLES}, Coder turns: ${CODER_MAX_TURNS}, Tester turns: ${TESTER_MAX_TURNS}"
 fi
 
 if [ "$AUTO_ADVANCE" = true ]; then
-    warn "AUTO-ADVANCE — Will advance through milestones (limit: ${AUTO_ADVANCE_LIMIT}, confirm: ${AUTO_ADVANCE_CONFIRM})"
+    mode_info "AUTO-ADVANCE — Will advance through milestones (limit: ${AUTO_ADVANCE_LIMIT}, confirm: ${AUTO_ADVANCE_CONFIRM})"
 fi
 
 # Pre-flight: show only the notes that will actually be injected.

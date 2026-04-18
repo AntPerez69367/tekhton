@@ -107,6 +107,15 @@ error() {
     fi
     _tui_notify error "[✗] $*"
 }
+
+mode_info() {
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        echo -e "${CYAN}[~]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[~] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    _tui_notify info "[~] $*"
+}
 header() {
     if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
         echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"
