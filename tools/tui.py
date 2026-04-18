@@ -79,7 +79,13 @@ def _build_stage_panel(status: dict[str, Any]) -> Panel:
     model = status.get("agent_model") or ""
     used = int(status.get("agent_turns_used", 0) or 0)
     maxt = int(status.get("agent_turns_max", 0) or 0)
-    elapsed = int(status.get("agent_elapsed_secs", 0) or 0)
+    # Compute elapsed from stage_start_ts so the timer ticks on every
+    # render cycle — even during non-agent phases like prerun test checks.
+    stage_start_ts = int(status.get("stage_start_ts", 0) or 0)
+    if stage_start_ts > 0:
+        elapsed = max(0, int(time.time()) - stage_start_ts)
+    else:
+        elapsed = int(status.get("agent_elapsed_secs", 0) or 0)
     agent_status = status.get("current_agent_status", "idle")
 
     grid = Table.grid(padding=(0, 1))
@@ -192,6 +198,7 @@ def _empty_status() -> dict[str, Any]:
         "agent_turns_used": 0,
         "agent_turns_max": 0,
         "agent_elapsed_secs": 0,
+        "stage_start_ts": 0,
         "pipeline_elapsed_secs": 0,
         "stages_complete": [],
         "current_agent_status": "idle",

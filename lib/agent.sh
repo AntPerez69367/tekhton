@@ -165,9 +165,13 @@ run_agent() {
                     _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "")
                     [[ "$_cur_turns" =~ ^[0-9]+$ ]] && _turns_display="$_cur_turns"
                 fi
-                printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
-                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
-                    "$_turns_display" "$max_turns" > /dev/tty
+                # Suppress direct-to-tty output when TUI sidecar is active —
+                # the sidecar owns the terminal; writing here causes artifacts.
+                if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+                    printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
+                        "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
+                        "$_turns_display" "$max_turns" > /dev/tty
+                fi
                 i=$(( i + 1 ))
                 # Dashboard heartbeat: refresh run_state.js periodically
                 if (( elapsed - _last_refresh >= _refresh_interval )); then
