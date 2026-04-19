@@ -196,6 +196,8 @@ prompt_auto_advance_confirm() {
     else
         read -r choice < /dev/tty 2>/dev/null || choice="n"
     fi
+    # Strip trailing \r that may linger after TUI alternate screen restore
+    choice="${choice%%$'\r'*}"
 
     [[ "$choice" =~ ^[Yy]$ ]]
 }

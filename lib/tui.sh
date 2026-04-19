@@ -87,6 +87,26 @@ _tui_should_activate() {
 
 # --- Lifecycle ---------------------------------------------------------------
 
+# _tui_kill_stale — kill any leftover sidecar from a prior crashed run.
+# Uses a project-level PID file so orphans don't accumulate across runs.
+_tui_kill_stale() {
+    local pidfile="${PROJECT_DIR:-.}/.claude/tui_sidecar.pid"
+    [[ -f "$pidfile" ]] || return 0
+    local stale_pid
+    stale_pid=$(cat "$pidfile" 2>/dev/null) || return 0
+    [[ -n "$stale_pid" ]] || return 0
+    if kill -0 "$stale_pid" 2>/dev/null; then
+        kill "$stale_pid" 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            kill -0 "$stale_pid" 2>/dev/null || break
+            sleep 0.1
+        done
+        kill -9 "$stale_pid" 2>/dev/null || true
+        wait "$stale_pid" 2>/dev/null || true
+    fi
+    rm -f "$pidfile" 2>/dev/null || true
+}
+
 # tui_start — check activation, create status file, spawn sidecar.
 # Idempotent: safe to call multiple times; only first call spawns.
 tui_start() {
@@ -98,6 +118,9 @@ tui_start() {
         fi
         return 0
     fi
+
+    # Kill any orphan sidecar from a prior crashed run
+    _tui_kill_stale
 
     local session_dir="${TEKHTON_SESSION_DIR:-/tmp}"
     _TUI_STATUS_FILE="${session_dir}/tui_status.json"
@@ -125,6 +148,11 @@ tui_start() {
         2>"${session_dir}/tui_sidecar.log" &
     _TUI_PID=$!
     _TUI_ACTIVE=true
+
+    # Write PID file for stale-sidecar cleanup on next run
+    local pidfile="${PROJECT_DIR:-.}/.claude/tui_sidecar.pid"
+    echo "$_TUI_PID" > "$pidfile" 2>/dev/null || true
+
     log_verbose "[tui] Sidecar started (pid ${_TUI_PID}, status=${_TUI_STATUS_FILE})"
 }
 
@@ -143,11 +171,15 @@ tui_stop() {
         wait "$_TUI_PID" 2>/dev/null || true
     fi
     _TUI_PID=""
+    # Remove PID file so next run doesn't try to kill a recycled PID
+    rm -f "${PROJECT_DIR:-.}/.claude/tui_sidecar.pid" 2>/dev/null || true
     # Safety net: restore terminal state in case the sidecar exited without
     # cleaning up (e.g. SIGKILL before rich could send RMCUP / cnorm).
     # These are no-ops if the terminal is already in normal mode.
     tput rmcup 2>/dev/null || true
     tput cnorm 2>/dev/null || true
+    # Restore ICRNL (input CR→NL translation) which Rich may leave disabled
+    stty icrnl 2>/dev/null || true
 }
 
 # tui_complete VERDICT — mark complete, wait for the sidecar to finish its

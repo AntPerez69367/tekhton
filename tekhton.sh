@@ -1330,6 +1330,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --auto-advance)
             AUTO_ADVANCE=true
+            AUTO_ADVANCE_CONFIRM=false
             MILESTONE_MODE=true
             apply_milestone_overrides
             shift
