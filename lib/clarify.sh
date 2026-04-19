@@ -138,7 +138,7 @@ handle_clarifications() {
     while IFS= read -r question; do
         question_num=$((question_num + 1))
 
-        echo -e "${BOLD}Question ${question_num}/${blocking_count}:${NC}"
+        out_section "Question ${question_num}/${blocking_count}"
         echo "  ${question}"
         echo
         printf "  Answer: "

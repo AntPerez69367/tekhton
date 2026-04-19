@@ -142,38 +142,32 @@ emit_init_summary() {
     project_name=$(basename "$project_dir")
 
     # Unicode / NO_COLOR fallback
-    local divider bullet arrow
+    local bullet arrow
     if [[ "${NO_COLOR:-}" == "1" ]] || ! _is_utf8_terminal 2>/dev/null; then
-        divider=$(_build_box_hline 54 "=" 2>/dev/null || printf '%0.s=' {1..54})
         bullet="*"
         arrow=">"
     else
-        divider=$(_build_box_hline 54 "━" 2>/dev/null || printf '%0.s━' {1..54})
         bullet="●"
         arrow="▶"
     fi
 
     # ── Header ──
-    echo
-    echo -e "  ${BOLD}${divider}${NC}"
-    echo -e "  ${GREEN}${BOLD}Tekhton initialized for: ${project_name}${NC}"
-    echo -e "  ${BOLD}${divider}${NC}"
-    echo
+    out_banner "Tekhton initialized for: ${project_name}"
 
     # ── What Tekhton learned ──
-    echo -e "  ${BOLD}What Tekhton learned${NC}"
+    out_section "What Tekhton learned"
     _emit_learned_section "$languages" "$frameworks" "$commands" \
         "$project_type" "$file_count" "$project_dir" "$bullet"
-    echo
+    out_msg ""
 
     # ── What Tekhton wrote ──
-    echo -e "  ${BOLD}What Tekhton wrote${NC}"
+    out_section "What Tekhton wrote"
     if [[ "${#_INIT_FILES_WRITTEN[@]}" -gt 0 ]]; then
         _init_render_files_written "$bullet"
     else
-        echo "    ${bullet} (no files written)"
+        out_msg "    ${bullet} (no files written)"
     fi
-    echo
+    out_msg ""
 
     # ── What's next ──
     _emit_next_section "$project_dir" "$file_count" "$commands" \
@@ -293,20 +287,25 @@ _emit_next_section() {
     alt1=$(echo "$rec_line" | cut -d'|' -f3)
     alt2=$(echo "$rec_line" | cut -d'|' -f4)
 
-    echo -e "  ${BOLD}What's next${NC}"
-    echo -e "    ${GREEN}${arrow}${NC}  ${BOLD}${rec_cmd}${NC}   (${rec_desc})"
-    [[ -n "$alt1" ]] && echo "       or ${alt1}"
-    [[ -n "$alt2" ]] && echo "       or ${alt2}"
-    echo
+    out_section "What's next"
+    local bold nc green cyan
+    bold=$(_out_color "${BOLD:-}")
+    nc=$(_out_color "${NC:-}")
+    green=$(_out_color "${GREEN:-}")
+    cyan=$(_out_color "${CYAN:-}")
+    out_msg "    ${green}${arrow}${nc}  ${bold}${rec_cmd}${nc}   (${rec_desc})"
+    [[ -n "$alt1" ]] && out_msg "       or ${alt1}"
+    [[ -n "$alt2" ]] && out_msg "       or ${alt2}"
+    out_msg ""
 
     # Report pointer
     if _is_watchtower_enabled; then
-        echo -e "  Full report: ${CYAN}.claude/dashboard/index.html${NC}"
+        out_msg "  Full report: ${cyan}.claude/dashboard/index.html${nc}"
     else
-        echo -e "  Full report: ${CYAN}INIT_REPORT.md${NC}"
+        out_msg "  Full report: ${cyan}INIT_REPORT.md${nc}"
     fi
-    echo -e "  Run ${CYAN}tekhton --help${NC} for all commands."
-    echo
+    out_msg "  Run ${cyan}tekhton --help${nc} for all commands."
+    out_msg ""
 }
 
 # _emit_auto_prompt — Optional auto-prompt to run recommended command.

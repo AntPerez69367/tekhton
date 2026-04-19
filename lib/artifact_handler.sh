@@ -92,8 +92,7 @@ handle_ai_artifacts() {
 _display_artifact_summary() {
     local -n _artifacts="$1"
 
-    echo -e "  ${BOLD}${CYAN}Detected AI Tool Configurations${NC}" >&2
-    echo -e "  ─────────────────────────────────" >&2
+    out_section "Detected AI Tool Configurations" >&2
 
     local tool_name
     for tool_name in "${!_artifacts[@]}"; do
@@ -104,15 +103,18 @@ _display_artifact_summary() {
         done <<< "$group"
         local suffix=""
         [[ "$count" -gt 1 ]] && suffix="s"
-        echo -e "  ${BOLD}${tool_name}${NC} (${count} artifact${suffix})" >&2
+        out_kv "${tool_name}" "${count} artifact${suffix}" >&2
 
         local path atype confidence
         while IFS='|' read -r path atype confidence; do
             [[ -z "$path" ]] && continue
-            local icon="${GREEN}●${NC}"
-            [[ "$confidence" == "medium" ]] && icon="${YELLOW}●${NC}"
-            [[ "$confidence" == "low" ]] && icon="${RED}●${NC}"
-            echo -e "    ${icon} ${path} (${atype}, ${confidence})" >&2
+            local icon
+            case "$confidence" in
+                medium) icon="$(_out_color "${YELLOW:-}")●$(_out_color "${NC:-}")" ;;
+                low)    icon="$(_out_color "${RED:-}")●$(_out_color "${NC:-}")" ;;
+                *)      icon="$(_out_color "${GREEN:-}")●$(_out_color "${NC:-}")" ;;
+            esac
+            out_msg "    ${icon} ${path} (${atype}, ${confidence})"
         done <<< "$group"
     done
     echo >&2

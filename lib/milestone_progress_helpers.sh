@@ -182,7 +182,10 @@ _render_progress_bar() {
     for (( k = 0; k < empty; k++ )); do
         bar="${bar}${decoded_empty}"
     done
-    echo -e "${GREEN}${bar}${NC}"
+    local green nc
+    green=$(_out_color "${GREEN:-}")
+    nc=$(_out_color "${NC:-}")
+    out_msg "${green}${bar}${nc}"
 }
 
 # _render_milestone_line INDEX SYMBOL SHOW_DEPS STATUS

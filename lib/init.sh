@@ -161,7 +161,7 @@ run_smart_init() {
         if [[ -f "${_mcf}" ]]; then
             merge_context=$(cat "${_mcf}")
         fi
-        _seed_claude_md "$project_dir" "$detection_report" "$project_type" "$merge_context"
+        _seed_claude_md "$project_dir" "$detection_report" "$merge_context"
         success "Created CLAUDE.md (seeded with detection results)"
         _INIT_FILES_WRITTEN+=("CLAUDE.md|project rules — seeded with detection results")
     else

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.35] - 2026-04-19
+
+### Added
+- M101 — Eliminate Direct ANSI Output. All 91 direct `echo -e "...${BOLD|RED|GREEN|YELLOW|CYAN|NC}..."` calls across the 10 target library files have been migrated to the new structured formatters in `lib/output_format.sh` or to the existing `log`/`warn`/`error`/`success` wrappers that route through `_out_emit`. (M101)
 ## [0.1.34] - 2026-04-19
 
 ### Added

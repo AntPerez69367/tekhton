@@ -143,43 +143,33 @@ _list_relevant_files() {
 # --- Terminal summary --------------------------------------------------------
 
 # print_diagnosis_summary
-# Prints a colored terminal-friendly summary.
+# Prints a terminal-friendly summary. Routes through the output bus so
+# TUI-mode callers get structured events instead of raw ANSI output.
 print_diagnosis_summary() {
-    local class_color="$RED"
-    case "$DIAG_CLASSIFICATION" in
-        SUCCESS)        class_color="$GREEN" ;;
-        QUOTA_EXHAUSTED) class_color="$YELLOW" ;;
-        TRANSIENT_ERROR) class_color="$YELLOW" ;;
-        UNKNOWN)        class_color="$YELLOW" ;;
-    esac
-
-    echo ""
-    echo -e "${BOLD}╔══════════════════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}║${NC}  ${class_color}DIAGNOSIS: ${DIAG_CLASSIFICATION}${NC}"
-    echo -e "${BOLD}╠══════════════════════════════════════════════════╣${NC}"
+    out_banner "DIAGNOSIS: ${DIAG_CLASSIFICATION}"
 
     # First suggestion as description
     if [[ ${#DIAG_SUGGESTIONS[@]} -gt 0 ]]; then
-        echo -e "${BOLD}║${NC}  ${DIAG_SUGGESTIONS[0]}"
+        out_msg "  ${DIAG_SUGGESTIONS[0]}"
     fi
 
     # Cause chain (short)
     if [[ -n "$_DIAG_CAUSE_CHAIN_SHORT" ]]; then
-        echo -e "${BOLD}║${NC}"
-        echo -e "${BOLD}║${NC}  ${CYAN}Cause chain:${NC}"
-        echo -e "${BOLD}║${NC}  ${_DIAG_CAUSE_CHAIN_SHORT}"
+        out_msg ""
+        out_msg "  Cause chain:"
+        out_msg "    ${_DIAG_CAUSE_CHAIN_SHORT}"
     fi
 
     # Suggestions
     if [[ ${#DIAG_SUGGESTIONS[@]} -gt 1 ]]; then
-        echo -e "${BOLD}║${NC}"
-        echo -e "${BOLD}║${NC}  ${BOLD}Suggestions:${NC}"
+        out_msg ""
+        out_msg "  Suggestions:"
         local idx=1
         for suggestion in "${DIAG_SUGGESTIONS[@]:1}"; do
             if [[ "$suggestion" =~ ^[[:space:]] ]]; then
-                echo -e "${BOLD}║${NC}  ${suggestion}"
+                out_msg "    ${suggestion}"
             else
-                echo -e "${BOLD}║${NC}  ${idx}. ${suggestion}"
+                out_msg "    ${idx}. ${suggestion}"
                 idx=$(( idx + 1 ))
             fi
         done
@@ -187,8 +177,8 @@ print_diagnosis_summary() {
 
     # Recurring note
     if [[ -n "$_DIAG_RECURRING_NOTE" ]]; then
-        echo -e "${BOLD}║${NC}"
-        echo -e "${BOLD}║${NC}  ${YELLOW}${_DIAG_RECURRING_NOTE}${NC}"
+        out_msg ""
+        out_kv "Recurring" "${_DIAG_RECURRING_NOTE}" warn
     fi
 
     # Recommended recovery (M82)
@@ -196,16 +186,15 @@ print_diagnosis_summary() {
         local recovery_cmd
         recovery_cmd=$(_diagnose_recovery_command 2>/dev/null || echo "")
         if [[ -n "$recovery_cmd" ]]; then
-            echo -e "${BOLD}║${NC}"
-            echo -e "${BOLD}║${NC}  ${BOLD}Recommended recovery:${NC}"
-            echo -e "${BOLD}║${NC}  ${GREEN}${recovery_cmd}${NC}"
+            out_msg ""
+            out_msg "  Recommended recovery:"
+            out_msg "    ${recovery_cmd}"
         fi
     fi
 
-    echo -e "${BOLD}║${NC}"
-    echo -e "${BOLD}║${NC}  Full report: ${DIAGNOSIS_FILE}"
-    echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
-    echo ""
+    out_msg ""
+    out_msg "  Full report: ${DIAGNOSIS_FILE}"
+    out_msg ""
 }
 
 # --- Failure context persistence ----------------------------------------------
@@ -265,15 +254,15 @@ write_last_failure_context() {
 print_crash_first_aid() {
     # Quota pause
     if [[ -f "${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED" ]]; then
-        echo -e "\033[1;33m[!] Looks like a quota issue — the pipeline is paused and will resume\033[0m" >&2
-        echo -e "\033[1;33m[!] when quota refreshes. Or run 'tekhton' to resume manually.\033[0m" >&2
+        warn "Looks like a quota issue — the pipeline is paused and will resume"
+        warn "when quota refreshes. Or run 'tekhton' to resume manually."
         return 0
     fi
 
     # Build failure
     if [[ -f "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]] && [[ -s "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]]; then
-        echo -e "\033[1;33m[!] Build failure detected — run 'tekhton --diagnose' for detailed\033[0m" >&2
-        echo -e "\033[1;33m[!] analysis, or fix ${BUILD_ERRORS_FILE} manually.\033[0m" >&2
+        warn "Build failure detected — run 'tekhton --diagnose' for detailed"
+        warn "analysis, or fix ${BUILD_ERRORS_FILE} manually."
         return 0
     fi
 
@@ -282,8 +271,8 @@ print_crash_first_aid() {
     if [[ -f "$state_file" ]]; then
         local stage
         stage=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
-        echo -e "\033[1;33m[!] Crash during ${stage:-unknown} stage — your code is safe (checkpoint saved).\033[0m" >&2
-        echo -e "\033[1;33m[!] Run 'tekhton' to resume from where it left off.\033[0m" >&2
+        warn "Crash during ${stage:-unknown} stage — your code is safe (checkpoint saved)."
+        warn "Run 'tekhton' to resume from where it left off."
         return 0
     fi
 
@@ -292,7 +281,7 @@ print_crash_first_aid() {
     latest_log=$(find "${PROJECT_DIR:-.}/.claude/logs" -maxdepth 1 -name '*.log' -type f 2>/dev/null | head -1 || true)
     if [[ -n "$latest_log" ]]; then
         if tail -20 "$latest_log" 2>/dev/null | grep -qiE 'rate.limit|overloaded|server_error|timeout' 2>/dev/null; then
-            echo -e "\033[1;33m[!] Transient API error detected. Re-run 'tekhton' to retry.\033[0m" >&2
+            warn "Transient API error detected. Re-run 'tekhton' to retry."
             return 0
         fi
     fi

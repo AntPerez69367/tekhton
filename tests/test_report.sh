@@ -290,11 +290,12 @@ assert_contains "8.3 unknown outcome shown when no summary" "unknown" "$output"
 # =============================================================================
 echo "=== Test Suite 9: _report_colorize ==="
 
-# _report_colorize uses echo -e, so compare against echo-e-interpreted values
-GREEN_E=$(echo -e "${GREEN}")
-RED_E=$(echo -e "${RED}")
-YELLOW_E=$(echo -e "${YELLOW}")
-NC_E=$(echo -e "${NC}")
+# _report_colorize now uses _out_color (printf '%s' passthrough), so compare
+# against the literal variable value — not the echo-e-expanded ANSI sequence.
+GREEN_E="${GREEN}"
+RED_E="${RED}"
+YELLOW_E="${YELLOW}"
+NC_E="${NC}"
 
 result=$(_report_colorize "PASS")
 assert_eq "9.1 PASS maps to GREEN" "$GREEN_E" "$result"

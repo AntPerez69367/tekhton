@@ -210,21 +210,21 @@ _hook_commit() {
     COMMIT_MSG=$(generate_commit_message "$TASK" "$ms_num" "$ms_disposition" || echo "feat: ${TASK}")
 
     # Print completion banner
-    header "Tekhton — Pipeline Complete"
-    echo -e "  Task:      ${BOLD}${TASK}${NC}"
-    echo -e "  Started:   ${BOLD}${START_AT}${NC}"
-    echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT:-APPROVED}${NC}"
-    echo -e "  Log:       ${LOG_FILE}"
+    out_banner "Tekhton — Pipeline Complete"
+    out_kv "Task"      "$TASK"
+    out_kv "Started"   "$START_AT"
+    out_kv "Verdict"   "${VERDICT:-APPROVED}"
+    out_kv "Log"       "$LOG_FILE"
     if [[ -n "$ms_num" ]]; then
         if [[ "$ms_disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$ms_disposition" == COMPLETE_AND_WAIT ]]; then
-            echo -e "  Milestone: ${GREEN}${BOLD}${ms_num} — COMPLETE${NC}"
+            out_kv "Milestone" "${ms_num} — COMPLETE"
         else
-            echo -e "  Milestone: ${YELLOW}${BOLD}${ms_num} — PARTIAL${NC}"
+            out_kv "Milestone" "${ms_num} — PARTIAL" warn
         fi
     fi
     # Project version bump (M96 IA2) — exposed by bump_version_files
     if [[ -n "${_BUMPED_VERSION_OLD:-}" ]] && [[ -n "${_BUMPED_VERSION_NEW:-}" ]]; then
-        echo -e "  Version:   ${BOLD}${_BUMPED_VERSION_OLD} → ${_BUMPED_VERSION_NEW}${NC} (${_BUMPED_VERSION_TYPE:-patch})"
+        out_kv "Version" "${_BUMPED_VERSION_OLD} → ${_BUMPED_VERSION_NEW} (${_BUMPED_VERSION_TYPE:-patch})"
     fi
     # Health score delta (Milestone 15)
     if [[ -n "${HEALTH_SCORE:-}" ]] && command -v display_health_score &>/dev/null; then
@@ -235,11 +235,11 @@ _hook_commit() {
         local _timing_banner
         _timing_banner=$(_format_timing_banner)
         if [[ -n "$_timing_banner" ]]; then
-            echo -e "  ${BOLD}Time breakdown (top 3):${NC}"
-            echo "$_timing_banner"
+            out_section "Time breakdown (top 3)"
+            out_msg "$_timing_banner"
         fi
     fi
-    echo
+    out_msg ""
     # Print action items summary
     _print_action_items
 

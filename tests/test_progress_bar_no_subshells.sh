@@ -24,6 +24,11 @@ warn()    { :; }
 error()   { :; }
 header()  { :; }
 _is_utf8_terminal() { return 1; }  # ASCII mode for predictable output
+# M101: _render_progress_bar now calls _out_color and out_msg (output_format.sh).
+# Stub them here so the test remains self-contained without sourcing the full
+# output bus chain.
+_out_color() { printf '%s' "${1:-}"; }
+out_msg()    { printf '%s\n' "$*"; }
 
 # Source the helpers
 source "${TEKHTON_HOME}/lib/milestone_progress_helpers.sh"

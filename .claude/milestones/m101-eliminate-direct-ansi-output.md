@@ -1,7 +1,7 @@
 # M101 — Eliminate Direct ANSI Output
 <!-- milestone-meta
 id: "101"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

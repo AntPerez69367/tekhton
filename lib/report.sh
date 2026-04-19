@@ -12,14 +12,14 @@ set -euo pipefail
 # =============================================================================
 
 # _report_colorize STATUS
-# Returns the color code for a status string.
+# Returns the color code for a status string. Respects NO_COLOR via _out_color.
 _report_colorize() {
     local status="$1"
     case "$status" in
-        PASS*|APPROVED*|success*) echo -e "${GREEN}" ;;
-        FAIL*|REJECTED*|failure*|HALT*) echo -e "${RED}" ;;
-        PARTIAL*|CHANGES*|TWEAKED*) echo -e "${YELLOW}" ;;
-        *) echo -e "${NC}" ;;
+        PASS*|APPROVED*|success*) _out_color "${GREEN:-}" ;;
+        FAIL*|REJECTED*|failure*|HALT*) _out_color "${RED:-}" ;;
+        PARTIAL*|CHANGES*|TWEAKED*) _out_color "${YELLOW:-}" ;;
+        *) _out_color "${NC:-}" ;;
     esac
 }
 
@@ -69,16 +69,15 @@ print_run_report() {
     fi
 
     # Header
-    echo ""
-    echo -e "${BOLD}════════════════════════════════════════${NC}"
-    local outcome_color
+    local outcome_color nc
     outcome_color=$(_report_colorize "$outcome")
-    echo -e "${BOLD}  Last run:${NC} ${run_timestamp} ${outcome_color}${outcome}${NC}"
+    nc=$(_out_color "${NC:-}")
+    out_banner "Last run: ${run_timestamp}"
+    out_msg "  Outcome:   ${outcome_color}${outcome}${nc}"
     if [[ -n "$milestone" ]] && [[ "$milestone" != "none" ]]; then
-        echo -e "${BOLD}  Milestone:${NC} ${milestone}"
+        out_kv "Milestone" "$milestone"
     fi
-    echo -e "${BOLD}════════════════════════════════════════${NC}"
-    echo ""
+    out_msg ""
 
     # --- Per-stage summaries ------------------------------------------------
 
@@ -100,7 +99,7 @@ print_run_report() {
     # Tester
     _report_stage_tester
 
-    echo ""
+    out_msg ""
 
     # Action items
     local action_count=0
@@ -110,22 +109,24 @@ print_run_report() {
         ha_count="${ha_count//[!0-9]/}"
         : "${ha_count:=0}"
         if [[ "$ha_count" -gt 0 ]]; then
-            echo -e "  ${YELLOW}Action items: ${ha_count} in ${HUMAN_ACTION_FILE}${NC}"
+            out_action_item "Action items: ${ha_count} in ${HUMAN_ACTION_FILE}" warning
             action_count=$(( action_count + ha_count ))
         fi
     fi
 
     if [[ -n "$latest_archive" ]]; then
-        echo -e "  Full reports: ${latest_archive}"
+        out_msg "  Full reports: ${latest_archive}"
     fi
 
     # Suggest --diagnose for failed runs
     if [[ "$outcome" = "failure" ]] || [[ "$outcome" = "stuck" ]] || [[ "$outcome" = "timeout" ]]; then
-        echo ""
-        echo -e "  ${CYAN}Run 'tekhton --diagnose' for recovery suggestions.${NC}"
+        local cyan
+        cyan=$(_out_color "${CYAN:-}")
+        out_msg ""
+        out_msg "  ${cyan}Run 'tekhton --diagnose' for recovery suggestions.${nc}"
     fi
 
-    echo ""
+    out_msg ""
 }
 
 # --- Per-stage report helpers -----------------------------------------------
@@ -142,9 +143,10 @@ _report_stage_intake() {
     local confidence
     confidence=$(grep -oP '[Cc]onfidence[: ]*\K[0-9]+' "$intake_file" 2>/dev/null | head -1 || true)
 
-    local color
+    local color nc
     color=$(_report_colorize "$verdict")
-    echo -e "  Intake:    ${color}${verdict}${NC}${confidence:+ (confidence ${confidence})}"
+    nc=$(_out_color "${NC:-}")
+    out_msg "  Intake:    ${color}${verdict}${nc}${confidence:+ (confidence ${confidence})}"
 }
 
 _report_stage_scout() {
@@ -158,7 +160,7 @@ _report_stage_scout() {
     file_count="${file_count//[!0-9]/}"
     : "${file_count:=0}"
 
-    echo -e "  Scout:     ${file_count} files identified"
+    out_msg "  Scout:     ${file_count} files identified"
 }
 
 _report_stage_coder() {
@@ -185,9 +187,10 @@ _report_stage_coder() {
     fi
     : "${files_changed:=status ${status:-unknown}}"
 
-    local color
+    local color nc
     color=$(_report_colorize "${status:-unknown}")
-    echo -e "  Coder:     ${color}${files_changed}${NC}"
+    nc=$(_out_color "${NC:-}")
+    out_msg "  Coder:     ${color}${files_changed}${nc}"
 }
 
 _report_stage_security() {
@@ -202,13 +205,18 @@ _report_stage_security() {
     findings_count="${findings_count//[!0-9]/}"
     : "${findings_count:=0}"
 
-    local color="$GREEN"
-    [[ "$findings_count" -gt 0 ]] && color="$YELLOW"
+    local color nc
+    nc=$(_out_color "${NC:-}")
+    if [[ "$findings_count" -gt 0 ]]; then
+        color=$(_out_color "${YELLOW:-}")
+    else
+        color=$(_out_color "${GREEN:-}")
+    fi
 
     if [[ "$findings_count" -eq 0 ]]; then
-        echo -e "  Security:  ${color}PASS (no findings)${NC}"
+        out_msg "  Security:  ${color}PASS (no findings)${nc}"
     else
-        echo -e "  Security:  ${color}${findings_count} finding(s) (see ${SECURITY_REPORT_FILE})${NC}"
+        out_msg "  Security:  ${color}${findings_count} finding(s) (see ${SECURITY_REPORT_FILE})${nc}"
     fi
 }
 
@@ -221,9 +229,10 @@ _report_stage_reviewer() {
     verdict="${verdict## }"; verdict="${verdict%% }"
     [[ -n "$verdict" ]] || return 0
 
-    local color
+    local color nc
     color=$(_report_colorize "$verdict")
-    echo -e "  Reviewer:  ${color}${verdict}${NC}"
+    nc=$(_out_color "${NC:-}")
+    out_msg "  Reviewer:  ${color}${verdict}${nc}"
 }
 
 _report_stage_tester() {
@@ -240,12 +249,17 @@ _report_stage_tester() {
     bug_count="${bug_count//[!0-9]/}"
     : "${bug_count:=0}"
 
-    local color="$GREEN"
-    [[ "$bug_count" -gt 0 ]] && color="$YELLOW"
+    local color nc
+    nc=$(_out_color "${NC:-}")
+    if [[ "$bug_count" -gt 0 ]]; then
+        color=$(_out_color "${YELLOW:-}")
+    else
+        color=$(_out_color "${GREEN:-}")
+    fi
 
     if [[ "$bug_count" -eq 0 ]]; then
-        echo -e "  Tester:    ${color}${test_count} tests written, all passing${NC}"
+        out_msg "  Tester:    ${color}${test_count} tests written, all passing${nc}"
     else
-        echo -e "  Tester:    ${color}${test_count} tests written, ${bug_count} bug(s) found${NC}"
+        out_msg "  Tester:    ${color}${test_count} tests written, ${bug_count} bug(s) found${nc}"
     fi
 }

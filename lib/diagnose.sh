@@ -212,8 +212,8 @@ run_diagnose() {
     fi
 
     if [[ "$has_state" != true ]]; then
-        echo -e "${YELLOW}No pipeline runs found. Nothing to diagnose.${NC}"
-        echo "Run 'tekhton \"your task\"' to start a pipeline."
+        warn "No pipeline runs found. Nothing to diagnose."
+        log "Run 'tekhton \"your task\"' to start a pipeline."
         return 0
     fi
 

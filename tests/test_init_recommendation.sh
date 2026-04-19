@@ -18,6 +18,13 @@ success() { :; }
 header()  { :; }
 export GREEN="" BOLD="" NC="" YELLOW="" CYAN="" RED=""
 
+# M101: init_report_banner.sh now uses output_format.sh functions instead of
+# direct echo-e calls. Stub them so the test remains self-contained.
+_out_color()  { printf '%s' "${1:-}"; }
+out_section() { printf '── %s ──\n' "${1:-}"; }
+out_banner()  { printf '%s\n' "${1:-}"; shift || true; while [[ $# -ge 2 ]]; do printf '  %s: %s\n' "$1" "$2"; shift 2; done; }
+out_msg()     { printf '%s\n' "$*"; }
+
 # Stub _is_utf8_terminal — assume UTF-8 for testing
 _is_utf8_terminal() { return 0; }
 

@@ -87,6 +87,10 @@ _tui_notify() {
 # shellcheck source=output.sh disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/output.sh"
 
+# M101: Structured display formatters built on top of output.sh.
+# shellcheck source=output_format.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/output_format.sh"
+
 log()       { _out_emit info    "$*"; }
 success()   { _out_emit success "$*"; }
 warn()      { _out_emit warn    "$*"; }
