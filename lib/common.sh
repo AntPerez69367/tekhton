@@ -56,7 +56,10 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # NO_COLOR support (https://no-color.org/)
+# RED/GREEN/YELLOW look locally unused after M99 moved log/warn/error into
+# output.sh; shellcheck can't see across the source boundary.
 if [[ "${NO_COLOR:-}" == "1" ]]; then
+    # shellcheck disable=SC2034
     RED="" GREEN="" YELLOW="" CYAN="" BOLD="" NC=""
 fi
 
@@ -79,57 +82,17 @@ _tui_notify() {
     fi
 }
 
-log() {
-    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
-        echo -e "${CYAN}[tekhton]${NC} $*"
-    elif [[ -n "${LOG_FILE:-}" ]]; then
-        printf '[tekhton] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
-    fi
-    _tui_notify info "$*"
-}
-success() {
-    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
-        echo -e "${GREEN}[✓]${NC} $*"
-    elif [[ -n "${LOG_FILE:-}" ]]; then
-        printf '[✓] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
-    fi
-    _tui_notify success "[✓] $*"
-}
-warn() {
-    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
-        echo -e "${YELLOW}[!]${NC} $*"
-    elif [[ -n "${LOG_FILE:-}" ]]; then
-        printf '[!] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
-    fi
-    _tui_notify warn "[!] $*"
-}
-error() {
-    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
-        echo -e "${RED}[✗]${NC} $*"
-    elif [[ -n "${LOG_FILE:-}" ]]; then
-        printf '[✗] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
-    fi
-    _tui_notify error "[✗] $*"
-}
+# M99: Output Bus — context store (_OUT_CTX) + unified routing (_out_emit).
+# Must be sourced AFTER _tui_strip_ansi and _tui_notify are defined above.
+# shellcheck source=output.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/output.sh"
 
-mode_info() {
-    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
-        echo -e "${CYAN}[~]${NC} $*"
-    elif [[ -n "${LOG_FILE:-}" ]]; then
-        printf '[~] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
-    fi
-    _tui_notify info "[~] $*"
-}
-header() {
-    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
-        echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"
-        echo -e "${BOLD}${CYAN}  $*${NC}"
-        echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"
-    elif [[ -n "${LOG_FILE:-}" ]]; then
-        printf '\n=== %s ===\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
-    fi
-    _tui_notify info "$*"
-}
+log()       { _out_emit info    "$*"; }
+success()   { _out_emit success "$*"; }
+warn()      { _out_emit warn    "$*"; }
+error()     { _out_emit error   "$*"; }
+mode_info() { _out_emit mode    "$*"; }
+header()    { _out_emit header  "$*"; }
 
 # log_verbose — write an informational diagnostic line that stays off stdout
 # unless VERBOSE_OUTPUT=true. The message is always appended to ${LOG_FILE}

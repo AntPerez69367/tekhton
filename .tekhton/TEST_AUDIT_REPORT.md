@@ -1,30 +1,35 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 29 test functions
+Tests audited: 2 files, 14 test sections (16 discrete assertions in file 1, 9 in file 2)
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: tui_complete() never invoked directly
-- File: tests/test_tui_complete_hold_loop.sh (all 8 tests)
-- Issue: The test file sources `lib/tui.sh` but no test ever calls `tui_complete()`. All 8 tests replicate the counter arithmetic and timeout-validation logic inside local wrapper functions (`_test_counter_arith`, `_test_loop_termination`, etc.) rather than exercising the real function. A regression introduced into `tui_complete()` itself — e.g. a change to the `while kill -0` guard condition — would not be caught. The mock `sleep()` override defined at line 64–67 is also dead code since `tui_complete()` is never invoked.
-- Severity: MEDIUM
-- Action: Add a test that calls `tui_complete()` directly. Arrange `_TUI_ACTIVE=true`, set `_TUI_PID` to a short-lived background process (e.g. `sleep 10 &`) or a non-existent PID so `kill -0` returns immediately, set `TUI_COMPLETE_HOLD_TIMEOUT=1`, and verify the function returns 0. The existing mock `sleep()` will suppress real sleep calls once `tui_complete()` is invoked — remove the dead mock comment and wire it to an actual invocation.
-
-#### EXERCISE: Test 3 guards a local variable, not the real _TUI_ACTIVE gate
-- File: tests/test_tui_complete_hold_loop.sh:113-122
-- Issue: `_test_inactive_path` sets a local `TUI_ACTIVE_FLAG=false` and evaluates `[[ "$TUI_ACTIVE_FLAG" == "true" ]]`. The real guard in `tui_complete()` (lib/tui.sh:158) checks `[[ "$_TUI_ACTIVE" == "true" ]] || return 0` — a different variable with a leading underscore. This test passes regardless of what `lib/tui.sh` contains, making it a permanently green no-op.
+#### ISOLATION: Test 5 reads live source files from the repository
+- File: tests/test_tui_attempt_counter.sh:144–161
+- Issue: Test 5 uses `grep -r` across `${TEKHTON_HOME}/lib/`, `stages/`, and `tekhton.sh` to assert `PIPELINE_ATTEMPT` is absent. Pass/fail depends on current repo state at the time the test runs, not on an isolated fixture. This is a structural/linting check embedded in a unit-test harness rather than a hermetic test of function behavior. The intent is clearly correct (regression guard on a removed variable), but it will produce false failures if any future comment or log message in those files happens to include the pattern `PIPELINE_ATTEMPT` outside a `#` comment prefix.
 - Severity: LOW
-- Action: Replace with a test that sets `_TUI_ACTIVE=false` (or leaves it unset), calls `tui_complete()`, and asserts the return value is 0 with no status file written. This directly exercises the real early-exit guard.
+- Action: Acceptable as-is given the intent is deliberate regression detection. If this produces false failures in future, consider moving it to a dedicated lint script (e.g. `tests/lint_ghost_vars.sh`) so it is clearly labeled as a structural check rather than a functional unit test.
 
-### Freshness Sample Findings
+#### COVERAGE: Tests 1–3 in test_tui_attempt_counter.sh are structurally identical
+- File: tests/test_tui_attempt_counter.sh:76–118
+- Issue: Tests 1, 2, and 3 each set `_OUT_CTX[attempt]` to 1, 2, or 3 respectively, write status JSON, and assert the value round-trips. All three follow identical code paths — the only variation is the literal value. The real M99 regression (that `PIPELINE_ATTEMPT` was never set so attempt always showed 1) is covered by Test 2 alone. Tests 1 and 3 add no additional code-path coverage.
+- Severity: LOW
+- Action: No change required for PASS verdict. If the file is revisited, Tests 1 and 3 can be collapsed into Test 4's loop which already covers iterations 1, 2, and 3 iteratively.
 
-#### tests/test_cleanup_notes.sh — 12 tests
-All assertions use values derived from real `count_unresolved_notes`, `mark_note_resolved`, and `mark_note_deferred` calls against fixture files created in `$TMPDIR`. Covers: absent file, empty section, two open items, DEFERRED exclusion, [x] exclusion, all-deferred, mark resolved, mark deferred, absent-file error paths, and blank-line stability (M73). Sources `lib/notes.sh` and `lib/notes_cleanup.sh` directly. Isolation is complete. No issues.
+#### None: All other rubric points pass
 
-#### tests/test_cleanup_revert_path.sh — 3 scenarios
-Creates a real git repo in `$TMPDIR` and exercises the targeted-revert algorithm inline (primary pipeline file preserved, cleanup file reverted, no-op when unchanged, overlap protection). The logic replication is acceptable since the test verifies an algorithm, not a library function. Isolation complete. No issues.
+**Assertion Honesty** — All assertions in both files verify outputs of real function calls against values either explicitly set by the test or documented defaults in `out_init()` (output.sh:27–37). No hard-coded magic numbers unconnected to implementation logic. `attempt=1` and `max_attempts=1` match the literal defaults on lines 27–28 of `lib/output.sh`.
 
-#### tests/test_clear_resolved_nonblocking_notes.sh — 9 tests
-Calls `clear_resolved_nonblocking_notes` sourced from `lib/drift_cleanup.sh` against fixtures in `$TMPDIR`. Covers: absent file, empty resolved section, single item, multiple items, heading preservation, open-section isolation, blank-line normalization, special characters, and consecutive blank elimination. No issues.
+**Edge Case Coverage** — `test_output_bus_context_store.sh` covers: missing key (Test 1), empty-key get (Test 8), empty-key set (Test 6), overwrite (Test 5), key coexistence (Test 7), and defaults (Tests 2–3). `test_tui_attempt_counter.sh` covers the `_OUT_CTX` fallback path when the associative array is unset (Test 6). Ratio of edge-path to happy-path tests is healthy in both files.
+
+**Implementation Exercise** — Both files source the real implementation (`lib/output.sh`, `lib/tui.sh` which sources `lib/tui_helpers.sh`) and call the real functions. Stubs are limited to logger shims (`log`, `warn`, etc.) and color-variable blanks — none of the stubbed symbols are under test. `_tui_json_build_status` is exercised through a real write to a temp file and the output is parsed by `python3 json.load`.
+
+**Test Weakening Detection** — Both files are new (per CODER_SUMMARY and TESTER_REPORT). No existing tests were modified. No weakening possible.
+
+**Test Naming and Intent** — Tests use numbered section headers (`=== Test N: <scenario description> ===`) and `pass()`/`fail()` labels that describe both the scenario and expected outcome. Intent is clear from header text and pass-label strings.
+
+**Scope Alignment** — `lib/output.sh` is a new file created this milestone; `lib/tui_helpers.sh` was modified to read `_OUT_CTX[attempt]` instead of `PIPELINE_ATTEMPT`. Both test files exercise exactly these two files. No orphaned imports, no references to deleted functions.
+
+**Test Isolation** — Both files create a `TMPDIR=$(mktemp -d)` with `trap 'rm -rf "$TMPDIR"' EXIT`. Neither reads `.tekhton/` reports, `.claude/logs/`, build artifacts, or config state files. The TUI status JSON file written in `test_tui_attempt_counter.sh` is written to `$TMPDIR/status.json`. Full isolation for all functional tests.

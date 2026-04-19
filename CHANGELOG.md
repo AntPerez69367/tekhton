@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.33] - 2026-04-19
+
+### Added
+- Updated the milestone plan with 99-103 (M99)
 ## [0.1.32] - 2026-04-18
 
 ### Added

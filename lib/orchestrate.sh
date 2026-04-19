@@ -134,6 +134,10 @@ run_complete_loop() {
 
     while true; do
         _ORCH_ATTEMPT=$(( _ORCH_ATTEMPT + 1 ))
+        # M99: mirror attempt state into the Output Bus so the TUI header sees
+        # the real pass counter instead of the old PIPELINE_ATTEMPT ghost.
+        out_set_context attempt      "$_ORCH_ATTEMPT"
+        out_set_context max_attempts "${MAX_PIPELINE_ATTEMPTS:-5}"
         _ORCH_ELAPSED=$(( $(date +%s) - _ORCH_START_TIME ))
 
         # Capture causal log baseline for this iteration (M16 fix: restrict

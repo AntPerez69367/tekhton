@@ -1,7 +1,7 @@
 # M99 — Output Bus Core + Context Store
 <!-- milestone-meta
 id: "99"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

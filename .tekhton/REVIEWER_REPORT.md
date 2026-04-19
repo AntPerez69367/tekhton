@@ -1,5 +1,3 @@
-# Reviewer Report
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,22 +8,15 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- None
+- TUI event messages include the level prefix in the `msg` field (e.g. `"[!] problem"`) via `notify_msg` in `_out_emit`, whereas pre-M99 the raw message was forwarded to `_tui_notify`. If `tui_render.py` adds a visual level indicator based on the `level` field, the TUI event panel could show double-prefixed messages. Should be verified against the Python renderer.
+- `lib/common.sh` is ~412 lines, over the 300-line soft ceiling. Pre-existing issue; M99 reduced its size (net -54 lines per the diff). Log for a future cleanup pass.
 
 ## Coverage Gaps
-- `tui_complete()` hold loop remains untested at the shell level (all existing TUI tests short-circuit on `_TUI_ACTIVE=false`). A unit test executing the fixed loop body under `set -euo pipefail` would guard against arithmetic-expression regressions; log for the next cleanup pass.
+- No test explicitly validates that `out_ctx missing_key` returns an empty string (does not trigger `set -u` unbound-variable error).
+- No test validates that the TUI `tui_status.json` `attempt` field increments correctly across loop iterations (the primary fix of M99). A test similar to `test_tui_active_path.sh` that stubs `_ORCH_ATTEMPT` increments and reads `_OUT_CTX[attempt]` would close this.
 
 ## Drift Observations
 - None
 
-## Re-Review Blocker Verification
-
-**Prior blocker:** `lib/tui.sh:170-174` — `set -e` arithmetic traps in `tui_complete()` counter loop.
-
-**Status: FIXED**
-
-Evidence:
-- `(( ticks >= max_ticks )) && break` → replaced with `(( ticks < max_ticks )) || break` (line 171) — safe under `set -e`.
-- `(( ticks++ ))` → replaced with `ticks=$(( ticks + 1 ))` (line 173) — assignment always exits 0.
-- `tools/tests/test_tui.py:109-111` — `Console(file=open("/dev/null","w"),...)` FD leak fixed with `with open("/dev/null","w") as devnull:` block.
-- Both fixes match the exact remediation prescribed in the prior report.
+## ACP Verdicts
+- None

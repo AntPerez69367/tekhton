@@ -103,7 +103,13 @@ _tui_json_build_status() {
     local milestone="${_CURRENT_MILESTONE:-}"
     local milestone_title="${MILESTONE_TITLE:-}"
     local task="${TASK:-}"
-    local attempt="${PIPELINE_ATTEMPT:-1}"
+    # M99: Output Bus owns the attempt counter. Fall back to "1" if the bus
+    # hasn't been initialised yet (standalone TUI tests source this file
+    # without common.sh/output.sh).
+    local attempt="1"
+    if declare -p _OUT_CTX &>/dev/null; then
+        attempt="${_OUT_CTX[attempt]:-1}"
+    fi
     local max_attempts="${MAX_PIPELINE_ATTEMPTS:-1}"
     local stage_label="${_TUI_CURRENT_STAGE_LABEL:-}"
     local stage_num="${_TUI_CURRENT_STAGE_NUM:-0}"

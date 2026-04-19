@@ -1895,6 +1895,18 @@ if declare -f tui_start &>/dev/null; then
     [[ "${AUTO_COMMIT:-true}"     = false ]] && _tui_cli_flags+=" --no-commit"
     [[ "${START_AT:-coder}"      != coder ]] && _tui_cli_flags+=" --start-at ${START_AT}"
     _tui_cli_flags="${_tui_cli_flags# }"
+
+    # M99: mirror the resolved run-mode + flags into the Output Bus so any
+    # consumer (TUI, M101/M102 formatters) can read a single authoritative
+    # source for display state.
+    out_set_context mode         "$_tui_run_mode"
+    out_set_context task         "${TASK:-}"
+    out_set_context cli_flags    "$_tui_cli_flags"
+    out_set_context max_attempts "${MAX_PIPELINE_ATTEMPTS:-5}"
+    out_set_context attempt      1
+    out_set_context milestone       "${_CURRENT_MILESTONE:-}"
+    out_set_context milestone_title "${MILESTONE_TITLE:-}"
+
     if declare -f tui_set_context &>/dev/null; then
         tui_set_context "$_tui_run_mode" "$_tui_cli_flags" \
             intake scout coder security review tester
@@ -2485,6 +2497,7 @@ _run_human_complete_loop() {
 
     while true; do
         human_attempt=$((human_attempt + 1))
+        out_set_context attempt "$human_attempt"
 
         # Safety bound: max attempts
         if [[ "$human_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
@@ -2594,6 +2607,7 @@ _run_fix_nonblockers_loop() {
 
     while true; do
         nb_attempt=$((nb_attempt + 1))
+        out_set_context attempt "$nb_attempt"
 
         local remaining
         remaining=$(count_open_nonblocking_notes)
@@ -2667,6 +2681,7 @@ _run_fix_drift_loop() {
 
     while true; do
         drift_attempt=$((drift_attempt + 1))
+        out_set_context attempt "$drift_attempt"
 
         local remaining
         remaining=$(count_drift_observations)
