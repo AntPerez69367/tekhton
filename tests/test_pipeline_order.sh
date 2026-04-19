@@ -247,6 +247,61 @@ unset PIPELINE_ORDER
 assert_false "11.3 is_test_first_order: returns 1 when unset"      is_test_first_order
 
 # =============================================================================
+# Phase 12: get_display_stage_order (M100)
+# =============================================================================
+
+# Reset to a known baseline for display tests
+unset PIPELINE_ORDER
+unset DOCS_AGENT_ENABLED
+unset INTAKE_AGENT_ENABLED
+unset SECURITY_AGENT_ENABLED
+unset SKIP_SECURITY
+unset SKIP_DOCS
+
+# 12.1 standard + all defaults → intake prepended, test_verify → tester
+PIPELINE_ORDER="standard"
+assert_eq "12.1 get_display_stage_order: standard default → intake scout coder security review tester" \
+    "intake scout coder security review tester" "$(get_display_stage_order)"
+
+# 12.2 INTAKE_AGENT_ENABLED=false drops intake
+INTAKE_AGENT_ENABLED="false"
+assert_eq "12.2 get_display_stage_order: INTAKE_AGENT_ENABLED=false drops intake" \
+    "scout coder security review tester" "$(get_display_stage_order)"
+unset INTAKE_AGENT_ENABLED
+
+# 12.3 DOCS_AGENT_ENABLED=true inserts docs between coder and security
+DOCS_AGENT_ENABLED="true"
+assert_eq "12.3 get_display_stage_order: DOCS_AGENT_ENABLED=true inserts docs" \
+    "intake scout coder docs security review tester" "$(get_display_stage_order)"
+unset DOCS_AGENT_ENABLED
+
+# 12.4 PIPELINE_ORDER=test_first maps test_write → tester-write
+PIPELINE_ORDER="test_first"
+assert_eq "12.4 get_display_stage_order: test_first maps test_write → tester-write" \
+    "intake scout tester-write coder security review tester" "$(get_display_stage_order)"
+
+# 12.5 SKIP_SECURITY=true filters security out
+PIPELINE_ORDER="standard"
+SKIP_SECURITY="true"
+assert_eq "12.5 get_display_stage_order: SKIP_SECURITY=true removes security" \
+    "intake scout coder review tester" "$(get_display_stage_order)"
+unset SKIP_SECURITY
+
+# 12.6 SECURITY_AGENT_ENABLED=false also removes security
+SECURITY_AGENT_ENABLED="false"
+assert_eq "12.6 get_display_stage_order: SECURITY_AGENT_ENABLED=false removes security" \
+    "intake scout coder review tester" "$(get_display_stage_order)"
+unset SECURITY_AGENT_ENABLED
+
+# 12.7 SKIP_DOCS=true suppresses docs even when docs agent is enabled
+DOCS_AGENT_ENABLED="true"
+SKIP_DOCS="true"
+assert_eq "12.7 get_display_stage_order: SKIP_DOCS=true suppresses docs stage" \
+    "intake scout coder security review tester" "$(get_display_stage_order)"
+unset DOCS_AGENT_ENABLED
+unset SKIP_DOCS
+
+# =============================================================================
 # Done
 # =============================================================================
 

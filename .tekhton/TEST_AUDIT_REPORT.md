@@ -1,35 +1,81 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 14 test sections (16 discrete assertions in file 1, 9 in file 2)
+Tests audited: 3 files, 74 test functions (47 shell assertions + 27 Python test functions)
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: Test 5 reads live source files from the repository
-- File: tests/test_tui_attempt_counter.sh:144–161
-- Issue: Test 5 uses `grep -r` across `${TEKHTON_HOME}/lib/`, `stages/`, and `tekhton.sh` to assert `PIPELINE_ATTEMPT` is absent. Pass/fail depends on current repo state at the time the test runs, not on an isolated fixture. This is a structural/linting check embedded in a unit-test harness rather than a hermetic test of function behavior. The intent is clearly correct (regression guard on a removed variable), but it will produce false failures if any future comment or log message in those files happens to include the pattern `PIPELINE_ATTEMPT` outside a `#` comment prefix.
-- Severity: LOW
-- Action: Acceptable as-is given the intent is deliberate regression detection. If this produces false failures in future, consider moving it to a dedicated lint script (e.g. `tests/lint_ghost_vars.sh`) so it is clearly labeled as a structural check rather than a functional unit test.
+None
 
-#### COVERAGE: Tests 1–3 in test_tui_attempt_counter.sh are structurally identical
-- File: tests/test_tui_attempt_counter.sh:76–118
-- Issue: Tests 1, 2, and 3 each set `_OUT_CTX[attempt]` to 1, 2, or 3 respectively, write status JSON, and assert the value round-trips. All three follow identical code paths — the only variation is the literal value. The real M99 regression (that `PIPELINE_ATTEMPT` was never set so attempt always showed 1) is covered by Test 2 alone. Tests 1 and 3 add no additional code-path coverage.
-- Severity: LOW
-- Action: No change required for PASS verdict. If the file is revisited, Tests 1 and 3 can be collapsed into Test 4's loop which already covers iterations 1, 2, and 3 iteratively.
+---
 
-#### None: All other rubric points pass
+### Per-File Notes
 
-**Assertion Honesty** — All assertions in both files verify outputs of real function calls against values either explicitly set by the test or documented defaults in `out_init()` (output.sh:27–37). No hard-coded magic numbers unconnected to implementation logic. `attempt=1` and `max_attempts=1` match the literal defaults on lines 27–28 of `lib/output.sh`.
+#### tests/test_pipeline_order.sh (Phase 12 — 7 new assertions)
 
-**Edge Case Coverage** — `test_output_bus_context_store.sh` covers: missing key (Test 1), empty-key get (Test 8), empty-key set (Test 6), overwrite (Test 5), key coexistence (Test 7), and defaults (Tests 2–3). `test_tui_attempt_counter.sh` covers the `_OUT_CTX` fallback path when the associative array is unset (Test 6). Ratio of edge-path to happy-path tests is healthy in both files.
+All seven Phase 12 assertions for `get_display_stage_order()` exercise the real
+function directly after setting environment variables. Expected values were
+cross-checked against `lib/pipeline_order.sh`:
 
-**Implementation Exercise** — Both files source the real implementation (`lib/output.sh`, `lib/tui.sh` which sources `lib/tui_helpers.sh`) and call the real functions. Stubs are limited to logger shims (`log`, `warn`, etc.) and color-variable blanks — none of the stubbed symbols are under test. `_tui_json_build_status` is exercised through a real write to a temp file and the output is parsed by `python3 json.load`.
+- `PIPELINE_ORDER_STANDARD="scout coder security review test_verify"` + intake
+  prepend + `test_verify`→`tester` mapping produces `"intake scout coder security
+  review tester"` (12.1 ✓)
+- `INTAKE_AGENT_ENABLED=false` drops the intake prepend (12.2 ✓)
+- `DOCS_AGENT_ENABLED=true` triggers the `${stages/coder security/coder docs security}`
+  substitution inside `get_pipeline_order()` and `get_display_stage_order()` passes
+  `docs` through its filter unchanged (12.3 ✓)
+- `PIPELINE_ORDER=test_first` maps `test_write`→`tester-write` in the display
+  layer (12.4 ✓)
+- `SKIP_SECURITY=true` and `SECURITY_AGENT_ENABLED=false` both trigger the
+  `continue` branch in `get_display_stage_order()` (12.5, 12.6 ✓)
+- `SKIP_DOCS=true` suppresses `docs` even when `DOCS_AGENT_ENABLED=true` because
+  `get_display_stage_order()` filters `docs` after `get_pipeline_order()` has
+  already inserted it (12.7 ✓)
 
-**Test Weakening Detection** — Both files are new (per CODER_SUMMARY and TESTER_REPORT). No existing tests were modified. No weakening possible.
+Isolation: env vars are set and unset inline; no mutable project files read.
+STALE-SYM flags (`cd`, `echo`, `source`, `set`, etc.) are standard bash builtins —
+known false positives for the shell orphan detector.
 
-**Test Naming and Intent** — Tests use numbered section headers (`=== Test N: <scenario description> ===`) and `pass()`/`fail()` labels that describe both the scenario and expected outcome. Intent is clear from header text and pass-label strings.
+#### tests/test_tui_set_context.sh (3 new M100 assertions, lines 264–297)
 
-**Scope Alignment** — `lib/output.sh` is a new file created this milestone; `lib/tui_helpers.sh` was modified to read `_OUT_CTX[attempt]` instead of `PIPELINE_ATTEMPT`. Both test files exercise exactly these two files. No orphaned imports, no references to deleted functions.
+All three assertions exercise `_tui_stage_order_json()` in `lib/tui_helpers.sh`
+after sourcing `lib/tui.sh`. Cross-checked against the implementation:
 
-**Test Isolation** — Both files create a `TMPDIR=$(mktemp -d)` with `trap 'rm -rf "$TMPDIR"' EXIT`. Neither reads `.tekhton/` reports, `.claude/logs/`, build artifacts, or config state files. The TUI status JSON file written in `test_tui_attempt_counter.sh` is written to `$TMPDIR/status.json`. Full isolation for all functional tests.
+- Fallback path: `declare -p _TUI_STAGE_ORDER` succeeds but array has zero
+  non-empty entries → function checks `_OUT_CTX[stage_order]` → splits the
+  space-separated string into `src[]` → emits JSON array.
+  Assertion `'["intake","scout","coder","review","tester"]'` is correct (✓)
+- Precedence: `_TUI_STAGE_ORDER=(scout coder tester)` with a longer
+  `_OUT_CTX[stage_order]` → `src` is populated from the array branch and the
+  fallback branch is skipped. Assertion `'["scout","coder","tester"]'` is
+  correct (✓)
+- All-empty: both sources empty → loop never executes → `[]` is correct (✓)
+
+Isolation: uses `mktemp -d` with `trap 'rm -rf' EXIT`. No mutable project files.
+STALE-SYM flags are bash builtins and standard utilities.
+
+#### tools/tests/test_tui.py (2 replacement M100 tests + existing suite)
+
+**Weakening flag — justified removal (not a real weakening):**
+`test_build_stage_pills_default_order_fallback` was removed because it asserted
+six pending pills from the hardcoded fallback list `["intake","scout","coder",
+"security","review","tester"]` that was deliberately deleted from
+`_build_stage_pills` in `tui_render.py`. The TESTER_REPORT documents the
+rationale. The two replacement tests cover the new correct behavior:
+
+- `test_build_stage_pills_empty_order_no_stage_total` (line 341): no `stage_order`
+  and no `stage_total` → `order=[]`, loop does not execute, `Text()` stays empty
+  → `str(pills) == ""`. Cross-checked: `_build_stage_pills` returns an unmodified
+  empty `Text()` when both `stage_order` and `stage_total` are absent (✓)
+- `test_build_stage_pills_empty_order_uses_stage_total_fallback` (line 354):
+  `stage_total=4` → implementation generates `["stage-1","stage-2","stage-3",
+  "stage-4"]` → 4× `○` pending pills. Assertions `count("\u25cb") == 4`,
+  `"stage-1" in text`, `"stage-4" in text` verified against implementation (✓)
+
+The replaced test exercised a code path that no longer exists; the two replacement
+tests cover both remaining code paths exhaustively. Coverage is not reduced.
+
+STALE-SYM flags (`Console`, `Panel`, `pytest`, `json`, `sys`, `tui`, `tui_render`,
+etc.) are Python stdlib and third-party imports — known false positives for the
+shell-based orphan detector which does not parse Python.

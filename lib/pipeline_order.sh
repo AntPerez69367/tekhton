@@ -154,3 +154,50 @@ get_tester_mode() {
 is_test_first_order() {
     [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]]
 }
+
+# get_display_stage_order — Echo the space-separated display stage labels for
+# the TUI stage-pill row. Prepends "intake" when INTAKE_AGENT_ENABLED=true,
+# maps internal names (test_verify, test_write) to display labels, and filters
+# out stages disabled via runtime skip flags or *_AGENT_ENABLED toggles.
+#
+# Honors:
+#   INTAKE_AGENT_ENABLED  (default true)  — prepends "intake"
+#   SECURITY_AGENT_ENABLED (default true) — filters "security"
+#   SKIP_SECURITY          (default false) — filters "security"
+#   SKIP_DOCS              (default false) — filters "docs"
+#   DOCS_AGENT_ENABLED handled inside get_pipeline_order()
+#
+# Output: space-separated string (no trailing newline beyond echo's).
+get_display_stage_order() {
+    local stages display=""
+
+    if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]]; then
+        display="intake"
+    fi
+
+    stages=$(get_pipeline_order)
+    local s
+    # shellcheck disable=SC2086
+    for s in $stages; do
+        case "$s" in
+            security)
+                if [[ "${SECURITY_AGENT_ENABLED:-true}" != "true" ]] \
+                   || [[ "${SKIP_SECURITY:-false}" == "true" ]]; then
+                    continue
+                fi
+                display="${display:+$display }security"
+                ;;
+            docs)
+                if [[ "${SKIP_DOCS:-false}" == "true" ]]; then
+                    continue
+                fi
+                display="${display:+$display }docs"
+                ;;
+            test_verify) display="${display:+$display }tester" ;;
+            test_write)  display="${display:+$display }tester-write" ;;
+            *)           display="${display:+$display }$s" ;;
+        esac
+    done
+
+    echo "$display"
+}

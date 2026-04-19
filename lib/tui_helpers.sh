@@ -79,11 +79,32 @@ _tui_stages_json() {
     printf ']'
 }
 
-# _tui_stage_order_json — emit JSON string array of _TUI_STAGE_ORDER entries.
+# _tui_stage_order_json — emit JSON string array of stage-pill entries.
+# Prefers _TUI_STAGE_ORDER (set by tui_set_context); falls back to the
+# space-separated _OUT_CTX[stage_order] string when the array is empty so
+# callers using the Output Bus alone still get a populated stage list.
 _tui_stage_order_json() {
+    local -a src=()
+    local s
+    # Use declare -p to detect _TUI_STAGE_ORDER safely under `set -u`;
+    # direct ${#_TUI_STAGE_ORDER[@]} trips unbound-variable when the array
+    # was never declared (e.g. tui_helpers.sh sourced without tui.sh).
+    if declare -p _TUI_STAGE_ORDER &>/dev/null; then
+        for s in "${_TUI_STAGE_ORDER[@]:-}"; do
+            [[ -z "$s" ]] && continue
+            src+=("$s")
+        done
+    fi
+    if [[ "${#src[@]}" -eq 0 ]] && declare -p _OUT_CTX &>/dev/null; then
+        local _fallback="${_OUT_CTX[stage_order]:-}"
+        if [[ -n "$_fallback" ]]; then
+            # shellcheck disable=SC2206
+            src=($_fallback)
+        fi
+    fi
     printf '['
-    local first=1 s
-    for s in "${_TUI_STAGE_ORDER[@]:-}"; do
+    local first=1
+    for s in "${src[@]:-}"; do
         [[ -z "$s" ]] && continue
         if (( first )); then
             first=0

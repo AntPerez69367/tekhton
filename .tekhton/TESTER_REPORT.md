@@ -1,13 +1,15 @@
 ## Planned Tests
-- [x] `tests/test_output_bus_context_store.sh` — out_ctx returns empty string for missing keys; out_set_context/out_ctx round-trip; out_init defaults
-- [x] `tests/test_tui_attempt_counter.sh` — _OUT_CTX[attempt] feeds TUI JSON attempt field; increments correctly across simulated loop iterations
+- [x] `tests/test_pipeline_order.sh` — Phase 12: 7 assertions for `get_display_stage_order` (coder-extended)
+- [x] `tests/test_tui_set_context.sh` — 3 assertions for `_OUT_CTX[stage_order]` fallback and precedence (coder-extended)
+- [x] `tools/tests/test_tui.py` — 2 replacement tests for numbered placeholder pills and empty-order path (coder-updated)
 
 ## Test Run Results
-Passed: 395  Failed: 0
+Passed: 395 shell + 133 Python  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_output_bus_context_store.sh`
-- [x] `tests/test_tui_attempt_counter.sh`
+- [x] `tests/test_pipeline_order.sh`
+- [x] `tests/test_tui_set_context.sh`
+- [x] `tools/tests/test_tui.py`

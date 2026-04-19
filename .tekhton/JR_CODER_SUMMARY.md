@@ -1,14 +1,9 @@
-# Junior Coder Summary — M99
+# Jr Coder Summary — M100
 
 ## What Was Fixed
 
-- Added `set -euo pipefail` to `lib/output.sh` after shebang (line 2). This ensures the file follows CLAUDE.md rule #2 which requires all `.sh` files to include this strict mode directive.
+- `lib/pipeline_order.sh` line 180: Added `# shellcheck disable=SC2086` before the `for s in $stages` loop in `get_display_stage_order()` to match the pattern used in `get_stage_count()` and `get_stage_position()` (lines 80 and 95). This resolves the shellcheck violation of the project's non-negotiable shellcheck-clean rule.
 
 ## Files Modified
 
-- `lib/output.sh` — Added `set -euo pipefail` after shebang
-
-## Verification
-
-- ✓ Syntax check: `bash -n lib/output.sh` passed
-- ✓ Shellcheck: `shellcheck lib/output.sh` passed with zero warnings
+- `lib/pipeline_order.sh`

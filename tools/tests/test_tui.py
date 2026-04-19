@@ -338,8 +338,8 @@ def test_build_stage_pills_mixed_states():
     assert "\u25cb" in text   # review pending
 
 
-def test_build_stage_pills_default_order_fallback():
-    """When stage_order is missing/None, falls back to the default 6-stage list."""
+def test_build_stage_pills_empty_order_no_stage_total():
+    """M100: no stage_order and no stage_total → empty pill row (no fallback list)."""
     status = {
         "stages_complete": [],
         "stage_label": "",
@@ -347,8 +347,25 @@ def test_build_stage_pills_default_order_fallback():
     }
     pills = _build_stage_pills(status)
     text = str(pills)
-    # Default order has 6 stages, all pending → 6 pending icons
-    assert text.count("\u25cb") == 6
+    # Nothing rendered: no hardcoded stage list masks reconfiguration.
+    assert text == ""
+
+
+def test_build_stage_pills_empty_order_uses_stage_total_fallback():
+    """M100: when stage_order is absent but stage_total is set, render
+    numbered placeholder pills rather than a hardcoded stage list."""
+    status = {
+        "stages_complete": [],
+        "stage_label": "",
+        "current_agent_status": "idle",
+        "stage_total": 4,
+    }
+    pills = _build_stage_pills(status)
+    text = str(pills)
+    # 4 pending pills named stage-1 .. stage-4
+    assert text.count("\u25cb") == 4
+    assert "stage-1" in text
+    assert "stage-4" in text
 
 
 # =============================================================================

@@ -261,6 +261,42 @@ assert so[3] == 'tester', f'last={so[3]}'
 fi
 
 # =============================================================================
+echo "=== _tui_stage_order_json: falls back to _OUT_CTX[stage_order] (M100) ==="
+# When _TUI_STAGE_ORDER is empty but _OUT_CTX[stage_order] is populated,
+# the JSON emitter must derive the array from the Output Bus string.
+_TUI_STAGE_ORDER=()
+declare -gA _OUT_CTX 2>/dev/null || true
+_OUT_CTX[stage_order]="intake scout coder review tester"
+result=$(_tui_stage_order_json)
+expected='["intake","scout","coder","review","tester"]'
+if [[ "$result" == "$expected" ]]; then
+    pass "_tui_stage_order_json falls back to _OUT_CTX[stage_order] when _TUI_STAGE_ORDER is empty"
+else
+    fail "_tui_stage_order_json OUT_CTX fallback" "expected '$expected', got '$result'"
+fi
+
+# And _TUI_STAGE_ORDER still takes precedence when both are set.
+_TUI_STAGE_ORDER=(scout coder tester)
+_OUT_CTX[stage_order]="intake scout coder review tester"
+result=$(_tui_stage_order_json)
+expected='["scout","coder","tester"]'
+if [[ "$result" == "$expected" ]]; then
+    pass "_tui_stage_order_json prefers _TUI_STAGE_ORDER over _OUT_CTX[stage_order]"
+else
+    fail "_tui_stage_order_json precedence" "expected '$expected', got '$result'"
+fi
+
+# Empty OUT_CTX stage_order AND empty array → empty JSON array
+_TUI_STAGE_ORDER=()
+_OUT_CTX[stage_order]=""
+result=$(_tui_stage_order_json)
+if [[ "$result" == "[]" ]]; then
+    pass "_tui_stage_order_json returns [] when both _TUI_STAGE_ORDER and _OUT_CTX[stage_order] are empty"
+else
+    fail "_tui_stage_order_json both empty" "expected '[]', got '$result'"
+fi
+
+# =============================================================================
 echo ""
 echo "=== Summary: ${PASS} passed, ${FAIL} failed ==="
 [[ "$FAIL" -eq 0 ]]

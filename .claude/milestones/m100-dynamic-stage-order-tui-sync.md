@@ -1,7 +1,7 @@
 # M100 — Dynamic Stage Order + TUI Sync
 <!-- milestone-meta
 id: "100"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

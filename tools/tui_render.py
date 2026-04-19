@@ -125,9 +125,16 @@ def _stage_state(stage: str, stages_complete: list[dict[str, Any]],
 
 
 def _build_stage_pills(status: dict[str, Any]) -> Text:
-    order = status.get("stage_order") or [
-        "intake", "scout", "coder", "security", "review", "tester",
-    ]
+    # M100: stage_order is populated by get_display_stage_order() in
+    # lib/pipeline_order.sh before the sidecar starts. If the JSON hasn't
+    # been written yet (very early startup) fall back to numbered placeholders
+    # derived from stage_total — never a hardcoded stage list, which would
+    # silently mask ordering regressions when the pipeline is reconfigured.
+    order = status.get("stage_order") or []
+    if not order:
+        stage_total = int(status.get("stage_total", 0) or 0)
+        if stage_total > 0:
+            order = [f"stage-{i + 1}" for i in range(stage_total)]
     stages_complete = status.get("stages_complete") or []
     current_label = status.get("stage_label") or ""
     current_status = status.get("current_agent_status") or "idle"

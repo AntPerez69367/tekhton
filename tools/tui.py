@@ -79,7 +79,7 @@ def _empty_status() -> dict[str, Any]:
         "recent_events": [],
         "run_mode": "task",
         "cli_flags": "",
-        "stage_order": ["intake", "scout", "coder", "security", "review", "tester"],
+        "stage_order": [],
         "complete": False,
     }
 

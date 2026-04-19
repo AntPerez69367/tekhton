@@ -1907,9 +1907,17 @@ if declare -f tui_start &>/dev/null; then
     out_set_context milestone       "${_CURRENT_MILESTONE:-}"
     out_set_context milestone_title "${MILESTONE_TITLE:-}"
 
+    # M100: build the stage-pill display from get_pipeline_order() + runtime
+    # skip flags, so SKIP_SECURITY / DOCS_AGENT_ENABLED / PIPELINE_ORDER all
+    # flow into both _OUT_CTX[stage_order] and _TUI_STAGE_ORDER from a single
+    # authoritative source.
+    _display_order=$(get_display_stage_order)
+    out_set_context stage_order "$_display_order"
+
     if declare -f tui_set_context &>/dev/null; then
-        tui_set_context "$_tui_run_mode" "$_tui_cli_flags" \
-            intake scout coder security review tester
+        # shellcheck disable=SC2206
+        _stage_arr=($_display_order)
+        tui_set_context "$_tui_run_mode" "$_tui_cli_flags" "${_stage_arr[@]}"
     fi
     tui_start
 fi
@@ -2226,6 +2234,23 @@ _run_pipeline_stages() {
     # Emit pipeline_start event (root event, no caused_by)
     _PIPELINE_START_EVT=$(emit_event "pipeline_start" "pipeline" "$TASK" "" "" "")
     _LAST_STAGE_EVT="$_PIPELINE_START_EVT"
+
+    # M100: refresh the stage-pill display from the *now-resolved* runtime
+    # skip flags (SKIP_SECURITY, SKIP_DOCS, *_AGENT_ENABLED). This re-runs
+    # after config/CLI are fully applied so the TUI reflects the pipeline
+    # about to execute — not the pre-config defaults.
+    if declare -f get_display_stage_order &>/dev/null \
+       && declare -f out_set_context &>/dev/null; then
+        local _pl_display_order
+        _pl_display_order=$(get_display_stage_order)
+        out_set_context stage_order "$_pl_display_order"
+        if declare -f tui_set_context &>/dev/null; then
+            # shellcheck disable=SC2206
+            local -a _pl_stage_arr=($_pl_display_order)
+            tui_set_context "${_TUI_RUN_MODE:-task}" "${_TUI_CLI_FLAGS:-}" \
+                "${_pl_stage_arr[@]}"
+        fi
+    fi
 
     # Pre-stage 1: Intake gate (pre-stage clarity evaluation)
     # Runs once per milestone/task before any other stage. Skipped when
