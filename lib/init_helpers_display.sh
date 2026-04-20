@@ -31,7 +31,7 @@ _display_detection_results() {
             [[ "$conf" == "high" ]] && icon="${_g}✓${_nc}"
             [[ "$conf" == "medium" ]] && icon="${_y}~${_nc}"
             [[ "$conf" == "low" ]] && icon="${_r}?${_nc}"
-            echo -e "    ${icon} ${lang} (${conf}) — ${manifest}" >&2
+            printf '%s\n' "    ${icon} ${lang} (${conf}) — ${manifest}" >&2
         done <<< "$languages"
     else
         out_kv "Languages" "none detected" warn >&2
@@ -40,7 +40,7 @@ _display_detection_results() {
     if [[ -n "$frameworks" ]]; then
         out_section "Frameworks" >&2
         while IFS='|' read -r fw lang _evidence; do
-            echo -e "    ${_g}✓${_nc} ${fw} (${lang})" >&2
+            printf '%s\n' "    ${_g}✓${_nc} ${fw} (${lang})" >&2
         done <<< "$frameworks"
     fi
 
@@ -50,14 +50,14 @@ _display_detection_results() {
             local icon="${_g}✓${_nc}"
             [[ "$conf" == "medium" ]] && icon="${_y}~${_nc}"
             [[ "$conf" == "low" ]] && icon="${_r}?${_nc}"
-            echo -e "    ${icon} ${cmd_type}: ${cmd}" >&2
+            printf '%s\n' "    ${icon} ${cmd_type}: ${cmd}" >&2
         done <<< "$commands"
     fi
 
     if [[ -n "$entry_points" ]]; then
         out_section "Entry points" >&2
         while IFS= read -r ep; do
-            echo -e "    ${ep}" >&2
+            printf '%s\n' "    ${ep}" >&2
         done <<< "$entry_points"
     fi
     echo >&2

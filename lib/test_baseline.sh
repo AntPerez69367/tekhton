@@ -87,7 +87,7 @@ capture_test_baseline() {
 
     local test_output=""
     local test_exit=0
-    test_output=$(bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+    test_output=$(run_op "Capturing test baseline" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
 
     # Save raw output (atomic write via tmpfile+mv)
     local baseline_output

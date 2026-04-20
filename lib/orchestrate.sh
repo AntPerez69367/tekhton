@@ -284,7 +284,7 @@ run_complete_loop() {
                     log "Pre-finalization test gate: running ${TEST_CMD}..."
                     local _preflight_exit=0
                     local _preflight_output=""
-                    _preflight_output=$(bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
+                    _preflight_output=$(run_op "Verifying tests before finalizing" bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
                     # Always append full output to the run log
                     printf '%s\n' "$_preflight_output" >> "$LOG_FILE"
                     if [[ "$_preflight_exit" -ne 0 ]]; then

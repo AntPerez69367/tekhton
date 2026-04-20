@@ -143,7 +143,7 @@ run_build_gate() {
             local constraint_output=""
             local constraint_exit=0
             # Use bash -c instead of eval to avoid arbitrary code execution
-            constraint_output=$(timeout "$effective_timeout" bash -c "$validation_cmd" 2>&1) || constraint_exit=$?
+            constraint_output=$(run_op "Validating dependency constraints" timeout "$effective_timeout" bash -c "$validation_cmd" 2>&1) || constraint_exit=$?
 
             if [[ "$constraint_exit" -eq 124 ]]; then
                 warn "Constraint validation timed out after ${effective_timeout}s (${stage_label}). Treating as pass."

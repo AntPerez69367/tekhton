@@ -529,10 +529,8 @@ register_finalize_hook "_hook_project_version_tag"
 register_finalize_hook "_hook_update_check"
 register_finalize_hook "_hook_final_dashboard_status"
 
-# M97: stop the TUI sidecar cleanly as the very last hook.
-# M102: routes through out_complete so the action_items accumulated by
-# _hook_commit (via _print_action_items) are visible in the JSON status
-# when the sidecar reads it for its hold-on-complete screen.
+# Must run last: calls out_complete, which reads action_items populated by _hook_commit.
+# If it runs earlier, those items are absent from the status JSON the TUI sidecar reads.
 _hook_tui_complete() {
     local exit_code="${1:-0}"
     local verdict="SUCCESS"

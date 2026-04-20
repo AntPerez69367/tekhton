@@ -74,7 +74,7 @@ check_milestone_acceptance() {
         log "Running test command: ${TEST_CMD}"
         local test_output=""
         local test_exit=0
-        test_output=$(bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+        test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
 
         if [[ "$test_exit" -eq 0 ]]; then
             success "Tests pass"

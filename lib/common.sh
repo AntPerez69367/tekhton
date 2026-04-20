@@ -98,6 +98,11 @@ error()     { _out_emit error   "$*"; }
 mode_info() { _out_emit mode    "$*"; }
 header()    { _out_emit header  "$*"; }
 
+# run_op — passthrough stub. lib/tui_ops.sh redefines with the full TUI-aware
+# implementation when the sidecar is active. Keeps scripts that source only
+# common.sh (e.g. test harnesses) able to call run_op without guards.
+run_op() { local _l="$1"; shift; "$@"; }
+
 # log_verbose — write an informational diagnostic line that stays off stdout
 # unless VERBOSE_OUTPUT=true. The message is always appended to ${LOG_FILE}
 # when set, preserving post-mortem visibility. Use for internal diagnostics

@@ -8,16 +8,10 @@
 
 set -euo pipefail
 
-# _tui_escape STRING — minimal JSON string escape.
-_tui_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\t'/\\t}"
-    printf '%s' "$s"
-}
+# _tui_escape STRING — minimal JSON string escape. Delegates to the canonical
+# implementation in lib/output_format.sh (sourced via lib/common.sh ahead of
+# any tui.sh usage in the live pipeline).
+_tui_escape() { _out_json_escape "$@"; }
 
 # _tui_json_stage LABEL MODEL TURNS TIME VERDICT
 # Emits one JSON object describing a completed stage (no surrounding comma).
@@ -159,6 +153,7 @@ _tui_json_build_status() {
     local agent_elapsed="${_TUI_AGENT_ELAPSED_SECS:-0}"
     local stage_start_ts="${_TUI_STAGE_START_TS:-0}"
     local agent_status="${_TUI_AGENT_STATUS:-idle}"
+    local op_label="${_TUI_OPERATION_LABEL:-}"
     local complete="${_TUI_COMPLETE:-false}"
     local verdict_json="null"
     if [[ -n "${_TUI_VERDICT:-}" ]]; then
@@ -194,6 +189,7 @@ _tui_json_build_status() {
     printf '"pipeline_elapsed_secs":%s,' "$elapsed"
     printf '"stages_complete":%s,' "$(_tui_stages_json)"
     printf '"current_agent_status":"%s",' "$(_tui_escape "$agent_status")"
+    printf '"current_operation":"%s",' "$(_tui_escape "$op_label")"
     printf '"run_mode":"%s",' "$(_tui_escape "$run_mode")"
     printf '"cli_flags":"%s",' "$(_tui_escape "$cli_flags")"
     printf '"stage_order":%s,' "$(_tui_stage_order_json)"

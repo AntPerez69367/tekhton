@@ -48,7 +48,7 @@ _gate_run_analyze() {
     local effective_timeout="$1"
 
     local analyze_exit=0
-    ANALYZE_OUTPUT=$(timeout "$effective_timeout" bash -c "${ANALYZE_CMD}" 2>&1) || analyze_exit=$?
+    ANALYZE_OUTPUT=$(run_op "Running static analysis" timeout "$effective_timeout" bash -c "${ANALYZE_CMD}" 2>&1) || analyze_exit=$?
 
     if [[ "$analyze_exit" -eq 124 ]]; then
         warn "ANALYZE_CMD timed out after ${effective_timeout}s. Treating as pass."
@@ -147,7 +147,7 @@ _gate_run_compile() {
     local effective_timeout="$1"
 
     local compile_exit=0
-    COMPILE_OUTPUT=$(timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
+    COMPILE_OUTPUT=$(run_op "Running build check" timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
 
     if [[ "$compile_exit" -eq 124 ]]; then
         warn "BUILD_CHECK_CMD timed out after ${effective_timeout}s. Treating as pass."

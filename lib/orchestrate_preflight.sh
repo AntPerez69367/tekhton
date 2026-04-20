@@ -75,7 +75,7 @@ _try_preflight_fix() {
         log "Pre-finalization fix: shell verifying with ${TEST_CMD}..."
         local _pf_verify_exit=0
         local _pf_verify_output=""
-        _pf_verify_output=$(bash -c "${TEST_CMD}" 2>&1) || _pf_verify_exit=$?
+        _pf_verify_output=$(run_op "Running pre-run test check" bash -c "${TEST_CMD}" 2>&1) || _pf_verify_exit=$?
         printf '%s\n' "$_pf_verify_output" >> "$LOG_FILE"
 
         if [[ "$_pf_verify_exit" -eq 0 ]]; then

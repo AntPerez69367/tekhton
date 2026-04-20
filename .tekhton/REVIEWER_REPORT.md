@@ -1,4 +1,4 @@
-# Reviewer Report — M103: Output Bus Tests + Integration Validation
+# Reviewer Report — M104 TUI Operation Liveness (Cycle 2)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,11 +10,18 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `test_output_tui_sync.sh:126-129` (TC-TUI-03): `stage_order` assertion uses glob substring matching (`[[ "$json" == *'"intake"'* ]]`) instead of the JSON-parsed `assert_json_field` helper used in all other assertions. Works correctly, but inconsistent with the rest of the file and could produce a false pass if "intake" appeared in a different JSON field.
-- `tools/tests/test_tui_action_items.py:44`: `monkeypatch.setattr("tui_hold.time.sleep", ...)` patches by string reference, requiring `tui_hold` to already be in `sys.modules`. Works as long as `tui.py` imports `tui_hold` at module level, but the implicit dependency is fragile if that import path ever changes to lazy-loading.
+- `lib/init_helpers_display.sh` is present in the git diff but absent from the CODER_SUMMARY "Files Modified" list (carried from cycle 1 — documentation gap only; code is correct).
+- `tests/test_output_lint.sh` and `tests/test_tui_no_dead_weight.sh` appear modified in git status but are not listed in CODER_SUMMARY. Both look correct; gap is documentation only.
+- Milestone doc `m104-tui-operation-liveness.md` §2 still refers to `run_op` living in `lib/tui.sh`; implementation correctly placed it in `lib/tui_ops.sh`. The milestone doc itself is now slightly stale (low-priority housekeeping).
 
 ## Coverage Gaps
-- None
+- No automated test verifies the `current_operation` JSON field presence or the `working` → `idle` status transition lifecycle of `run_op`. Acceptance criteria include these as behavioural assertions but nothing in the test harness automates them.
 
 ## Drift Observations
-- `lib/tui_helpers.sh:_tui_escape` and the `_out_json_escape` function in `lib/output_format.sh` (flagged in M102) implement the same JSON string escaping logic independently. Now that M103 adds tests that exercise both paths, this divergence is more visible — a future bug fix to one that misses the other will produce inconsistent escaping between CLI and TUI paths. Candidate for consolidation in a cleanup pass.
+- `lib/tui_ops.sh` accesses globals declared in `lib/tui.sh` (`_TUI_ACTIVE`, `_TUI_RECENT_EVENTS`, `_TUI_STAGES_COMPLETE`, `_TUI_CURRENT_STAGE_*`, `_TUI_AGENT_*`, `_tui_write_status`) with no `# shellcheck source=tui.sh` directive. Consistent with the pre-existing gap in `tui_helpers.sh` — not new drift.
+
+## Prior Blocker Verification
+
+| Blocker | Status |
+|---------|--------|
+| `lib/tui_ops.sh` missing `set -euo pipefail` | **FIXED** — line 10 of `lib/tui_ops.sh` now reads `set -euo pipefail` |

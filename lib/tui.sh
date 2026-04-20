@@ -12,8 +12,14 @@
 
 set -euo pipefail
 
+# shellcheck source=lib/output_format.sh
+source "${TEKHTON_HOME}/lib/output_format.sh"
+
 # shellcheck source=lib/tui_helpers.sh
 source "${TEKHTON_HOME}/lib/tui_helpers.sh"
+
+# shellcheck source=lib/tui_ops.sh
+source "${TEKHTON_HOME}/lib/tui_ops.sh"
 
 # --- Activation state --------------------------------------------------------
 
@@ -226,65 +232,6 @@ tui_set_context() {
         shift "$#"
     fi
     _TUI_STAGE_ORDER=("$@")
-}
-
-# --- Update functions --------------------------------------------------------
-
-# tui_update_stage NUM TOTAL LABEL MODEL — set current stage.
-tui_update_stage() {
-    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
-    _TUI_CURRENT_STAGE_NUM="${1:-0}"
-    _TUI_CURRENT_STAGE_TOTAL="${2:-0}"
-    _TUI_CURRENT_STAGE_LABEL="${3:-}"
-    _TUI_CURRENT_STAGE_MODEL="${4:-}"
-    _TUI_AGENT_STATUS="running"
-    _TUI_AGENT_TURNS_USED=0
-    _TUI_AGENT_ELAPSED_SECS=0
-    _TUI_STAGE_START_TS=$(date +%s)
-    _tui_write_status
-}
-
-# tui_finish_stage LABEL MODEL TURNS TIME VERDICT — mark stage complete.
-tui_finish_stage() {
-    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
-    local label="${1:-}"
-    local model="${2:-}"
-    local turns="${3:-}"
-    local time_str="${4:-}"
-    local verdict="${5:-}"
-    local entry
-    entry=$(_tui_json_stage "$label" "$model" "$turns" "$time_str" "$verdict")
-    _TUI_STAGES_COMPLETE+=("$entry")
-    _TUI_AGENT_STATUS="idle"
-    _tui_write_status
-}
-
-# tui_update_agent TURNS_USED TURNS_MAX ELAPSED_SECS — tick update from spinner.
-# Safe to call at high frequency; writes atomically.
-tui_update_agent() {
-    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
-    _TUI_AGENT_TURNS_USED="${1:-0}"
-    _TUI_AGENT_TURNS_MAX="${2:-0}"
-    _TUI_AGENT_ELAPSED_SECS="${3:-0}"
-    _TUI_AGENT_STATUS="running"
-    _tui_write_status
-}
-
-# tui_append_event LEVEL MSG — append to ring buffer and flush status.
-# LEVEL: info | warn | error | success
-tui_append_event() {
-    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
-    local level="${1:-info}"
-    local msg="${2:-}"
-    local ts
-    ts=$(date +"%H:%M:%S")
-    _TUI_RECENT_EVENTS+=("${ts}|${level}|${msg}")
-    local max="${TUI_EVENT_LINES:-60}"
-    local overflow=$(( ${#_TUI_RECENT_EVENTS[@]} - max ))
-    if (( overflow > 0 )); then
-        _TUI_RECENT_EVENTS=("${_TUI_RECENT_EVENTS[@]:overflow}")
-    fi
-    _tui_write_status
 }
 
 # --- Atomic status file writer -----------------------------------------------

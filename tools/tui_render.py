@@ -94,6 +94,7 @@ def _build_logo(status: dict[str, Any]) -> Text:
         rows = [_LOGO_IDLE_ROW0, _LOGO_IDLE_CROWN,
                 *[(c, _LOGO_IDLE_WALL_STYLE) for c, _ in _ARCH_WALLS[1:]]]
     else:
+        # "running" (agent) and "working" (shell op) both animate identically.
         frame = int(time.time() * 0.6) % 3
         crown = _LOGO_FRAME2_CROWN if frame == 2 else _ARCH_WALLS[0]
         rows = [_LOGO_FRAMES[frame], crown, *_ARCH_WALLS[1:]]
@@ -156,6 +157,19 @@ def _model_short(model: str) -> str:
     return model[len("claude-"):] if model.startswith("claude-") else model
 
 
+_SPIN_CHARS = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
+
+
+def _build_working_bar(status: dict[str, Any]) -> Table:
+    op_label = status.get("current_operation") or "Working\u2026"
+    char = _SPIN_CHARS[int(time.time() * 10) % len(_SPIN_CHARS)]
+    grid = Table.grid(padding=(0, 1), expand=False)
+    grid.add_column(no_wrap=True); grid.add_column(no_wrap=True)
+    grid.add_row(Text(op_label, style="bold white"),
+                 Text(f"{char} Working", style="yellow"))
+    return grid
+
+
 def _build_active_bar(status: dict[str, Any]) -> Table:
     label = status.get("stage_label") or "\u2014"
     model = _model_short(status.get("agent_model") or "")
@@ -168,6 +182,11 @@ def _build_active_bar(status: dict[str, Any]) -> Table:
         elapsed = int(status.get("agent_elapsed_secs", 0) or 0)
     agent_status = status.get("current_agent_status") or "idle"
 
+    # M104: shell-op "working" state shows only the operation label + spinner.
+    # Model / turns / elapsed are agent-only concepts and don't apply here.
+    if agent_status == "working":
+        return _build_working_bar(status)
+
     grid = Table.grid(padding=(0, 1), expand=False)
     for _ in range(6):
         grid.add_column(no_wrap=True)
@@ -175,11 +194,8 @@ def _build_active_bar(status: dict[str, Any]) -> Table:
     bar_total = max(maxt, 1)
     bar = ProgressBar(total=bar_total, completed=min(used, bar_total), width=12)
     if agent_status == "running":
-        spin = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
-        spinner = Text(
-            spin[int(time.time() * 10) % len(spin)] + " Running",
-            style="yellow",
-        )
+        char = _SPIN_CHARS[int(time.time() * 10) % len(_SPIN_CHARS)]
+        spinner = Text(f"{char} Running", style="yellow")
     elif agent_status == "complete":
         spinner = Text("\u2713 Complete", style="green")
     else:
@@ -260,12 +276,8 @@ def _build_header_bar(status: dict[str, Any]) -> Panel:
 
 # ---- Events panel -----------------------------------------------------------
 
-_EVENT_LEVEL_STYLES = {
-    "info": "white",
-    "warn": "yellow",
-    "error": "red",
-    "success": "green",
-}
+_EVENT_LEVEL_STYLES = {"info": "white", "warn": "yellow",
+                       "error": "red", "success": "green"}
 
 
 def _build_events_panel(status: dict[str, Any], max_lines: int) -> Panel:

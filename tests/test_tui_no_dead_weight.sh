@@ -11,6 +11,8 @@ set -euo pipefail
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/output_format.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/tui_helpers.sh"
 
 FAIL=0

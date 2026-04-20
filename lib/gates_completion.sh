@@ -74,7 +74,7 @@ run_completion_gate() {
            && [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]]; then
             log "Completion gate: running TEST_CMD for test integrity check..."
             local _cg_output="" _cg_exit=0
-            _cg_output=$(bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+            _cg_output=$(run_op "Running completion tests" bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
 
             if [[ "$_cg_exit" -eq 0 ]]; then
                 log "Completion gate: TEST_CMD passed."

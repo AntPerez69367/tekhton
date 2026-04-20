@@ -157,7 +157,8 @@ tekhton/
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
-│   └── tui_helpers.sh      # M97 JSON builders for tui_status.json
+│   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
+│   └── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate

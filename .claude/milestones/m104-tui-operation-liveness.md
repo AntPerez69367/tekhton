@@ -1,7 +1,7 @@
 # M104 — TUI Operation Liveness: Heartbeat & Activity Indicator
 <!-- milestone-meta
 id: "104"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

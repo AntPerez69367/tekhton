@@ -17,7 +17,7 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 cd "$repo_root"
 
 pattern='echo -e.*\${\(BOLD\|RED\|GREEN\|YELLOW\|CYAN\|NC\)}'
-exclude='lib/common\.sh\|lib/output\.sh\|lib/output_format\.sh'
+exclude='lib/common\.sh\|lib/output[^/]*\.sh'
 
 matches=$(grep -rn "$pattern" lib/ stages/ --include="*.sh" 2>/dev/null \
     | grep -v "$exclude" \

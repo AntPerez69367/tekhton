@@ -41,7 +41,7 @@ _run_ui_test_phase() {
     log "Running UI tests: ${UI_TEST_CMD}"
     local _ui_output="" _ui_exit=0
     local _ui_timeout="${UI_TEST_TIMEOUT:-120}"
-    _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+    _ui_output=$(run_op "Running UI tests" timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
 
     # --- Registry-based auto-remediation (M54) ---
     # Use centralized attempt_remediation() for classified errors.
@@ -49,7 +49,7 @@ _run_ui_test_phase() {
         if _gate_try_remediation "$_ui_output" "build_gate_ui_test"; then
             log "Re-running UI tests after remediation..."
             _ui_exit=0
-            _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+            _ui_output=$(run_op "Re-running UI tests" timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
         fi
     fi
 
@@ -57,7 +57,7 @@ _run_ui_test_phase() {
     if [[ "$_ui_exit" -ne 0 ]]; then
         log "UI tests failed (exit ${_ui_exit}). Retrying once..."
         _ui_exit=0
-        _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+        _ui_output=$(run_op "Retrying UI tests" timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
     fi
 
     if [[ "$_ui_exit" -eq 0 ]]; then
