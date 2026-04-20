@@ -27,6 +27,8 @@ tekhton/
 │   ├── gates.sh            # Build gate + completion gate
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── finalize.sh         # Hook-based finalization sequence
+│   ├── finalize_commit.sh  # Commit hook + _do_git_commit helpers
+│   ├── finalize_dashboard_hooks.sh # Dashboard/causal-log/TUI finalize hooks
 │   ├── finalize_display.sh # Completion banner + action items
 │   ├── finalize_summary.sh # RUN_SUMMARY.json emitter
 │   ├── finalize_version.sh # Project version bump finalize hooks

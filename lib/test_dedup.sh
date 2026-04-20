@@ -17,20 +17,39 @@
 #   test_dedup_reset        — clear the cached fingerprint
 # =============================================================================
 
+# _test_dedup_hash
+# Portable hash helper. Prefers `shasum` (present on macOS + Linux); falls back
+# to `md5sum` (GNU) and then `md5` (BSD/macOS). Emits only the hex digest.
+_test_dedup_hash() {
+    if command -v shasum &>/dev/null; then
+        shasum | cut -d' ' -f1
+    elif command -v md5sum &>/dev/null; then
+        md5sum | cut -d' ' -f1
+    elif command -v md5 &>/dev/null; then
+        md5 -q
+    else
+        # No hasher available — return input unchanged so the fingerprint
+        # remains deterministic per working-tree state.
+        cat
+    fi
+}
+
 # _test_dedup_fingerprint
 # Emits a stable hash of the working-tree state plus the active TEST_CMD.
 # In a non-git directory (or if git fails), emits a unique value per call so
 # callers can never match a previous fingerprint — dedup degrades gracefully
-# to "always re-run".
+# to "always re-run". The fallback must never repeat within a run; `$RANDOM`
+# plus PID + seconds works on both macOS and Linux (unlike `date +%s%N`,
+# which is GNU-only).
 _test_dedup_fingerprint() {
     if command -v git &>/dev/null \
        && git rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
         # git status --porcelain covers modified, staged, untracked, deleted.
         # Including TEST_CMD ensures a config change invalidates the cache.
         { git status --porcelain 2>/dev/null; echo "cmd:${TEST_CMD:-}"; } \
-            | md5sum | cut -d' ' -f1
+            | _test_dedup_hash
     else
-        echo "no-git-$(date +%s%N)"
+        echo "no-git-$$-$(date +%s)-${RANDOM}${RANDOM}"
     fi
 }
 

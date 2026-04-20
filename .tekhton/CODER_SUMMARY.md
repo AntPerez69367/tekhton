@@ -1,60 +1,64 @@
 # Coder Summary
+
 ## Status: COMPLETE
 
 ## What Was Implemented
+Addressed all 11 open non-blocking notes in `.tekhton/NON_BLOCKING_LOG.md`:
 
-M105 — Test Run Deduplication. Skips redundant `TEST_CMD` executions by hashing
-the working-tree state (`git status --porcelain` + `TEST_CMD`) and caching the
-hash at the last successful test pass. When the current hash matches the cached
-one, the run is provably identical and is skipped.
+1. **`_test_dedup_fingerprint` macOS portability** — Replaced `md5sum` with a new `_test_dedup_hash` helper that prefers `shasum` (portable across macOS + Linux) and falls back to `md5sum`/`md5`. Rewrote the non-git fallback from `date +%s%N` (GNU-only) to `$$-$(date +%s)-${RANDOM}${RANDOM}`, which is portable and guarantees uniqueness within a run.
+2. **`md5sum` Linux-only** — Resolved by the portable `_test_dedup_hash` helper above.
+3. **M105 "six call sites" prose count discrepancy** — Historical prose inside a per-run CODER_SUMMARY that is rewritten each run; closed as unaddressable doc-only.
+4. **M104 `lib/init_helpers_display.sh` missing from Files Modified** — Historical per-run doc gap; closed as unaddressable.
+5. **M104 test-file listings missing from CODER_SUMMARY** — Same — historical per-run doc gap; closed.
+6. **TC-TUI-03 glob substring matching** — Added `assert_json_array_contains` helper (python3 JSON-parse + `in` membership test) to `tests/test_output_tui_sync.sh`; replaced the two `[[ "$json" == *'"x"'* ]]` checks with structured array assertions. Test suite still passes (15/15).
+7. **`test_tui_action_items.py` string-based monkeypatch** — Added `import tui_hold` at the top of the file and replaced `monkeypatch.setattr("tui_hold.time.sleep", ...)` with `monkeypatch.setattr(tui_hold.time, "sleep", ...)`. pytest run still passes (2/2).
+8. **`lib/finalize.sh` 571-line ceiling breach** — Extracted `_do_git_commit` / `_tag_milestone_if_complete` / `_hook_commit` into new `lib/finalize_commit.sh` (174 lines) and `_hook_causal_log_finalize` / `_hook_health_reassess` / `_hook_failure_context` / `_hook_update_check` / `_hook_final_dashboard_status` / `_hook_tui_complete` into new `lib/finalize_dashboard_hooks.sh` (150 lines). `finalize.sh` is now 296 lines. Hook registration order (and therefore `tests/test_finalize_run.sh` index assertions) preserved; all 107 finalize_run tests pass.
+9. **`$sev` unescaped in `_out_append_action_item`** — Now escaped via `_out_json_escape` alongside `$msg`, closing the security agent's LOW/fixable finding before any computed-severity caller lands.
+10. **`_out_json_escape` control-char strip** — After the existing `\n`/`\r`/`\t` substitutions, appended `LC_ALL=C tr -d '\000-\010\013\014\016-\037'` to strip any remaining U+0000..U+001F bytes (backspace, formfeed, NUL, etc.) per RFC 8259 §7.
+11. **`_out_color` `printf ''` idiom** — Replaced with an early-return guard (`[[ -n "${NO_COLOR:-}" ]] && return 0`), which is more readable and sheds one subshell write per call.
 
-- New `lib/test_dedup.sh` module with `_test_dedup_fingerprint`,
-  `test_dedup_record_pass`, `test_dedup_can_skip`, `test_dedup_reset`.
-- Wrapped the six participating `TEST_CMD` call sites (milestone acceptance,
-  completion gate, pre-finalization gate, preflight-fix verification, final
-  checks pass 1). `test_baseline.sh` is intentionally excluded (per spec).
-- `test_dedup_reset` invoked at the top of `run_complete_loop` so stale
-  fingerprints from a previous run don't leak into a new one.
-- Emits `test_dedup_skip` causal events when a run is skipped.
-- Config default `TEST_DEDUP_ENABLED=true` added to `lib/config_defaults.sh`;
-  safe because a fingerprint mismatch always forces re-run.
-- New test suite `tests/test_dedup.sh` covers enablement, file-change /
-  untracked-add / deletion invalidation, `TEST_CMD` change invalidation, reset
-  semantics, and non-git graceful degradation (9 assertions, all passing).
-- Full suite: 404 shell tests + 141 Python tests, 0 failures.
-- `shellcheck` clean on all modified files.
+All items moved from `## Open` to `## Resolved` in `.tekhton/NON_BLOCKING_LOG.md`. CLAUDE.md's repo-layout section updated to list the two new `lib/finalize_*.sh` files.
 
 ## Root Cause (bugs only)
-N/A — feature milestone.
+N/A — this task is tech-debt cleanup, not a bug fix. No underlying bug; each item is an isolated non-blocking improvement flagged by prior reviewer runs.
 
 ## Files Modified
-- `lib/test_dedup.sh` (NEW) — core dedup functions
-- `lib/config_defaults.sh` — `TEST_DEDUP_ENABLED` default
-- `tekhton.sh` — source `lib/test_dedup.sh` after `gates_completion.sh`
-- `lib/milestone_acceptance.sh` — wrap TEST_CMD at acceptance check
-- `lib/gates_completion.sh` — wrap TEST_CMD at completion gate
-- `lib/orchestrate.sh` — reset at loop entry; wrap pre-finalization gate
-- `lib/orchestrate_preflight.sh` — wrap TEST_CMD after preflight fix
-- `lib/hooks_final_checks.sh` — wrap TEST_CMD at final checks pass 1
-- `tests/test_dedup.sh` (NEW) — full unit coverage of dedup functions
-- `CLAUDE.md` — document `TEST_DEDUP_ENABLED` var and `lib/test_dedup.sh` in
-  repo layout
-- `ARCHITECTURE.md` — add Layer 3 description for `lib/test_dedup.sh`
-
-## Docs Updated
-- `CLAUDE.md` — added `TEST_DEDUP_ENABLED` to template variables table and
-  `lib/test_dedup.sh` to the repo layout tree. Public-surface change: new
-  config key.
-- `ARCHITECTURE.md` — added `lib/test_dedup.sh` entry under Layer 3
-  libraries section.
+- `lib/test_dedup.sh` — new `_test_dedup_hash` portability helper; portable fallback fingerprint.
+- `lib/output_format.sh` — `_out_color` simplified; `$sev` escaped in `_out_append_action_item`; `_out_json_escape` strips U+0000..U+001F control bytes.
+- `lib/finalize.sh` — reduced from 568 → 296 lines; hook functions split into two new files (imports preserved, registration order identical).
+- `lib/finalize_commit.sh` **(NEW)** — `_do_git_commit`, `_tag_milestone_if_complete`, `_hook_commit`.
+- `lib/finalize_dashboard_hooks.sh` **(NEW)** — dashboard / causal-log / health / failure / update-check / TUI-complete finalize hooks.
+- `tests/test_output_tui_sync.sh` — new `assert_json_array_contains` helper; TC-TUI-03 uses JSON-parsed assertions.
+- `tools/tests/test_tui_action_items.py` — direct `import tui_hold`; monkeypatch by object reference.
+- `.tekhton/NON_BLOCKING_LOG.md` — 11 items moved from Open to Resolved with remediation notes.
+- `CLAUDE.md` — added `finalize_commit.sh` and `finalize_dashboard_hooks.sh` to the `lib/` layout listing.
+- `tests/test_nonblocking_log_fixes.sh` — Fix #6/#13/#16/#18 greps updated to span both finalize files after the split.
+- `tests/test_out_complete.sh` — Part 2 awk-extractor updated to read `_hook_tui_complete` from `finalize_dashboard_hooks.sh`.
 
 ## Human Notes Status
-None — no HUMAN_NOTES items in this run.
+No per-note Human Notes were injected for this run — the task directed address of the 11 open NON_BLOCKING_LOG items. All 11 items were addressed (see `## What Was Implemented` above); none deferred.
 
-## Observed Issues (out of scope)
-- `lib/orchestrate.sh` is 463 lines (was 445 before M105 added 18 lines for
-  the dedup wrapper and reset call). It already exceeded the 300-line
-  ceiling before this work; an extraction pass is its own concern.
-- `lib/test_baseline.sh` still has `set -euo pipefail` at the top of a
-  sourced file — minor deviation from the coder.md rule "sourced files must
-  NOT have their own `set -euo pipefail`". Pre-existing, not touched here.
+## Docs Updated
+`CLAUDE.md` — repository layout section updated to list the two new `lib/finalize_*.sh` files extracted from `finalize.sh`. No other public-surface changes (no CLI flags, config keys, exported function signatures, or prompt template variables changed).
+
+## Verification
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — clean (0 warnings).
+- `bash tests/test_output_tui_sync.sh` — 15/15 pass (including new `assert_json_array_contains` assertions).
+- `bash tests/test_finalize_run.sh` — 107/107 pass (hook registration indices preserved after split).
+- `bash tests/test_output_format.sh` — 68/68 pass.
+- `bash tests/test_output_format_tui.sh` — 29/29 pass.
+- `bash tests/test_output_bus.sh` — 23/23 pass.
+- `bash tests/test_finalize_summary_escaping.sh` — 24/24 pass.
+- `bash tests/test_m39_action_items.sh` — 26/26 pass.
+- `bash tests/test_dedup.sh` — 9/9 pass.
+- `bash tests/test_dedup_callsites.sh` — 22/22 pass.
+- `bash tests/test_dry_run.sh` — 44/44 pass.
+- `python3 -m pytest tools/tests/test_tui_action_items.py` — 2/2 pass.
+
+Full `tests/run_tests.sh` sweep: **Shell 405/405 pass, Python 141/141 pass, 0 failures**.
+
+Two tests required updates after the `finalize.sh` split (functions moved to `finalize_dashboard_hooks.sh`):
+- `tests/test_nonblocking_log_fixes.sh` — Fix #6/#13/#16/#18 greps now search both `lib/finalize.sh` and `lib/finalize_dashboard_hooks.sh`; the post-archive comment was moved inside `_hook_failure_context` so the `-A5` grep captures it.
+- `tests/test_out_complete.sh` — Part 2 awk-extractor now reads from `lib/finalize_dashboard_hooks.sh` (where `_hook_tui_complete` now lives).
+
+Both invariants still hold — only file paths were updated.

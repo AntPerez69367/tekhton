@@ -25,6 +25,7 @@ TOOLS_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(TOOLS_DIR))
 
 import tui  # noqa: E402
+import tui_hold  # noqa: E402 — patched directly to avoid string-based monkeypatch
 
 
 def _make_console() -> tuple[Console, io.StringIO]:
@@ -41,7 +42,9 @@ def _no_tty(monkeypatch: pytest.MonkeyPatch) -> None:
         return real_open(path, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "open", fake_open)
-    monkeypatch.setattr("tui_hold.time.sleep", lambda _s: None)
+    # Patch by object reference rather than dotted string so the test does not
+    # depend on tui.py's import order (M103 non-blocking note).
+    monkeypatch.setattr(tui_hold.time, "sleep", lambda _s: None)
 
 
 def _base_status() -> dict:

@@ -20,11 +20,8 @@ set -euo pipefail
 # _out_color CODE — return the given ANSI code, or empty when NO_COLOR is set.
 # Evaluated at call time so callers can export NO_COLOR after common.sh sources.
 _out_color() {
-    if [[ -n "${NO_COLOR:-}" ]]; then
-        printf ''
-    else
-        printf '%s' "${1:-}"
-    fi
+    [[ -n "${NO_COLOR:-}" ]] && return 0
+    printf '%s' "${1:-}"
 }
 
 # _out_term_width — usable terminal width with a conservative default.
@@ -220,11 +217,14 @@ out_action_item() {
 
 # _out_append_action_item MSG SEV — append a JSON object to the action_items
 # array stored in _OUT_CTX. Maintains a valid JSON array in-place.
+# SEV is escaped alongside MSG so any future computed-severity caller can't
+# break the JSON envelope.
 _out_append_action_item() {
     local msg="$1" sev="$2"
-    local esc frag cur
-    esc=$(_out_json_escape "$msg")
-    frag="{\"msg\":\"${esc}\",\"severity\":\"${sev}\"}"
+    local esc_msg esc_sev frag cur
+    esc_msg=$(_out_json_escape "$msg")
+    esc_sev=$(_out_json_escape "$sev")
+    frag="{\"msg\":\"${esc_msg}\",\"severity\":\"${esc_sev}\"}"
     cur="${_OUT_CTX[action_items]:-}"
     if [[ -z "$cur" || "$cur" == "[]" ]]; then
         _OUT_CTX[action_items]="[${frag}]"
@@ -234,6 +234,9 @@ _out_append_action_item() {
 }
 
 # _out_json_escape STR — minimal JSON string escape (backslash, quote, controls).
+# Handles \n/\r/\t explicitly; strips remaining control chars U+0000..U+001F
+# (backspace, formfeed, NUL, etc.) because bare control bytes are invalid
+# inside a JSON string literal per RFC 8259 §7.
 _out_json_escape() {
     local s="$*"
     s="${s//\\/\\\\}"
@@ -241,5 +244,7 @@ _out_json_escape() {
     s="${s//$'\n'/\\n}"
     s="${s//$'\r'/\\r}"
     s="${s//$'\t'/\\t}"
+    # Strip any remaining U+0000..U+001F bytes (tr handles NUL cleanly via -d).
+    s=$(printf '%s' "$s" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')
     printf '%s' "$s"
 }

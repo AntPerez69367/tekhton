@@ -90,6 +90,26 @@ print('' if v is None else v)
     fi
 }
 
+# assert_json_array_contains ELEMENT FIELD JSON LABEL
+# Checks that the JSON array under FIELD contains ELEMENT (exact string match).
+# Used for fields like stage_order where the order/length is data-driven but
+# specific entries must be present.
+assert_json_array_contains() {
+    local expected="$1" field="$2" json="$3" label="$4"
+    local found
+    found=$(python3 -c "
+import json, sys
+d=json.loads(sys.stdin.read())
+v=d.get('${field}') or []
+print('1' if '${expected}' in v else '0')
+" <<< "$json" 2>/dev/null)
+    if [[ "$found" == "1" ]]; then
+        pass "$label (${field} contains '${expected}')"
+    else
+        fail "$label" "${field} missing expected entry '${expected}'"
+    fi
+}
+
 # =============================================================================
 echo "=== TC-TUI-01: default run_mode is 'task' ==="
 _reset_tui_globals
@@ -123,11 +143,8 @@ out_set_context stage_order "intake scout coder security review tester"
 # _TUI_STAGE_ORDER is empty from _reset_tui_globals — fallback should fire.
 json=$(_tui_json_build_status 0)
 # stage_order is a JSON array; assert first + last elements are present.
-if [[ "$json" == *'"intake"'* ]] && [[ "$json" == *'"tester"'* ]]; then
-    pass "stage_order fallback includes intake and tester"
-else
-    fail "stage_order fallback" "stage_order array missing expected entries in JSON"
-fi
+assert_json_array_contains "intake" "stage_order" "$json" "stage_order fallback includes intake"
+assert_json_array_contains "tester" "stage_order" "$json" "stage_order fallback includes tester"
 
 # =============================================================================
 echo "=== TC-TUI-04: action_items populated from _OUT_CTX (M102) ==="

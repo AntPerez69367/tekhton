@@ -110,17 +110,18 @@ fi
 # =============================================================================
 echo "=== Part 2: _hook_tui_complete() behaviour ==="
 #
-# _hook_tui_complete is defined in lib/finalize.sh. We extract it here using
-# awk so we test the real function body from the source file, not a hand-copy.
+# _hook_tui_complete is defined in lib/finalize_dashboard_hooks.sh. We extract
+# it here via awk so we test the real function body from the source file, not
+# a hand-copy.
 # =============================================================================
 
-# Extract _hook_tui_complete from finalize.sh via awk state-machine.
+# Extract _hook_tui_complete via awk state-machine.
 # Matches the function header, accumulates until the closing "}" at column 0.
 _HOOK_TUI_FN=$(awk '
     /^_hook_tui_complete\(\)/ { p=1 }
     p { print }
     p && /^\}[[:space:]]*$/ { exit }
-' "${TEKHTON_HOME}/lib/finalize.sh")
+' "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh")
 
 if [[ -z "$_HOOK_TUI_FN" ]]; then
     fail "_hook_tui_complete extraction" "awk returned empty — check finalize.sh format"

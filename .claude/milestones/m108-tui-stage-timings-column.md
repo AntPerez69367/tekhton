@@ -163,90 +163,68 @@ from tui_render import (  # noqa: F401 — re-exports for tests
 )
 ```
 
-### §4 — `hold_on_complete` Event Log: Remove Duplication
+### §4 — `hold_on_complete` Event Log: Out of Scope
 
 The `_hold_on_complete` function in `tools/tui_hold.py` already prints a full
-event log to the terminal after the TUI exits. With the timings column always
-visible during the run, users no longer need timing data re-printed in the hold
-screen.
-
-Update `_hold_on_complete` to also print the stage timings summary (from
-`stages_complete`) in place of the raw event dump for timing rows. The event log
-section remains for non-timing events (warnings, errors, significant milestones);
-only the stage-timing repetition is reduced.
-
-This is a small UX improvement; if it introduces complexity, defer it and
-leave `_hold_on_complete` unchanged.
+event log to the terminal after the TUI exits. A future milestone may refine
+this to surface `stages_complete` timing rows and reduce duplication with the
+new timings column. **No changes to `tui_hold.py` in this milestone.**
 
 ### §5 — Test Coverage in `tools/tests/test_tui.py`
 
 Add tests covering:
 
 ```python
-def _empty_status():
-    """Minimal status dict for test isolation."""
-    return {
-        "stage_label": "",
-        "current_agent_status": "idle",
-        "stage_start_ts": 0,
-        "agent_elapsed_secs": 0,
-        "agent_turns_used": 0,
-        "agent_turns_max": 0,
-        "stages_complete": [],
-        "stage_order": [],
-        "stage_total": 0,
-        "agent_model": "",
-        "current_operation": "",
-    }
-
-# NOTE: if _empty_status() already exists in the test file from prior milestones,
-# extend it with any missing keys rather than redefining it.
+# Use tui._empty_status() from tools/tui.py (re-exported for tests).
+# If _empty_status() is missing "current_operation", add it there as part
+# of this milestone rather than redefining a local copy.
 
 
 def test_timings_panel_empty():
     """Empty stages_complete + idle → shows '(no stages yet)'"""
-    status = {**_empty_status()}
-    panel = _build_timings_panel(status)
+    status = {**tui._empty_status(), "current_operation": ""}
+    panel = tui._build_timings_panel(status)
     assert "(no stages yet)" in str(panel.renderable)
 
 def test_timings_panel_completed_stages():
     """Completed stages render with ✓ icon, elapsed, and turns"""
-    status = {**_empty_status(), "stages_complete": [
+    status = {**tui._empty_status(), "current_operation": "", "stages_complete": [
         {"label": "intake", "model": "", "turns": "3/10", "time": "8s", "verdict": None},
         {"label": "scout",  "model": "", "turns": "5/10", "time": "12s", "verdict": None},
     ]}
-    panel = _build_timings_panel(status)
+    panel = tui._build_timings_panel(status)
     rendered = str(panel.renderable)
     assert "intake" in rendered
     assert "scout" in rendered
 
 def test_timings_panel_live_running_row():
     """Running stage appears as a live yellow row below completed stages"""
-    status = {**_empty_status(),
+    status = {**tui._empty_status(),
+              "current_operation": "",
               "stages_complete": [{"label": "intake", "model": "",
                                    "turns": "3/10", "time": "8s", "verdict": None}],
               "stage_label": "coder",
               "current_agent_status": "running",
               "stage_start_ts": int(time.time()) - 30,
               "agent_turns_max": 70}
-    panel = _build_timings_panel(status)
+    panel = tui._build_timings_panel(status)
     rendered = str(panel.renderable)
     assert "coder" in rendered
     assert "--/70" in rendered  # turns unknown until agent exits; live row always shows --/max
 
 def test_timings_panel_fail_verdict():
     """Failed stage renders with ✗ icon in red"""
-    status = {**_empty_status(), "stages_complete": [
+    status = {**tui._empty_status(), "current_operation": "", "stages_complete": [
         {"label": "security", "model": "", "turns": "8/15", "time": "45s",
          "verdict": "BLOCKED"},
     ]}
-    panel = _build_timings_panel(status)
+    panel = tui._build_timings_panel(status)
     rendered = str(panel.renderable)
     assert "security" in rendered
 
 def test_layout_has_timings_column():
     """Layout includes both 'events' and 'timings' regions"""
-    layout = _build_layout(_empty_status(), event_lines=20)
+    layout = tui._build_layout(tui._empty_status(), event_lines=20)
     names = [child.name for child in layout["body"].children]
     assert "events" in names
     assert "timings" in names
@@ -269,8 +247,7 @@ header panel.
 | File | Change |
 |------|--------|
 | `tools/tui_render.py` | Add `_build_timings_panel(status)` |
-| `tools/tui.py` | Restructure `_build_layout` to split body into events+timings; add `_build_timings_panel` to re-export block |
-| `tools/tui_hold.py` | (optional) Surface `stages_complete` summary in hold screen |
+| `tools/tui.py` | Restructure `_build_layout` to split body into events+timings; add `_build_timings_panel` to re-export block; add `current_operation` key to `_empty_status()` |
 | `tools/tests/test_tui.py` | Add five new tests covering the timings panel and layout split |
 
 ## Acceptance Criteria

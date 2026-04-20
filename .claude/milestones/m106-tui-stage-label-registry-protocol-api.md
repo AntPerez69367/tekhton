@@ -257,9 +257,12 @@ if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]] \
     ) &
     _spinner_pid=$!
 
-elif [[ -z "${TEKHTON_TEST_MODE:-}" ]] && declare -f tui_update_agent &>/dev/null; then
+elif [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ "${_TUI_ACTIVE:-false}" == "true" ]] \
+     && declare -f tui_update_agent &>/dev/null; then
     # TUI active: lightweight updater pushes turn count to the sidecar.
     # No terminal writes of any kind in this path.
+    # Guard on _TUI_ACTIVE to avoid spawning a useless subshell when TUI
+    # functions are loaded but TUI was not activated (e.g., non-TTY).
     (
         trap 'exit 0' INT TERM
         start_ts=$(date +%s)

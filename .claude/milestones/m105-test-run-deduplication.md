@@ -1,7 +1,7 @@
 # M105 — Test Run Deduplication: Skip Redundant TEST_CMD Executions
 <!-- milestone-meta
 id: "105"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
