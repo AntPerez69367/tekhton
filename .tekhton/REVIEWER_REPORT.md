@@ -1,4 +1,4 @@
-# Reviewer Report — M104 TUI Operation Liveness (Cycle 2)
+# Reviewer Report — M105 Test Run Deduplication
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,18 +10,15 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/init_helpers_display.sh` is present in the git diff but absent from the CODER_SUMMARY "Files Modified" list (carried from cycle 1 — documentation gap only; code is correct).
-- `tests/test_output_lint.sh` and `tests/test_tui_no_dead_weight.sh` appear modified in git status but are not listed in CODER_SUMMARY. Both look correct; gap is documentation only.
-- Milestone doc `m104-tui-operation-liveness.md` §2 still refers to `run_op` living in `lib/tui.sh`; implementation correctly placed it in `lib/tui_ops.sh`. The milestone doc itself is now slightly stale (low-priority housekeeping).
+- `_test_dedup_fingerprint` uses `date +%s%N` in the non-git fallback path; `%N` (nanoseconds) is Linux-only — on macOS it prints literally `%N`, so two calls within the same second would produce identical fingerprints and dedup could fire in a non-git repo. Low risk (Linux-only project, degradation path only), but worth documenting.
+- `md5sum` is a Linux utility (macOS uses `md5`). Same Linux-only caveat, same low risk.
+- Coder summary says "six participating TEST_CMD call sites" but the bullet list names five and the code confirms five wrapped sites (milestone_acceptance, gates_completion, orchestrate pre-finalization, orchestrate_preflight, hooks_final_checks). Minor count discrepancy in the summary prose.
 
 ## Coverage Gaps
-- No automated test verifies the `current_operation` JSON field presence or the `working` → `idle` status transition lifecycle of `run_op`. Acceptance criteria include these as behavioural assertions but nothing in the test harness automates them.
+- In the `run_final_checks` fix attempt loop (`hooks_final_checks.sh` ~line 150), `test_dedup_record_pass` is not called after a successful fix re-run. The test suite cache remains unprimed. Functionally harmless (fix agent changes files → fingerprint changes → next check re-runs regardless), but a subsequent check after a successful fix must re-run rather than benefiting from dedup.
 
 ## Drift Observations
-- `lib/tui_ops.sh` accesses globals declared in `lib/tui.sh` (`_TUI_ACTIVE`, `_TUI_RECENT_EVENTS`, `_TUI_STAGES_COMPLETE`, `_TUI_CURRENT_STAGE_*`, `_TUI_AGENT_*`, `_tui_write_status`) with no `# shellcheck source=tui.sh` directive. Consistent with the pre-existing gap in `tui_helpers.sh` — not new drift.
+- `lib/orchestrate.sh` is 463 lines — 54% over the 300-line ceiling. Pre-existing and noted by coder; extraction is its own pass.
 
-## Prior Blocker Verification
-
-| Blocker | Status |
-|---------|--------|
-| `lib/tui_ops.sh` missing `set -euo pipefail` | **FIXED** — line 10 of `lib/tui_ops.sh` now reads `set -euo pipefail` |
+## ACP Verdicts
+No Architecture Change Proposals in CODER_SUMMARY.md.

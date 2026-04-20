@@ -86,6 +86,7 @@ tekhton/
 │   ├── test_audit_verdict.sh # Audit verdict parsing + routing
 │   ├── test_audit_symbols.sh # Symbol-level stale reference detection (M88)
 │   ├── test_baseline.sh    # Test baseline capture + pre-existing failure detection
+│   ├── test_dedup.sh       # Test run deduplication via working-tree fingerprint (M105)
 │   ├── mcp.sh              # MCP server lifecycle management (Serena)
 │   ├── health.sh           # Project health scoring orchestration
 │   ├── health_checks.sh    # Health check implementations
@@ -423,6 +424,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `TEST_BASELINE_PASS_ON_PREEXISTING` | Auto-pass acceptance when all failures are pre-existing (default: false — M92 flipped from true) |
 | `TEST_BASELINE_STUCK_THRESHOLD` | Consecutive identical acceptance failures before stuck detection (default: 2) |
 | `TEST_BASELINE_PASS_ON_STUCK` | Auto-pass on stuck detection vs exit with diagnosis (default: false) |
+| `TEST_DEDUP_ENABLED` | Skip redundant TEST_CMD runs via working-tree fingerprint (default: true) |
 | `PRE_RUN_CLEAN_ENABLED` | Spawn pre-coder fix agent when tests fail before coder runs (default: true) |
 | `PRE_RUN_FIX_MAX_TURNS` | Turn budget for pre-coder fix agent (default: 20) |
 | `PRE_RUN_FIX_MAX_ATTEMPTS` | Max pre-coder fix attempts before proceeding (default: 1) |

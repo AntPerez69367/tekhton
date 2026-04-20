@@ -386,6 +386,13 @@ set -euo pipefail
 : "${TEST_BASELINE_STUCK_THRESHOLD:=2}"
 : "${TEST_BASELINE_PASS_ON_STUCK:=false}"
 
+# --- Test run deduplication (M105) ---
+# Skip redundant TEST_CMD executions when the working tree is byte-identical
+# to the state captured at the last successful test pass. Provably safe — only
+# skips when git status --porcelain + TEST_CMD hash match. Set to "false" for
+# non-deterministic test suites that must always re-run.
+: "${TEST_DEDUP_ENABLED:=true}"
+
 # --- Pre-coder clean sweep (M92): restore a clean test baseline before coder ---
 : "${PRE_RUN_CLEAN_ENABLED:=true}"
 : "${PRE_RUN_FIX_MAX_TURNS:=20}"

@@ -74,7 +74,20 @@ run_completion_gate() {
            && [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]]; then
             log "Completion gate: running TEST_CMD for test integrity check..."
             local _cg_output="" _cg_exit=0
-            _cg_output=$(run_op "Running completion tests" bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+            if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+                log "[dedup] Tests passed with no file changes since last run — skipping"
+                if command -v emit_event &>/dev/null; then
+                    emit_event "test_dedup_skip" "${_CURRENT_STAGE:-completion_gate}" \
+                        "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+                fi
+                _cg_output="[dedup] Cached pass — no files changed since last successful test run"
+                _cg_exit=0
+            else
+                _cg_output=$(run_op "Running completion tests" bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+                if [[ "$_cg_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                    test_dedup_record_pass
+                fi
+            fi
 
             if [[ "$_cg_exit" -eq 0 ]]; then
                 log "Completion gate: TEST_CMD passed."

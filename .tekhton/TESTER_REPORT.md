@@ -1,13 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_run_op_lifecycle.sh` — `run_op` passthrough, `working`→`idle` lifecycle, `current_operation` JSON field
+- [x] `tests/test_dedup_callsites.sh` — M105 call-site wiring: API surface, config default, sourcing, all five dedup-wrapped sites, reset, and fix-loop gap documentation
 
 ## Test Run Results
-Passed: 18  Failed: 0
-
-Full suite (bash tests/run_tests.sh): Shell 403 passed / 0 failed, Python 141 passed / 0 failed
+Passed: 22  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_run_op_lifecycle.sh`
+- [x] `tests/test_dedup_callsites.sh`

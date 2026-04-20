@@ -90,10 +90,23 @@ run_final_checks() {
     log "Running ${TEST_CMD}..."
     local test_output=""
     local test_exit=0
-    set +e
-    test_output=$(run_op "Running final test check" bash -c "${TEST_CMD}" 2>&1)
-    test_exit=$?
-    set -e
+    if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+        log "[dedup] Tests passed with no file changes since last run — skipping"
+        if command -v emit_event &>/dev/null; then
+            emit_event "test_dedup_skip" "${_CURRENT_STAGE:-final_checks}" \
+                "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+        fi
+        test_output="[dedup] Cached pass — no files changed since last successful test run"
+        test_exit=0
+    else
+        set +e
+        test_output=$(run_op "Running final test check" bash -c "${TEST_CMD}" 2>&1)
+        test_exit=$?
+        set -e
+        if [[ "$test_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+            test_dedup_record_pass
+        fi
+    fi
     printf '%s\n' "$test_output" | tee -a "$log_file"
 
     if [ $test_exit -eq 0 ]; then

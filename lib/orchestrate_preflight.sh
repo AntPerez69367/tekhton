@@ -75,7 +75,20 @@ _try_preflight_fix() {
         log "Pre-finalization fix: shell verifying with ${TEST_CMD}..."
         local _pf_verify_exit=0
         local _pf_verify_output=""
-        _pf_verify_output=$(run_op "Running pre-run test check" bash -c "${TEST_CMD}" 2>&1) || _pf_verify_exit=$?
+        if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+            log "[dedup] Tests passed with no file changes since last run — skipping"
+            if command -v emit_event &>/dev/null; then
+                emit_event "test_dedup_skip" "${_CURRENT_STAGE:-preflight_fix}" \
+                    "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+            fi
+            _pf_verify_output="[dedup] Cached pass — no files changed since last successful test run"
+            _pf_verify_exit=0
+        else
+            _pf_verify_output=$(run_op "Running pre-run test check" bash -c "${TEST_CMD}" 2>&1) || _pf_verify_exit=$?
+            if [[ "$_pf_verify_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                test_dedup_record_pass
+            fi
+        fi
         printf '%s\n' "$_pf_verify_output" >> "$LOG_FILE"
 
         if [[ "$_pf_verify_exit" -eq 0 ]]; then

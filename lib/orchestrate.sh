@@ -121,6 +121,12 @@ run_complete_loop() {
         capture_test_baseline "${_CURRENT_MILESTONE:-}" || true
     fi
 
+    # Reset test dedup fingerprint so stale state from a previous run doesn't
+    # carry over into this loop.
+    if declare -f test_dedup_reset &>/dev/null; then
+        test_dedup_reset
+    fi
+
     # Emit milestone metadata on start (if milestone mode)
     if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
         emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
@@ -284,7 +290,20 @@ run_complete_loop() {
                     log "Pre-finalization test gate: running ${TEST_CMD}..."
                     local _preflight_exit=0
                     local _preflight_output=""
-                    _preflight_output=$(run_op "Verifying tests before finalizing" bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
+                    if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+                        log "[dedup] Tests passed with no file changes since last run — skipping"
+                        if command -v emit_event &>/dev/null; then
+                            emit_event "test_dedup_skip" "${_CURRENT_STAGE:-pre_finalization}" \
+                                "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+                        fi
+                        _preflight_output="[dedup] Cached pass — no files changed since last successful test run"
+                        _preflight_exit=0
+                    else
+                        _preflight_output=$(run_op "Verifying tests before finalizing" bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
+                        if [[ "$_preflight_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                            test_dedup_record_pass
+                        fi
+                    fi
                     # Always append full output to the run log
                     printf '%s\n' "$_preflight_output" >> "$LOG_FILE"
                     if [[ "$_preflight_exit" -ne 0 ]]; then

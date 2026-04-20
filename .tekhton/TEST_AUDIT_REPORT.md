@@ -1,83 +1,41 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 18 test functions
-Verdict: CONCERNS
+Tests audited: 4 files (1 primary modified, 3 freshness samples), 22 test functions (primary file)
+Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: Background-cleanup assertion is always vacuous
-- File: tests/test_run_op_lifecycle.sh:298
-- Issue: `job_count=$(jobs -r | wc -l | tr -d ' ')` evaluates `jobs -r` inside a
-  `$(...)` command substitution — a subshell that does not inherit the parent shell's
-  job table. Additionally, non-interactive bash scripts do not enable job control, so
-  `jobs -r` reports nothing regardless of live background processes. The assertion
-  `[[ "$job_count" -eq 0 ]]` therefore always passes whether or not the heartbeat
-  subprocess spawned by `run_op` was actually reaped. This is structurally equivalent
-  to `assertTrue(True)` — the test comment says "heartbeat must be cleaned up" but the
-  check cannot detect a leaked heartbeat under any condition.
-- Severity: HIGH
-- Action: Replace with a PID-based liveness check. Suggested approach: run
-  `run_op "label" sleep 5` in a background subshell, read the status file to find
-  the heartbeat via a short poll, then kill the subshell and assert the PID is gone
-  via `kill -0 "$pid" 2>/dev/null && echo alive || echo dead`. A simpler alternative
-  is to expose `_TUI_LAST_HB_PID` from `run_op` (set before the final `kill`) so the
-  test can call `kill -0 "$_TUI_LAST_HB_PID" 2>/dev/null` after `run_op` returns and
-  assert it fails (process is gone).
+#### COVERAGE: Suite 4 grep checks verify presence but not control-flow ordering
+- File: tests/test_dedup_callsites.sh:92-106
+- Issue: `_check_callsite` confirms that `test_dedup_can_skip` and `test_dedup_record_pass` appear anywhere in each call-site file but does not verify that the can_skip guard precedes the `run_op`/`bash -c "${TEST_CMD}"` call or that record_pass is invoked only on a successful exit. Suite 6 correctly checks line-ordering for the hooks_final_checks.sh fix-loop gap, but no equivalent ordering check exists for the other four call sites. A refactor that relocated both calls to the wrong position would not trigger a Suite 4 failure.
+- Severity: LOW
+- Action: Add per-file ordering assertions (similar to Suite 6.2) verifying that the line number of `test_dedup_can_skip` is less than the associated `bash -c "${TEST_CMD}"` line, and that `test_dedup_record_pass` appears after. Low urgency — behavioral coverage in tests/test_dedup.sh compensates.
 
-#### COVERAGE: No test for JSON-unsafe characters in the operation label
-- File: tests/test_run_op_lifecycle.sh (suite-wide gap)
-- Issue: All 18 tests use plain ASCII labels ("Running test baseline", "My Operation",
-  "label"). The `_tui_json_build_status` function emits `current_operation` via
-  `_tui_escape "$op_label"` → `_out_json_escape`. If a caller passes a label
-  containing a double-quote, backslash, or newline (e.g., a path containing special
-  chars), the emitted JSON could be malformed and crash the TUI renderer or silently
-  corrupt state. No test exercises this boundary.
-- Severity: MEDIUM
-- Action: Add one test: set `_TUI_OPERATION_LABEL='label with "quotes" and \\slash'`,
-  set `_TUI_AGENT_STATUS="working"`, call `_tui_json_build_status 0`, pipe to
-  `python3 -c "import json,sys; json.load(sys.stdin)"`, and assert it exits 0
-  (valid JSON). This exercises `tui_helpers.sh:192` via the escape path.
+#### COVERAGE: declare -f guard path untested
+- File: tests/test_dedup_callsites.sh:32-54 (Suite 1), 92-106 (Suite 4)
+- Issue: All five call sites guard each dedup invocation with `declare -f test_dedup_can_skip &>/dev/null` before calling it. This guard silently suppresses dedup if the module was never sourced. Suite 1 confirms both functions are defined in lib/test_dedup.sh, and Suite 3 confirms tekhton.sh sources the module, but no test exercises the fallback behavior when the `declare -f` guard fails (e.g., if the source line is removed). The pipeline would silently lose dedup without emitting a warning.
+- Severity: LOW
+- Action: Optional — add a test that temporarily unsets the dedup functions and calls a stub of the acceptance-check guard to confirm the pipeline falls through to a real TEST_CMD run. Out of scope for M105 wiring tests.
 
-### None (all other rubric dimensions)
+#### EXERCISE: Suite 7 CWD not restored after cd
+- File: tests/test_dedup_callsites.sh:187
+- Issue: `cd "$TEST_TMP"` in Suite 7 changes the working directory for the rest of the process. Suites 1–6 are unaffected (all paths are fully qualified via `$TEKHTON_HOME`), but any tests appended after Suite 7 would silently inherit the temp CWD. The temp directory is removed on EXIT so no external state is affected.
+- Severity: LOW
+- Action: Wrap the git-repo section in a subshell or use `pushd`/`popd` around `cd "$TEST_TMP"` to restore CWD. No action required for this milestone.
 
-No INTEGRITY, ISOLATION, WEAKENING, SCOPE, or NAMING violations found.
+#### SCOPE: Freshness sample files — no issues detected
+- File: tests/test_dag_get_id_at_index.sh, tests/test_dashboard_data.sh, tests/test_dashboard_parsers_delegation.sh
+- Issue: None. All three files use isolated temp directories with cleanup traps and reference only pre-existing library modules not modified by M105. None reference the deleted `.tekhton/INTAKE_REPORT.md` or `.tekhton/JR_CODER_SUMMARY.md`. No orphaned imports or stale references found.
+- Severity: N/A
+- Action: None.
 
----
+### Notes
 
-### Detailed per-file assessment
+**Assertion honesty**: All 22 assertions test real implementation behavior. No hard-coded values, tautologies, or mock-only tests. Suite 7 exercises live function calls against a real in-process git repo with stable fingerprints (the `.tekhton/placeholder` pre-population correctly prevents fingerprint drift when the fingerprint file itself is written). Tester claim of 22 passed / 0 failed is consistent with the test count (4+2+1+10+1+2+2 = 22).
 
-#### tests/test_run_op_lifecycle.sh (new — 18 test cases)
+**Isolation**: Suites 1–5 read implementation source files via `$TEKHTON_HOME`-prefixed paths — appropriate for structural self-tests of a framework. Suite 6 reads `hooks_final_checks.sh` directly, which is source code, not a mutable pipeline artifact. Suite 7 creates a sandboxed git repo in a `mktemp -d` directory with a `trap ... EXIT` cleanup guard. No test reads `.tekhton/`, `.claude/logs/`, or any other mutable run-artifact path.
 
-**Assertion Honesty**: PASS for 17 of 18 tests. All assertions call real implementation
-functions (`run_op`, `_tui_json_build_status`, `_tui_write_status` via `run_op`) and
-compare against values derived from those calls. Expected strings ("hello world",
-"count", "Running test baseline", "idle", "") all match what the implementation
-actually sets/emits; no magic constants. Exception: Test 16 (see EXERCISE finding above).
+**Scope alignment**: All referenced files exist and were modified or created in M105. The deleted files (`.tekhton/INTAKE_REPORT.md`, `.tekhton/JR_CODER_SUMMARY.md`) are not referenced by any audited test.
 
-**Edge Case Coverage**: ADEQUATE. Covers the failure exit-code preservation path
-(tests 4 and 13–14), the empty-label / idle state boundary (test 8), the no-TUI
-passthrough path (tests 1–5 and 18), and post-failure cleanup (tests 13–15). The
-JSON-unsafe label boundary is the only material gap.
-
-**Implementation Exercise**: PASS. Tests source the real `lib/tui.sh` (which sources
-`lib/tui_ops.sh` containing the full `run_op` implementation). Test 18 sources
-`lib/common.sh` alone in a subshell to exercise the stub. No dependency is mocked
-that is itself the code under test.
-
-**Test Weakening**: N/A — `test_run_op_lifecycle.sh` is a new file (untracked in git).
-No existing tests were modified by the tester.
-
-**Naming**: PASS. All 18 test descriptions encode the scenario and expected outcome
-(e.g., "run_op: current_agent_status=idle in status file after failure",
-"passthrough: label is consumed by run_op, not forwarded to command").
-
-**Scope Alignment**: PASS. All referenced symbols (`run_op`, `_tui_json_build_status`,
-`_tui_write_status`, `_TUI_OPERATION_LABEL`, `_TUI_AGENT_STATUS`) exist in the
-modified implementation files (`lib/tui_ops.sh`, `lib/tui_helpers.sh`, `lib/tui.sh`,
-`lib/common.sh`). `lib/output.sh` (sourced at line 39) exists.
-
-**Isolation**: PASS. `TMPDIR_TEST=$(mktemp -d)` with `trap 'rm -rf "$TMPDIR_TEST"' EXIT`
-covers all status file I/O. `_setup_tui_active()` reinitialises all `_TUI_*` globals
-and deletes any prior status file before each active-TUI test case. No mutable pipeline
-artifacts (`.tekhton/`, `.claude/logs/`) are read.
+**Tester report accuracy**: The tester's claim of one new test file with 22 passing tests is verified correct. Division of coverage between `tests/test_dedup.sh` (coder-written unit tests for core fingerprint logic) and `tests/test_dedup_callsites.sh` (tester-written structural wiring tests) is appropriate and non-overlapping.

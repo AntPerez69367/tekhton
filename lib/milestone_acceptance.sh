@@ -74,7 +74,20 @@ check_milestone_acceptance() {
         log "Running test command: ${TEST_CMD}"
         local test_output=""
         local test_exit=0
-        test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+        if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+            log "[dedup] Tests passed with no file changes since last run — skipping"
+            if command -v emit_event &>/dev/null; then
+                emit_event "test_dedup_skip" "${_CURRENT_STAGE:-milestone_acceptance}" \
+                    "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+            fi
+            test_output="[dedup] Cached pass — no files changed since last successful test run"
+            test_exit=0
+        else
+            test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+            if [[ "$test_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                test_dedup_record_pass
+            fi
+        fi
 
         if [[ "$test_exit" -eq 0 ]]; then
             success "Tests pass"
