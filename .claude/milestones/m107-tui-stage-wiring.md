@@ -1,7 +1,7 @@
 # M107 — TUI Stage Wiring: All Stages Instrumented
 <!-- milestone-meta
 id: "107"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

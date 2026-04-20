@@ -227,6 +227,10 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
 
         SCOUT_PROMPT=$(render_prompt "scout")
 
+        # M107: notify TUI sidecar that scout is active (no-op when inactive).
+        if declare -f tui_stage_begin &>/dev/null; then
+            tui_stage_begin "scout" "${CLAUDE_SCOUT_MODEL:-}"
+        fi
         run_agent \
             "Scout" \
             "$CLAUDE_SCOUT_MODEL" \
@@ -234,6 +238,11 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "$SCOUT_PROMPT" \
             "$LOG_FILE" \
             "$_scout_tools"
+        if declare -f tui_stage_end &>/dev/null; then
+            tui_stage_end "scout" "${CLAUDE_SCOUT_MODEL:-}" \
+                "${LAST_AGENT_TURNS:-0}/${SCOUT_MAX_TURNS:-10}" \
+                "${LAST_AGENT_ELAPSED:-0}s" ""
+        fi
 
         if [ -f "${SCOUT_REPORT_FILE}" ]; then
             # M96 (IA1): scout one-liner status below is sufficient — skip

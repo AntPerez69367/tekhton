@@ -260,6 +260,11 @@ REVIEW_EOF
                     REWORK_PROMPT=$(render_prompt "coder_rework")
 
                     _phase_start "rework_agent"
+                    # M107: notify TUI sidecar that rework is active. The pill
+                    # is appended on first call and reused on subsequent cycles.
+                    if declare -f tui_stage_begin &>/dev/null; then
+                        tui_stage_begin "rework" "${CLAUDE_CODER_MODEL:-}"
+                    fi
                     run_agent \
                         "Coder (rework cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_CODER_MODEL" \
@@ -267,6 +272,11 @@ REVIEW_EOF
                         "$REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_CODER"
+                    if declare -f tui_stage_end &>/dev/null; then
+                        tui_stage_end "rework" "${CLAUDE_CODER_MODEL:-}" \
+                            "${LAST_AGENT_TURNS:-0}/${CODER_MAX_TURNS:-70}" \
+                            "${LAST_AGENT_ELAPSED:-0}s" ""
+                    fi
                     _phase_end "rework_agent"
                     # M96 (IA1): suppress print_run_summary after sub-agent
                     # completions; the next Reviewer pass will print the
@@ -298,6 +308,10 @@ REVIEW_EOF
                     export JR_AFTER_SENIOR=""
                     JR_REWORK_PROMPT=$(render_prompt "jr_coder")
 
+                    # M107: notify TUI sidecar that rework is active.
+                    if declare -f tui_stage_begin &>/dev/null; then
+                        tui_stage_begin "rework" "${CLAUDE_JR_CODER_MODEL:-}"
+                    fi
                     run_agent \
                         "Jr Coder (cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_JR_CODER_MODEL" \
@@ -305,6 +319,11 @@ REVIEW_EOF
                         "$JR_REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_JR_CODER"
+                    if declare -f tui_stage_end &>/dev/null; then
+                        tui_stage_end "rework" "${CLAUDE_JR_CODER_MODEL:-}" \
+                            "${LAST_AGENT_TURNS:-0}/${JR_CODER_MAX_TURNS:-30}" \
+                            "${LAST_AGENT_ELAPSED:-0}s" ""
+                    fi
                     # M96 (IA1): suppress print_run_summary after sub-agent
                     # completions (jr coder); next Reviewer pass covers it.
                     success "Jr coder cleanup finished."

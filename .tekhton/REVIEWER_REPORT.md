@@ -1,3 +1,5 @@
+# Reviewer Report — M107 TUI Stage Wiring
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,15 +10,14 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/agent_spinner.sh` and `tools/tui_render_logo.py` are new files not listed in CLAUDE.md's repository layout section or in the architecture description of `lib/agent.sh`. Both should be added so the layout stays accurate.
-- `get_stage_display_label`'s `*` fallback uses underscore-to-hyphen replacement (`${1//_/-}`) while `get_display_stage_order`'s `*` case passes internal names unmodified. A future stage added only to the pipeline order will produce different labels from each function until explicitly mapped in both.
+- `tekhton.sh` pipeline loop `tui_stage_end` reads `_STAGE_TURNS[$_stage_name]` / `_STAGE_DURATION[$_stage_name]` / `_STAGE_BUDGET[$_stage_name]` using the internal pipeline stage name (`review`, `test_verify`, `test_write`) as the key, but the dashboard arrays for those stages are populated under different keys (`reviewer`, `tester`, `tester_write`). Result: the turn-count and duration fields in the completed pill entry show "0/0 0s" for these three stages. The label and activation/completion transitions are correct; only the metadata fields are wrong. This is a pre-existing keying inconsistency that the spec acknowledges by using `:-0` defaults — not introduced by M107, but now visible via the TUI. Log for future cleanup.
+- `tui_stage_begin` is called before the `should_run_stage` check in the pipeline loop (line 2341 is before the `case` block, line 2502 `tui_stage_end` is after). When a user resumes with `--start-at review`, the coder, docs, and security pills will flash active→complete instantly with 0/0 turns, appearing as skipped rather than grayed-out. Cosmetically confusing for resume runs but harmless functionally. Scope gap; not required by M107 acceptance criteria.
 
 ## Coverage Gaps
-- No bash tests for `get_stage_display_label` in `tests/test_tui_active_path.sh` or any other test file (AC-1 through AC-4 are untested).
-- No tests for spinner PID routing behavior (AC-13, AC-14, AC-15): none of the bash tests verify that `_spinner_pid` is empty in TUI mode or that `_tui_updater_pid` is non-empty in TUI mode.
+- None
 
 ## ACP Verdicts
-No ACPs in this rework pass.
+None present in CODER_SUMMARY.md.
 
 ## Drift Observations
-- `tools/tests/test_tui.py` is now ~768 lines, well over the 300-line soft ceiling. Not a blocker (test files grow naturally), but worth tracking for eventual split.
+- `stages/review.sh` Jr-after-Sr path (lines 294–303): when `HAS_SIMPLE > 0` fires after Sr rework, the Jr Coder `run_agent` call has no `tui_stage_begin`/`tui_stage_end` brackets. The coder summary notes this is intentional ("Jr-after-Sr pill-sharing path is deliberately left unwired per spec"), and the spec §5 confirms it. Noted here as a drift observation for future audit in case the reasoning changes.

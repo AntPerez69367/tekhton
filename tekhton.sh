@@ -2265,12 +2265,22 @@ _run_pipeline_stages() {
         emit_dashboard_run_state 2>/dev/null || true
         local _intake_start_evt
         _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
+        # M107: notify TUI sidecar that the intake pre-stage is active.
+        if declare -f tui_stage_begin &>/dev/null; then
+            tui_stage_begin "intake" "${CLAUDE_STANDARD_MODEL:-}"
+        fi
         run_stage_intake
         _LAST_STAGE_EVT=$(emit_event "stage_end" "intake" "${INTAKE_VERDICT:-pass}" "$_intake_start_evt" "" \
             "{\"confidence\":${INTAKE_CONFIDENCE:-0}}")
         _STAGE_STATUS[intake]="complete"
         _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
         _STAGE_DURATION[intake]="$(( SECONDS - ${_STAGE_START_TS[intake]:-$SECONDS} ))"
+        # M107: mark intake complete in the TUI sidecar.
+        if declare -f tui_stage_end &>/dev/null; then
+            tui_stage_end "intake" "${CLAUDE_STANDARD_MODEL:-}" \
+                "${_STAGE_TURNS[intake]:-0}/${_STAGE_BUDGET[intake]:-0}" \
+                "${_STAGE_DURATION[intake]:-0}s" "${INTAKE_VERDICT:-}"
+        fi
         emit_dashboard_run_state 2>/dev/null || true
         # If START_AT was "intake", advance to "coder" for subsequent stages
         if [ "$START_AT" = "intake" ]; then
@@ -2325,11 +2335,13 @@ _run_pipeline_stages() {
         _stage_idx=$((_stage_idx + 1))
         export PIPELINE_STAGE_POS="$_stage_idx"
 
-        # M97: notify TUI sidecar of stage change (no-op when TUI inactive).
-        if declare -f tui_update_stage &>/dev/null; then
-            local _tui_stage_label
-            _tui_stage_label="${_stage_name//_/ }"
-            tui_update_stage "$_stage_idx" "$PIPELINE_STAGE_COUNT" "$_tui_stage_label" "${CLAUDE_STANDARD_MODEL:-}"
+        # M107: notify TUI sidecar of stage change via the M106 protocol API.
+        # Use get_stage_display_label so pill bookkeeping matches the labels
+        # emitted by get_display_stage_order (no raw internal names).
+        if declare -f tui_stage_begin &>/dev/null; then
+            local _tui_display_label
+            _tui_display_label=$(get_stage_display_label "$_stage_name")
+            tui_stage_begin "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}"
         fi
 
         case "$_stage_name" in
@@ -2486,12 +2498,12 @@ _run_pipeline_stages() {
             ;;
         esac
 
-        # M97: mark stage complete in TUI sidecar (no-op when TUI inactive).
-        if declare -f tui_finish_stage &>/dev/null; then
-            local _tui_finish_label _tui_finish_dur
-            _tui_finish_label="${_stage_name//_/ }"
+        # M107: mark stage complete in TUI sidecar via the M106 protocol API.
+        if declare -f tui_stage_end &>/dev/null; then
+            local _tui_display_label _tui_finish_dur
+            _tui_display_label=$(get_stage_display_label "$_stage_name")
             _tui_finish_dur="${_STAGE_DURATION[$_stage_name]:-0}s"
-            tui_finish_stage "$_tui_finish_label" "${CLAUDE_STANDARD_MODEL:-}" \
+            tui_stage_end "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}" \
                 "${_STAGE_TURNS[$_stage_name]:-0}/${_STAGE_BUDGET[$_stage_name]:-0}" \
                 "$_tui_finish_dur" ""
         fi

@@ -199,6 +199,9 @@ get_display_stage_order() {
         esac
     done
 
+    # wrap-up is always the final pill; it activates during finalize_run().
+    display="${display:+$display }wrap-up"
+
     echo "$display"
 }
 

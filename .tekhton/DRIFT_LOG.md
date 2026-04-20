@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-04-19
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
+- [2026-04-20 | "M107: TUI Stage Wiring: All Stages Instrumented"] `stages/review.sh` Jr-after-Sr path (lines 294–303): when `HAS_SIMPLE > 0` fires after Sr rework, the Jr Coder `run_agent` call has no `tui_stage_begin`/`tui_stage_end` brackets. The coder summary notes this is intentional ("Jr-after-Sr pill-sharing path is deliberately left unwired per spec"), and the spec §5 confirms it. Noted here as a drift observation for future audit in case the reasoning changes.
 - [2026-04-20 | "M106"] `tools/tests/test_tui.py` is now ~768 lines, well over the 300-line soft ceiling. Not a blocker (test files grow naturally), but worth tracking for eventual split.
 - [2026-04-20 | "Address all 11 open non-blocking notes in .tekhton/NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/agent.sh`, `lib/agent_helpers.sh`, `lib/agent_retry.sh`, `lib/drift_cleanup.sh`, `lib/test_dedup.sh`, `lib/finalize_commit.sh`, `lib/finalize_dashboard_hooks.sh` — seven sourced-only lib files lack `set -euo pipefail`, drifting from CLAUDE.md Non-Negotiable Rule #2; all inherit the setting from their parent, so no functional impact, but the gap is growing and warrants a sweep milestone
 - [2026-04-19 | "M105"] `lib/orchestrate.sh` is 463 lines — 54% over the 300-line ceiling. Pre-existing and noted by coder; extraction is its own pass.

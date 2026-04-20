@@ -1,55 +1,45 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 20 test assertions (12 in label registry, 8 in spinner PID routing)
+Tests audited: 2 files — `tests/test_tui_stage_wiring.sh` (new, 21 assertions across 6 test sections) and `tests/test_pipeline_order.sh` (Phase 12 modified, ~65 total assertions)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: TEKHTON_TEST_MODE set path not exercised
-- File: tests/test_m106_spinner_pid_routing.sh:39
-- Issue: Both AC-13 and AC-14 do `unset TEKHTON_TEST_MODE` before calling `_start_agent_spinner`. The implementation has a third reachable branch: when `TEKHTON_TEST_MODE` is non-empty, neither spinner nor TUI updater spawns and output is `:` (both PIDs empty). This branch is reachable in CI environments that pre-set `TEKHTON_TEST_MODE` as a safety guard, and its correctness is not covered.
-- Severity: LOW
-- Action: Add a test case that sets `TEKHTON_TEST_MODE=1` before calling `_start_agent_spinner` and asserts both `_spinner_pid` and `_tui_updater_pid` are empty after `IFS=: read`.
+None.
 
-#### NAMING: AC-14 SKIP branch increments PASS counter
-- File: tests/test_m106_spinner_pid_routing.sh:71-72
-- Issue: When `/dev/tty` is absent, the test prints "SKIP: ..." but increments `PASS=$((PASS + 1))`. This inflates the pass count and makes the TESTER_REPORT's "Passed: 20" ambiguous on systems without `/dev/tty` — a skipped assertion is counted as passed. The SKIP guard itself is correct and necessary; only the accounting is misleading.
-- Severity: LOW
-- Action: Remove `PASS=$((PASS + 1))` from the SKIP branch, leaving the count neutral, or introduce a dedicated `SKIP` counter. Do not change the skip guard logic.
+---
 
-### Positive Observations
+#### Rationale (supporting evidence for PASS verdict)
 
-**Assertion Honesty (PASS)**: All expected values in both test files were verified against
-the implementation before rendering this verdict.
-- `get_stage_display_label` case arms in `pipeline_order.sh:212–230` match every
-  `assert_label` call exactly: `test_verify→tester`, `test_write→tester-write`,
-  `wrap_up|wrap-up→wrap-up`, the `${1//_/-}` fallback (empty input → empty output),
-  and all 7 canonical names (intake, scout, coder, security, review, docs, rework).
-- `_start_agent_spinner`'s `printf '%s:%s\n'` output format (`agent_spinner.sh:85`)
-  and `_stop_agent_spinner`'s conditional kill routing (`agent_spinner.sh:93–101`)
-  match the AC-13/14/15 assertions precisely.
+**Assertion Honesty — PASS**
+All expected values in both files are derived from tracing actual implementation logic:
+- `test_tui_stage_wiring.sh` Tests 1/4: label and verdict values ("intake", "wrap-up", "SUCCESS") are passed through the real `tui_stage_begin`/`tui_stage_end` API and read back from the written JSON status file via Python — no hard-coded constants are asserted without a matching code path.
+- `test_pipeline_order.sh` Phase 12: expected strings ("intake scout coder security review tester wrap-up", etc.) were verified against `get_display_stage_order()` in `lib/pipeline_order.sh` lines 171–206. Each variant (INTAKE disabled, DOCS enabled, SECURITY disabled, SKIP_DOCS, test_first) matches the conditional logic in that function exactly.
 
-**Implementation Exercise (PASS)**: Both test files call real implementation functions.
-`test_m106_spinner_pid_routing.sh` spawns actual background processes to validate
-PID routing — `_start_agent_spinner` and `_stop_agent_spinner` are not mocked.
+**Edge Case Coverage — PASS**
+- Test 2 (`test_tui_stage_wiring.sh:83`): regression guard for a raw internal name passed directly to `tui_stage_begin` — confirms "test_verify" is NOT silently aliased to "tester" inside the API, validating the protocol invariant that callers must go through `get_stage_display_label` before calling `tui_stage_begin`.
+- Test 3 (`test_tui_stage_wiring.sh:102`): two rework cycles → 1 pill in `_TUI_STAGE_ORDER`, 2 entries in `stages_complete` — exercises the dedup logic in `tui_ops.sh:133-137`.
+- Phase 12 exercises 7 configuration variants for `get_display_stage_order`, including security-disabled and SKIP_DOCS override.
+- Test 6 (`test_tui_stage_wiring.sh:211`): covers both `wrap_up` (underscore) and `wrap-up` (hyphen) inputs to `get_stage_display_label`, exercising the combined case arm `wrap_up|wrap-up`.
 
-**Test Weakening (PASS)**: No existing tests were modified by the tester. Both files
-are new additions.
+**Implementation Exercise — PASS**
+Tests call real functions from sourced production files (`lib/tui.sh`, `lib/pipeline_order.sh`, `lib/tui_ops.sh`, `lib/tui_helpers.sh`). Mocking is minimal and targeted: only logging helpers (`log`, `warn`, `error`, etc.) are stubbed to no-ops, which is appropriate since those produce terminal output irrelevant to the state-machine behavior under test. Status file I/O is exercised against a real temp file, not mocked.
 
-**Scope Alignment (PASS)**: `test_m106_label_registry.sh` targets `get_stage_display_label`
-in `pipeline_order.sh` (confirmed modified in M106). `test_m106_spinner_pid_routing.sh`
-targets `_start_agent_spinner`/`_stop_agent_spinner` in `agent_spinner.sh` and the
-`IFS=: read -r` fix in `agent.sh` (both confirmed in CODER_SUMMARY rework pass). No
-orphaned imports or stale references detected.
+**Test Weakening Detection — PASS**
+Phase 12 modifications in `test_pipeline_order.sh` appended "wrap-up" to every expected string. This is a strengthening: tests now assert one additional field (the trailing pill) per configuration. No assertions were removed or broadened.
 
-**Test Isolation (PASS)**: Both files create `TMPDIR_TEST=$(mktemp -d)` with
-`trap 'rm -rf "$TMPDIR_TEST"' EXIT`. Neither reads mutable project files (pipeline
-logs, run artifacts, `.tekhton/*.md`, `.claude/logs/*`). AC-15 uses fake PIDs
-(55551–55553) with a `kill` function override to avoid real process waits.
+**Test Naming and Intent — PASS**
+Section headers (`=== Test N: ... ===`) and individual pass/fail messages encode both scenario and expected outcome. `_check_label` call sites (Test 6, lines 222–231) are self-documenting: `_check_label "wrap_up" "wrap-up"` immediately conveys the underscore→hyphen normalization being verified.
 
-**Edge Case Coverage (PASS)**: Label registry covers empty input, underscore→hyphen
-fallback, both hyphenated and underscored forms of `wrap-up`, and all 9 explicitly
-mapped stage names. Spinner routing covers TUI path, non-TUI path (with `/dev/tty`
-environment guard), and three kill-routing variants including a negative assertion
-that the spinner cleanup branch is not entered when `spinner_pid` is empty.
+**Scope Alignment — PASS**
+Implementation changes confirmed:
+- `stages/coder.sh` line 232: `tui_stage_begin "scout"` / line 242: `tui_stage_end "scout"`
+- `stages/review.sh` lines 266/313: `tui_stage_begin "rework"` in both Sr and Jr rework paths
+- `lib/finalize.sh` line 281: `tui_stage_begin "wrap-up"`
+- `lib/finalize_dashboard_hooks.sh` line 153: `tui_stage_end "wrap-up"`
+
+All wired call sites pass display labels that match what the tests exercise. The shell-detected STALE-SYM entries (`cd`, `dirname`, `echo`, `exit`, `pwd`, `set`, `shift`, `source`) in `test_pipeline_order.sh` are POSIX shell builtins — not source-defined functions. These are false positives from the detection tool and require no action.
+
+**Test Isolation — PASS**
+`test_tui_stage_wiring.sh` creates an isolated temp directory via `mktemp -d` with `trap 'rm -rf "$TMPDIR"' EXIT`. All status file writes target `$TMPDIR/status.json`; no mutable project files (`.tekhton/`, `.claude/logs/`, etc.) are read or written. `test_pipeline_order.sh` is purely in-memory (environment variable manipulation + stdout assertions); it writes no files.

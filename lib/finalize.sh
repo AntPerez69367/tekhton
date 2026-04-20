@@ -274,6 +274,13 @@ register_finalize_hook "_hook_tui_complete"
 finalize_run() {
     local pipeline_exit_code="${1:-0}"
 
+    # M107: notify TUI sidecar that the wrap-up stage has begun. This covers
+    # every finalize_run call site with a single hook. The matching end call
+    # lives in _hook_tui_complete.
+    if declare -f tui_stage_begin &>/dev/null; then
+        tui_stage_begin "wrap-up" "" 2>/dev/null || true
+    fi
+
     # State shared between hooks
     FINAL_CHECK_RESULT=0
     _COMMIT_SUCCEEDED=false

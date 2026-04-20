@@ -146,5 +146,11 @@ _hook_tui_complete() {
     local exit_code="${1:-0}"
     local verdict="SUCCESS"
     [[ "$exit_code" -ne 0 ]] && verdict="FAIL"
+    # M107: close the wrap-up pill before out_complete flips the sidecar into
+    # hold-on-complete. All commit, archive, and version-bump hooks have
+    # already run by this point, so finalization really is done.
+    if declare -f tui_stage_end &>/dev/null; then
+        tui_stage_end "wrap-up" "" "" "" "$verdict" 2>/dev/null || true
+    fi
     out_complete "$verdict" 2>/dev/null || true
 }

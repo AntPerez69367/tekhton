@@ -258,46 +258,50 @@ unset SECURITY_AGENT_ENABLED
 unset SKIP_SECURITY
 unset SKIP_DOCS
 
+# M107: wrap-up is always appended as the final pill so the TUI sidecar
+# has a slot to activate during finalize_run(). Expected values below
+# include the trailing "wrap-up" entry.
+
 # 12.1 standard + all defaults → intake prepended, test_verify → tester
 PIPELINE_ORDER="standard"
-assert_eq "12.1 get_display_stage_order: standard default → intake scout coder security review tester" \
-    "intake scout coder security review tester" "$(get_display_stage_order)"
+assert_eq "12.1 get_display_stage_order: standard default → intake scout coder security review tester wrap-up" \
+    "intake scout coder security review tester wrap-up" "$(get_display_stage_order)"
 
 # 12.2 INTAKE_AGENT_ENABLED=false drops intake
 INTAKE_AGENT_ENABLED="false"
 assert_eq "12.2 get_display_stage_order: INTAKE_AGENT_ENABLED=false drops intake" \
-    "scout coder security review tester" "$(get_display_stage_order)"
+    "scout coder security review tester wrap-up" "$(get_display_stage_order)"
 unset INTAKE_AGENT_ENABLED
 
 # 12.3 DOCS_AGENT_ENABLED=true inserts docs between coder and security
 DOCS_AGENT_ENABLED="true"
 assert_eq "12.3 get_display_stage_order: DOCS_AGENT_ENABLED=true inserts docs" \
-    "intake scout coder docs security review tester" "$(get_display_stage_order)"
+    "intake scout coder docs security review tester wrap-up" "$(get_display_stage_order)"
 unset DOCS_AGENT_ENABLED
 
 # 12.4 PIPELINE_ORDER=test_first maps test_write → tester-write
 PIPELINE_ORDER="test_first"
 assert_eq "12.4 get_display_stage_order: test_first maps test_write → tester-write" \
-    "intake scout tester-write coder security review tester" "$(get_display_stage_order)"
+    "intake scout tester-write coder security review tester wrap-up" "$(get_display_stage_order)"
 
 # 12.5 SKIP_SECURITY=true filters security out
 PIPELINE_ORDER="standard"
 SKIP_SECURITY="true"
 assert_eq "12.5 get_display_stage_order: SKIP_SECURITY=true removes security" \
-    "intake scout coder review tester" "$(get_display_stage_order)"
+    "intake scout coder review tester wrap-up" "$(get_display_stage_order)"
 unset SKIP_SECURITY
 
 # 12.6 SECURITY_AGENT_ENABLED=false also removes security
 SECURITY_AGENT_ENABLED="false"
 assert_eq "12.6 get_display_stage_order: SECURITY_AGENT_ENABLED=false removes security" \
-    "intake scout coder review tester" "$(get_display_stage_order)"
+    "intake scout coder review tester wrap-up" "$(get_display_stage_order)"
 unset SECURITY_AGENT_ENABLED
 
 # 12.7 SKIP_DOCS=true suppresses docs even when docs agent is enabled
 DOCS_AGENT_ENABLED="true"
 SKIP_DOCS="true"
 assert_eq "12.7 get_display_stage_order: SKIP_DOCS=true suppresses docs stage" \
-    "intake scout coder security review tester" "$(get_display_stage_order)"
+    "intake scout coder security review tester wrap-up" "$(get_display_stage_order)"
 unset DOCS_AGENT_ENABLED
 unset SKIP_DOCS
 
