@@ -18,6 +18,24 @@ from tui_render_common import _SPIN_CHARS, _fmt_duration
 _FAIL_VERDICTS = {"FAIL", "FAILED", "BLOCKED", "REJECT"}
 
 
+def _normalize_time(time_str: str) -> str:
+    """Normalize a stage time string to the canonical _fmt_duration output.
+
+    Completed-stage rows arrive as raw seconds ("90s"); live rows are formatted
+    by _fmt_duration ("1m 30s"). Route plain "<int>s" through _fmt_duration so
+    both forms render identically. Anything else (empty, already-formatted,
+    pre-hardcoded strings) passes through untouched.
+    """
+    if not time_str:
+        return time_str
+    stripped = time_str.strip()
+    if stripped.endswith("s"):
+        core = stripped[:-1]
+        if core.isdigit():
+            return _fmt_duration(int(core))
+    return time_str
+
+
 def _build_timings_panel(status: dict[str, Any]) -> Panel:
     stages_complete = status.get("stages_complete") or []
     current_label = status.get("stage_label") or ""
@@ -40,7 +58,7 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
 
     for stage in stages_complete:
         label = stage.get("label") or "?"
-        time_str = stage.get("time") or ""
+        time_str = _normalize_time(stage.get("time") or "")
         turns_str = stage.get("turns") or ""
         verdict = (stage.get("verdict") or "").upper()
         if verdict in _FAIL_VERDICTS:

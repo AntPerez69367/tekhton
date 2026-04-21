@@ -121,12 +121,12 @@ set -euo pipefail
 
 # --- Dynamic turn limit defaults ---
 : "${DYNAMIC_TURNS_ENABLED:=true}"
-: "${CODER_MIN_TURNS:=40}"
+: "${CODER_MIN_TURNS:=60}"
 : "${CODER_MAX_TURNS_CAP:=200}"
-: "${REVIEWER_MIN_TURNS:=15}"
-: "${REVIEWER_MAX_TURNS_CAP:=50}"
-: "${TESTER_MIN_TURNS:=20}"
-: "${TESTER_MAX_TURNS_CAP:=100}"
+: "${REVIEWER_MIN_TURNS:=20}"
+: "${REVIEWER_MAX_TURNS_CAP:=60}"
+: "${TESTER_MIN_TURNS:=30}"
+: "${TESTER_MAX_TURNS_CAP:=120}"
 
 # --- Clarification and replan defaults ---
 : "${CLARIFICATION_ENABLED:=true}"

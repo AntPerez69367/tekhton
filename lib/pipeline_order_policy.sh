@@ -34,21 +34,20 @@ get_stage_metrics_key() {
 
 # get_stage_array_key NAME
 # Translate a pipeline dispatch name (the values iterated by
-# `for _stage_name in $_pipeline_stages`) into the legacy
-# `_STAGE_{STATUS,TURNS,BUDGET,DURATION,START_TS}` associative-array key.
+# `for _stage_name in $_pipeline_stages`) into the display-label key
+# used by `_STAGE_{STATUS,TURNS,BUDGET,DURATION,START_TS}` associative arrays.
 #
 # This is intentionally distinct from get_stage_metrics_key:
 #   - get_stage_metrics_key returns the display-label convention used by
 #     metrics.jsonl and the TUI row labels (review / tester / tester-write).
-#   - get_stage_array_key returns the historical internal key used by the
-#     shell associative arrays populated in tekhton.sh's main loop
-#     (reviewer / tester / tester_write).
-# Keep them in sync manually until `_STAGE_*` arrays migrate to display labels.
+#   - get_stage_array_key returns the display-label key used by the
+#     shell associative arrays populated in tekhton.sh's main loop.
+# Idempotent: passing a display label returns it unchanged.
 get_stage_array_key() {
     case "${1:-}" in
-        review)      echo "reviewer" ;;
+        review)      echo "review" ;;
         test_verify) echo "tester" ;;
-        test_write)  echo "tester_write" ;;
+        test_write)  echo "tester-write" ;;
         *)           echo "${1:-}" ;;
     esac
 }

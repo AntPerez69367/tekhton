@@ -6,27 +6,32 @@ failed to produce or maintain it. The following files were modified based
 on git state. The reviewer should assess actual changes directly.
 
 ## Files Modified
+- .claude/pipeline.conf
 - .claude/tui_sidecar.pid
 - .tekhton/CODER_SUMMARY.md
-- .tekhton/INTAKE_REPORT.md
-- .tekhton/NON_BLOCKING_LOG.md
+- .tekhton/DRIFT_LOG.md
+- .tekhton/HUMAN_NOTES.md
 - .tekhton/PREFLIGHT_REPORT.md
 - .tekhton/REVIEWER_REPORT.md
 - .tekhton/TESTER_REPORT.md
-- lib/pipeline_order.sh
+- .tekhton/test_dedup.fingerprint
+- lib/config_defaults.sh
+- lib/pipeline_order_policy.sh
 - tekhton.sh
-- tools/tests/test_tui.py
+- tests/test_m34_data_fidelity.sh
+- tests/test_m66_full_stage_metrics.sh
+- tests/test_metrics_total_time_computation.sh
 
 ## New Files Created
-- lib/pipeline_order_policy.sh (new)
+
 
 ## Git Diff Summary
 ```
- .tekhton/TESTER_REPORT.md    |  13 ------
- lib/pipeline_order.sh        | 108 ++-----------------------------------------
- tekhton.sh                   |  15 ++----
- tools/tests/test_tui.py      |  24 ++++------
- 10 files changed, 41 insertions(+), 272 deletions(-)
+ tekhton.sh                                   | 28 +++++++++----------
+ tests/test_m34_data_fidelity.sh              |  1 +
+ tests/test_m66_full_stage_metrics.sh         |  4 +--
+ tests/test_metrics_total_time_computation.sh |  8 +++---
+ 15 files changed, 86 insertions(+), 104 deletions(-)
 ```
 
 ## Remaining Work

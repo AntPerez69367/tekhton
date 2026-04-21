@@ -106,13 +106,13 @@ echo "=== Testing get_stage_array_key ==="
 
 # Test the special cases
 result=$(get_stage_array_key "review")
-[[ "$result" == "reviewer" ]] && pass "review → reviewer" || fail "review → reviewer" "got '$result'"
+[[ "$result" == "review" ]] && pass "review → review" || fail "review → review" "got '$result'"
 
 result=$(get_stage_array_key "test_verify")
 [[ "$result" == "tester" ]] && pass "test_verify → tester" || fail "test_verify → tester" "got '$result'"
 
 result=$(get_stage_array_key "test_write")
-[[ "$result" == "tester_write" ]] && pass "test_write → tester_write" || fail "test_write → tester_write" "got '$result'"
+[[ "$result" == "tester-write" ]] && pass "test_write → tester-write" || fail "test_write → tester-write" "got '$result'"
 
 # Test fallback (pass-through)
 result=$(get_stage_array_key "coder")

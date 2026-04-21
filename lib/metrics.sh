@@ -94,7 +94,7 @@ record_run_metrics() {
     local security_duration_s=0 cleanup_duration_s=0
     if declare -p _STAGE_DURATION &>/dev/null; then
         coder_duration_s="${_STAGE_DURATION[coder]:-0}"
-        reviewer_duration_s="${_STAGE_DURATION[reviewer]:-0}"
+        reviewer_duration_s="${_STAGE_DURATION[review]:-0}"
         tester_duration_s="${_STAGE_DURATION[tester]:-0}"
         scout_duration_s="${_STAGE_DURATION[scout]:-0}"
         security_duration_s="${_STAGE_DURATION[security]:-0}"

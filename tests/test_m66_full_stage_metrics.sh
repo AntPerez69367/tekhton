@@ -79,8 +79,8 @@ AGENT_ERROR_SUBCATEGORY=""
 AGENT_ERROR_TRANSIENT=""
 
 # Simulate _STAGE_DURATION and _STAGE_TURNS with security data
-declare -A _STAGE_DURATION=([coder]=180 [reviewer]=60 [security]=45)
-declare -A _STAGE_TURNS=([coder]=30 [reviewer]=10 [security]=9)
+declare -A _STAGE_DURATION=([coder]=180 [review]=60 [security]=45)
+declare -A _STAGE_TURNS=([coder]=30 [review]=10 [security]=9)
 declare -A _STAGE_BUDGET=()
 declare -A _STAGE_START_TS=()
 

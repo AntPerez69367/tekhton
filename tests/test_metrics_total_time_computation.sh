@@ -50,7 +50,7 @@ echo "=== Test Suite: total_time computation in record_run_metrics() ==="
 
 # Test 1: _STAGE_DURATION array sum takes precedence
 echo "Test 1: _STAGE_DURATION array sum takes precedence"
-declare -A _STAGE_DURATION=([intake]=30 [scout]=45 [coder]=300 [build_gate]=0 [security]=0 [reviewer]=150 [tester]=180)
+declare -A _STAGE_DURATION=([intake]=30 [scout]=45 [coder]=300 [build_gate]=0 [security]=0 [review]=150 [tester]=180)
 METRICS_ENABLED=true
 TASK="Test task 1"
 MILESTONE_MODE=false
@@ -90,7 +90,7 @@ fi
 # Test 3: Partial _STAGE_DURATION (some stages have values, some are zero)
 echo "Test 3: Partial _STAGE_DURATION with zero entries"
 rm -f "$LOG_DIR/metrics.jsonl"
-declare -A _STAGE_DURATION=([coder]=250 [reviewer]=120 [tester]=0 [scout]=0)
+declare -A _STAGE_DURATION=([coder]=250 [review]=120 [tester]=0 [scout]=0)
 # intake, build_gate, security are unset (will be treated as 0)
 TASK="Test task 3"
 TOTAL_TIME=999  # Should be ignored
@@ -109,7 +109,7 @@ fi
 # Test 4: All stages zero — should fall back to TOTAL_TIME
 echo "Test 4: All stage durations zero, fall back to TOTAL_TIME"
 rm -f "$LOG_DIR/metrics.jsonl"
-declare -A _STAGE_DURATION=([intake]=0 [scout]=0 [coder]=0 [build_gate]=0 [security]=0 [reviewer]=0 [tester]=0)
+declare -A _STAGE_DURATION=([intake]=0 [scout]=0 [coder]=0 [build_gate]=0 [security]=0 [review]=0 [tester]=0)
 TASK="Test task 4"
 TOTAL_TIME=600
 record_run_metrics
@@ -124,7 +124,7 @@ fi
 # Test 5: Large values test — verify no integer overflow
 echo "Test 5: Large stage duration values"
 rm -f "$LOG_DIR/metrics.jsonl"
-declare -A _STAGE_DURATION=([coder]=3600 [reviewer]=1800 [tester]=1200 [scout]=600)
+declare -A _STAGE_DURATION=([coder]=3600 [review]=1800 [tester]=1200 [scout]=600)
 TASK="Test task 5 with large durations"
 TOTAL_TIME=0
 record_run_metrics

@@ -2449,9 +2449,9 @@ _run_pipeline_stages() {
                 CURRENT_STAGE="reviewer"
                 local _review_start_evt
                 _review_start_evt=$(emit_event "stage_start" "reviewer" "" "$_LAST_STAGE_EVT" "" "")
-                _STAGE_STATUS[reviewer]="active"
-                _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
-                _STAGE_START_TS[reviewer]="$SECONDS"
+                _STAGE_STATUS[review]="active"
+                _STAGE_BUDGET[review]="${REVIEWER_MAX_TURNS:-15}"
+                _STAGE_START_TS[review]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
                 run_stage_review
                 local _review_verdict_json="null"
@@ -2460,10 +2460,10 @@ _run_pipeline_stages() {
                 fi
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "reviewer" "verdict: ${VERDICT:-unknown}" "$_review_start_evt" \
                     "$_review_verdict_json" "{\"cycles\":${REVIEW_CYCLE:-0}}")
-                _STAGE_STATUS[reviewer]="complete"
-                _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[reviewer]="$(( SECONDS - ${_STAGE_START_TS[reviewer]:-$SECONDS} ))"
-                progress_outcome "Reviewer" "${VERDICT:-unknown} (${REVIEW_CYCLE:-0} cycles)" "${_STAGE_DURATION[reviewer]}"
+                _STAGE_STATUS[review]="complete"
+                _STAGE_TURNS[review]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[review]="$(( SECONDS - ${_STAGE_START_TS[review]:-$SECONDS} ))"
+                progress_outcome "Reviewer" "${VERDICT:-unknown} (${REVIEW_CYCLE:-0} cycles)" "${_STAGE_DURATION[review]}"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -2481,17 +2481,17 @@ _run_pipeline_stages() {
                 export TESTER_MODE="write_failing"
                 local _tw_start_evt
                 _tw_start_evt=$(emit_event "stage_start" "tester_write" "" "$_LAST_STAGE_EVT" "" "")
-                _STAGE_STATUS[tester_write]="active"
-                _STAGE_BUDGET[tester_write]="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
-                _STAGE_START_TS[tester_write]="$SECONDS"
+                _STAGE_STATUS[tester-write]="active"
+                _STAGE_BUDGET[tester-write]="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
+                _STAGE_START_TS[tester-write]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
                 run_stage_tester
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "tester_write" "" "$_tw_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
-                _STAGE_STATUS[tester_write]="complete"
-                _STAGE_TURNS[tester_write]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[tester_write]="$(( SECONDS - ${_STAGE_START_TS[tester_write]:-$SECONDS} ))"
-                progress_outcome "Tester (TDD)" "complete" "${_STAGE_DURATION[tester_write]}"
+                _STAGE_STATUS[tester-write]="complete"
+                _STAGE_TURNS[tester-write]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[tester-write]="$(( SECONDS - ${_STAGE_START_TS[tester-write]:-$SECONDS} ))"
+                progress_outcome "Tester (TDD)" "complete" "${_STAGE_DURATION[tester-write]}"
                 emit_dashboard_run_state 2>/dev/null || true
                 export TESTER_MODE=""
             fi
@@ -2523,7 +2523,7 @@ _run_pipeline_stages() {
 
         # M107/M110: mark stage complete in TUI sidecar via the M106 protocol API.
         # Only end pills we began — skipped stages never entered running state.
-        # Case bodies above write _STAGE_*[reviewer|tester|tester_write] while
+        # Case bodies above write _STAGE_*[review|tester|tester-write] while
         # $_stage_name here is review|test_verify|test_write — get_stage_array_key
         # (in lib/pipeline_order_policy.sh) is the single translation layer
         # between internal pipeline names and the _STAGE_* associative-array keys.
