@@ -16,4 +16,6 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 ## Bugs
 
+- [ ] [BUG] TUI Stage Timings panel has two related issues: (1) while a stage is active, elapsed time is shown in minutes+seconds (e.g. "1m 23s"), but once the stage completes it reverts to showing only seconds (e.g. "83s"); (2) the Review and Tester stages reset to 0s on completion regardless of actual elapsed time — their final recorded duration is always ~0s instead of the real value. They also show 0/0 turns regardless of how many they actually used.
+
 ## Polish

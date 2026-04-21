@@ -2277,8 +2277,13 @@ _run_pipeline_stages() {
         emit_dashboard_run_state 2>/dev/null || true
         local _intake_start_evt
         _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
-        # M107: notify TUI sidecar that the intake pre-stage is active.
-        if declare -f tui_stage_begin &>/dev/null; then
+        # M107/M110: notify TUI sidecar that the intake pre-stage is active.
+        # Guard matches get_run_stage_plan's condition so intake is only in
+        # _TUI_STAGE_ORDER when it was included in the seeded pill plan.
+        # Without the guard, tui_stage_begin would append "intake" to the end
+        # of the pill row in --fix-nonblockers / --fix-drift modes where
+        # INTAKE_AGENT_ENABLED=false and intake is absent from the plan.
+        if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]] && declare -f tui_stage_begin &>/dev/null; then
             tui_stage_begin "intake" "${CLAUDE_STANDARD_MODEL:-}"
         fi
         run_stage_intake
@@ -2288,7 +2293,7 @@ _run_pipeline_stages() {
         _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
         _STAGE_DURATION[intake]="$(( SECONDS - ${_STAGE_START_TS[intake]:-$SECONDS} ))"
         # M107: mark intake complete in the TUI sidecar.
-        if declare -f tui_stage_end &>/dev/null; then
+        if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
             tui_stage_end "intake" "${CLAUDE_STANDARD_MODEL:-}" \
                 "${_STAGE_TURNS[intake]:-0}/${_STAGE_BUDGET[intake]:-0}" \
                 "${_STAGE_DURATION[intake]:-0}s" "${INTAKE_VERDICT:-}"
@@ -2519,20 +2524,13 @@ _run_pipeline_stages() {
         # M107/M110: mark stage complete in TUI sidecar via the M106 protocol API.
         # Only end pills we began — skipped stages never entered running state.
         # Case bodies above write _STAGE_*[reviewer|tester|tester_write] while
-        # $_stage_name here is review|test_verify|test_write — translate via an
-        # inline map so the timings column reads non-zero durations/turns. The
-        # canonical metric keys used by lib/metrics.sh (reviewer, tester) must
-        # continue to match; this dispatch-local map is the single translation
-        # layer between internal pipeline names and the stage-metrics keys.
+        # $_stage_name here is review|test_verify|test_write — get_stage_array_key
+        # (in lib/pipeline_order_policy.sh) is the single translation layer
+        # between internal pipeline names and the _STAGE_* associative-array keys.
         if [[ "$_tui_will_run_stage" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
             local _tui_display_label _tui_finish_dur _tui_metrics_key
             _tui_display_label=$(get_stage_display_label "$_stage_name")
-            case "$_stage_name" in
-                review)      _tui_metrics_key="reviewer" ;;
-                test_verify) _tui_metrics_key="tester" ;;
-                test_write)  _tui_metrics_key="tester_write" ;;
-                *)           _tui_metrics_key="$_stage_name" ;;
-            esac
+            _tui_metrics_key=$(get_stage_array_key "$_stage_name")
             _tui_finish_dur="${_STAGE_DURATION[$_tui_metrics_key]:-0}s"
             tui_stage_end "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}" \
                 "${_STAGE_TURNS[$_tui_metrics_key]:-0}/${_STAGE_BUDGET[$_tui_metrics_key]:-0}" \

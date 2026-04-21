@@ -663,8 +663,6 @@ def test_main_watchdog_secs_default_is_zero(tmp_path):
 
 def test_watchdog_condition_fires_when_idle_and_stale(tmp_path, monkeypatch):
     """Watchdog breaks out of the Live loop when status is idle/stale."""
-    import time as time_mod
-
     # Write a status file with agent_status=idle, agent_turns_used>0, complete=false
     status_file = tmp_path / "tui_status.json"
     idle_status = tui._empty_status()
@@ -677,7 +675,7 @@ def test_watchdog_condition_fires_when_idle_and_stale(tmp_path, monkeypatch):
     # mtime unchanged for > watchdog_secs while agent_status==idle and turns>0.
     watchdog_secs = 1
     last_mtime = status_file.stat().st_mtime
-    last_mtime_time = time_mod.monotonic() - (watchdog_secs + 0.1)  # already stale
+    last_mtime_time = _time.monotonic() - (watchdog_secs + 0.1)  # already stale
 
     status = tui._read_status(status_file)
     assert status is not None
@@ -686,15 +684,13 @@ def test_watchdog_condition_fires_when_idle_and_stale(tmp_path, monkeypatch):
         watchdog_secs > 0
         and status.get("current_agent_status") == "idle"
         and status.get("agent_turns_used", 0) > 0
-        and time_mod.monotonic() - last_mtime_time > watchdog_secs
+        and _time.monotonic() - last_mtime_time > watchdog_secs
     )
     assert watchdog_should_fire, "Watchdog should fire for idle+stale status"
 
 
 def test_watchdog_condition_does_not_fire_when_running(tmp_path):
     """Watchdog must NOT fire when agent is actively running."""
-    import time as time_mod
-
     status_file = tmp_path / "tui_status.json"
     running_status = tui._empty_status()
     running_status["current_agent_status"] = "running"
@@ -703,7 +699,7 @@ def test_watchdog_condition_does_not_fire_when_running(tmp_path):
     status_file.write_text(json.dumps(running_status))
 
     watchdog_secs = 1
-    last_mtime_time = time_mod.monotonic() - (watchdog_secs + 1.0)  # stale
+    last_mtime_time = _time.monotonic() - (watchdog_secs + 1.0)  # stale
 
     status = tui._read_status(status_file)
     assert status is not None
@@ -712,15 +708,13 @@ def test_watchdog_condition_does_not_fire_when_running(tmp_path):
         watchdog_secs > 0
         and status.get("current_agent_status") == "idle"
         and status.get("agent_turns_used", 0) > 0
-        and time_mod.monotonic() - last_mtime_time > watchdog_secs
+        and _time.monotonic() - last_mtime_time > watchdog_secs
     )
     assert not watchdog_should_fire, "Watchdog must NOT fire while agent is running"
 
 
 def test_watchdog_condition_does_not_fire_before_any_turns(tmp_path):
     """Watchdog must NOT fire at pipeline startup (agent_turns_used == 0)."""
-    import time as time_mod
-
     status_file = tmp_path / "tui_status.json"
     startup_status = tui._empty_status()
     startup_status["current_agent_status"] = "idle"
@@ -729,7 +723,7 @@ def test_watchdog_condition_does_not_fire_before_any_turns(tmp_path):
     status_file.write_text(json.dumps(startup_status))
 
     watchdog_secs = 1
-    last_mtime_time = time_mod.monotonic() - (watchdog_secs + 1.0)  # stale
+    last_mtime_time = _time.monotonic() - (watchdog_secs + 1.0)  # stale
 
     status = tui._read_status(status_file)
     assert status is not None
@@ -738,15 +732,13 @@ def test_watchdog_condition_does_not_fire_before_any_turns(tmp_path):
         watchdog_secs > 0
         and status.get("current_agent_status") == "idle"
         and status.get("agent_turns_used", 0) > 0
-        and time_mod.monotonic() - last_mtime_time > watchdog_secs
+        and _time.monotonic() - last_mtime_time > watchdog_secs
     )
     assert not watchdog_should_fire, "Watchdog must NOT fire at startup (zero turns)"
 
 
 def test_watchdog_disabled_when_secs_zero(tmp_path):
     """Watchdog is disabled when watchdog_secs == 0."""
-    import time as time_mod
-
     status_file = tmp_path / "tui_status.json"
     idle_status = tui._empty_status()
     idle_status["current_agent_status"] = "idle"
@@ -754,7 +746,7 @@ def test_watchdog_disabled_when_secs_zero(tmp_path):
     status_file.write_text(json.dumps(idle_status))
 
     watchdog_secs = 0
-    last_mtime_time = time_mod.monotonic() - 9999  # very stale
+    last_mtime_time = _time.monotonic() - 9999  # very stale
 
     status = tui._read_status(status_file)
     assert status is not None
@@ -763,7 +755,7 @@ def test_watchdog_disabled_when_secs_zero(tmp_path):
         watchdog_secs > 0  # ← evaluated false immediately
         and status.get("current_agent_status") == "idle"
         and status.get("agent_turns_used", 0) > 0
-        and time_mod.monotonic() - last_mtime_time > watchdog_secs
+        and _time.monotonic() - last_mtime_time > watchdog_secs
     )
     assert not watchdog_should_fire, "Watchdog must not fire when secs=0 (disabled)"
 

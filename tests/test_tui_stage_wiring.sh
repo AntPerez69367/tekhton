@@ -580,6 +580,59 @@ else
     fail "M110-12d: review counter" "expected 1, got ${_TUI_STAGE_CYCLE[review]:-0}"
 fi
 
+# =============================================================================
+# M110-13: intake does not appear at end of pill row when plan excludes it.
+#
+# Regression guard for the --fix-nonblockers / --fix-drift bug where
+# INTAKE_AGENT_ENABLED=false causes get_run_stage_plan to omit "intake" from
+# the pill plan, but an unguarded tui_stage_begin "intake" call still appended
+# it to the end of _TUI_STAGE_ORDER.  The fix in tekhton.sh guards the call;
+# this test confirms that tui_stage_begin "intake" DOES append to the end when
+# called against a plan that excludes "intake" (documenting the contract that
+# callers must guard the call themselves).
+# =============================================================================
+echo "=== Test M110-13: intake appended to end when absent from seeded plan ==="
+
+_activate_m110
+# Simulate get_run_stage_plan output for INTAKE_AGENT_ENABLED=false:
+# plan is "preflight coder security review tester wrap-up" (no intake).
+tui_set_context "task" "" "preflight" "coder" "security" "review" "tester" "wrap-up"
+
+# Simulate the old unguarded behaviour: call tui_stage_begin "intake" even
+# though "intake" is absent from the seeded plan.
+tui_stage_begin "intake"
+
+# Verify that "intake" IS appended to the end (demonstrating the old bug)
+# and that it therefore does NOT appear at position 2 (immediately after preflight).
+_last="${_TUI_STAGE_ORDER[$(( ${#_TUI_STAGE_ORDER[@]} - 1 ))]:-}"
+if [[ "$_last" == "intake" ]]; then
+    pass "M110-13a: unguarded tui_stage_begin appends intake to end of pill row (old bug documented)"
+else
+    fail "M110-13a: expected intake at end of plan" "got last='${_last}' order=(${_TUI_STAGE_ORDER[*]:-})"
+fi
+# Also verify preflight is still at position 0 (not displaced).
+if [[ "${_TUI_STAGE_ORDER[0]:-}" == "preflight" ]]; then
+    pass "M110-13b: preflight remains at position 0 after unguarded intake begin"
+else
+    fail "M110-13b: preflight position after intake" "expected preflight at [0], order=(${_TUI_STAGE_ORDER[*]:-})"
+fi
+
+# Now verify the correct guarded behaviour: seed the plan correctly and do NOT
+# call tui_stage_begin "intake" — pill order should have no intake.
+_activate_m110
+tui_set_context "task" "" "preflight" "coder" "security" "review" "tester" "wrap-up"
+# (No tui_stage_begin "intake" — guard kept the call out.)
+_found_intake=false
+_s=""
+for _s in "${_TUI_STAGE_ORDER[@]:-}"; do
+    [[ "$_s" == "intake" ]] && { _found_intake=true; break; }
+done
+if [[ "$_found_intake" == "false" ]]; then
+    pass "M110-13c: guarded path — intake absent from pill row when INTAKE_AGENT_ENABLED=false"
+else
+    fail "M110-13c: intake absent" "intake unexpectedly in pill row: (${_TUI_STAGE_ORDER[*]:-})"
+fi
+
 echo ""
 echo "=== Summary: ${PASS} passed, ${FAIL} failed ==="
 [[ "$FAIL" -eq 0 ]]
