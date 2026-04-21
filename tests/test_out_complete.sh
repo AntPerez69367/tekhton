@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_out_complete.sh — M102 — out_complete() and _hook_tui_complete() tests
+# test_out_complete.sh — M111 — out_complete() and _hook_tui_complete() tests
 #
 # Covers:
 #   1. out_complete() is a no-op when tui_complete is not defined
@@ -8,10 +8,16 @@
 #   3. out_complete "SUCCESS" passes "SUCCESS" to tui_complete
 #   4. out_complete "FAIL" passes "FAIL" to tui_complete
 #   5. out_complete silently no-ops when tui_complete is unset (no error)
-#   6. _hook_tui_complete 0  → out_complete called with "SUCCESS"
-#   7. _hook_tui_complete 1  → out_complete called with "FAIL"
-#   8. _hook_tui_complete 42 → out_complete called with "FAIL" (any non-zero)
-#   9. _hook_tui_complete does NOT call tui_complete directly (uses out_complete)
+#   6. _hook_tui_complete 0  → emits summary event, does NOT call out_complete
+#   7. _hook_tui_complete 1  → emits summary event, does NOT call out_complete
+#   8. _hook_tui_complete 42 → emits summary event, does NOT call out_complete
+#   9. _hook_tui_complete 0  → calls tui_stage_end "wrap-up" with SUCCESS
+#  10. _hook_tui_complete 1  → calls tui_stage_end "wrap-up" with FAIL
+#
+# M111 change: _hook_tui_complete no longer triggers out_complete (which would
+# kill the sidecar mid-run). Per-pass finalize_run() only closes the wrap-up
+# pill and emits a pass-complete summary event; the outer tekhton.sh dispatch
+# site calls out_complete once at true teardown.
 # =============================================================================
 set -euo pipefail
 
@@ -108,7 +114,7 @@ else
 fi
 
 # =============================================================================
-echo "=== Part 2: _hook_tui_complete() behaviour ==="
+echo "=== Part 2: _hook_tui_complete() behaviour (M111 contract) ==="
 #
 # _hook_tui_complete is defined in lib/finalize_dashboard_hooks.sh. We extract
 # it here via awk so we test the real function body from the source file, not
@@ -141,65 +147,95 @@ if ! declare -f _hook_tui_complete &>/dev/null; then
     exit 1
 fi
 
-# Override out_complete to record the verdict it receives.
+# Mock collaborators. _hook_tui_complete should:
+#   - call tui_stage_end "wrap-up" ... <verdict>
+#   - call tui_append_summary_event <level> "Pass complete: <verdict>"
+#   - NOT call out_complete (that would tear down the sidecar mid-run)
 _COMPLETE_CALLED_WITH=""
 out_complete() { _COMPLETE_CALLED_WITH="${1:-}"; }
 
-# --- Test 6: exit 0 → "SUCCESS" ----------------------------------------------
-echo "--- Test 6: exit 0 → SUCCESS ---"
+_STAGE_END_LABEL=""; _STAGE_END_VERDICT=""
+tui_stage_end() {
+    _STAGE_END_LABEL="${1:-}"
+    # args: label model turns time_str verdict
+    _STAGE_END_VERDICT="${5:-}"
+}
+
+_SUMMARY_EVENT_LEVEL=""; _SUMMARY_EVENT_MSG=""
+tui_append_summary_event() {
+    _SUMMARY_EVENT_LEVEL="${1:-}"
+    _SUMMARY_EVENT_MSG="${2:-}"
+}
+
+# --- Test 6: exit 0 → summary event, no out_complete -------------------------
+echo "--- Test 6: exit 0 → summary event, no out_complete ---"
 
 _COMPLETE_CALLED_WITH=""
+_SUMMARY_EVENT_LEVEL=""; _SUMMARY_EVENT_MSG=""
 _hook_tui_complete 0
 
-if [[ "$_COMPLETE_CALLED_WITH" == "SUCCESS" ]]; then
-    pass "_hook_tui_complete with exit 0 passes 'SUCCESS' to out_complete"
+if [[ -z "$_COMPLETE_CALLED_WITH" ]] \
+   && [[ "$_SUMMARY_EVENT_MSG" == "Pass complete: SUCCESS" ]]; then
+    pass "_hook_tui_complete exit 0 emits SUCCESS summary event, no out_complete"
 else
-    fail "_hook_tui_complete exit 0" "expected 'SUCCESS', got '${_COMPLETE_CALLED_WITH}'"
+    fail "_hook_tui_complete exit 0" \
+        "out_complete='${_COMPLETE_CALLED_WITH}' summary_msg='${_SUMMARY_EVENT_MSG}'"
 fi
 
-# --- Test 7: exit 1 → "FAIL" -------------------------------------------------
-echo "--- Test 7: exit 1 → FAIL ---"
+# --- Test 7: exit 1 → summary event, no out_complete -------------------------
+echo "--- Test 7: exit 1 → summary event, no out_complete ---"
 
 _COMPLETE_CALLED_WITH=""
+_SUMMARY_EVENT_LEVEL=""; _SUMMARY_EVENT_MSG=""
 _hook_tui_complete 1
 
-if [[ "$_COMPLETE_CALLED_WITH" == "FAIL" ]]; then
-    pass "_hook_tui_complete with exit 1 passes 'FAIL' to out_complete"
+if [[ -z "$_COMPLETE_CALLED_WITH" ]] \
+   && [[ "$_SUMMARY_EVENT_MSG" == "Pass complete: FAIL" ]]; then
+    pass "_hook_tui_complete exit 1 emits FAIL summary event, no out_complete"
 else
-    fail "_hook_tui_complete exit 1" "expected 'FAIL', got '${_COMPLETE_CALLED_WITH}'"
+    fail "_hook_tui_complete exit 1" \
+        "out_complete='${_COMPLETE_CALLED_WITH}' summary_msg='${_SUMMARY_EVENT_MSG}'"
 fi
 
-# --- Test 8: any non-zero exit → "FAIL" --------------------------------------
-echo "--- Test 8: exit 42 → FAIL ---"
+# --- Test 8: any non-zero exit → FAIL summary --------------------------------
+echo "--- Test 8: exit 42 → FAIL summary event ---"
 
 _COMPLETE_CALLED_WITH=""
+_SUMMARY_EVENT_LEVEL=""; _SUMMARY_EVENT_MSG=""
 _hook_tui_complete 42
 
-if [[ "$_COMPLETE_CALLED_WITH" == "FAIL" ]]; then
-    pass "_hook_tui_complete with exit 42 passes 'FAIL' to out_complete"
+if [[ -z "$_COMPLETE_CALLED_WITH" ]] \
+   && [[ "$_SUMMARY_EVENT_MSG" == "Pass complete: FAIL" ]]; then
+    pass "_hook_tui_complete exit 42 emits FAIL summary event, no out_complete"
 else
-    fail "_hook_tui_complete exit 42" "expected 'FAIL', got '${_COMPLETE_CALLED_WITH}'"
+    fail "_hook_tui_complete exit 42" \
+        "out_complete='${_COMPLETE_CALLED_WITH}' summary_msg='${_SUMMARY_EVENT_MSG}'"
 fi
 
-# --- Test 9: routes through out_complete, not tui_complete directly ----------
-echo "--- Test 9: no direct tui_complete call ---"
+# --- Test 9: closes wrap-up pill with SUCCESS verdict on exit 0 --------------
+echo "--- Test 9: exit 0 → tui_stage_end wrap-up SUCCESS ---"
 
-# Define tui_complete as a canary — if _hook_tui_complete calls it directly,
-# the test fails. (The real path is: _hook_tui_complete → out_complete → if
-# tui_complete defined, call it. Here out_complete is our mock so the canary
-# is never reached unless _hook_tui_complete bypasses out_complete.)
-_CANARY_CALLED=0
-tui_complete() { _CANARY_CALLED=1; }
-
-_COMPLETE_CALLED_WITH=""
+_STAGE_END_LABEL=""; _STAGE_END_VERDICT=""
 _hook_tui_complete 0
 
-# out_complete mock does NOT call through to tui_complete, so canary stays 0.
-# If _hook_tui_complete calls tui_complete directly, canary fires.
-if [[ "$_CANARY_CALLED" -eq 0 ]]; then
-    pass "_hook_tui_complete does not call tui_complete directly (routes via out_complete)"
+if [[ "$_STAGE_END_LABEL" == "wrap-up" ]] && [[ "$_STAGE_END_VERDICT" == "SUCCESS" ]]; then
+    pass "_hook_tui_complete exit 0 closes wrap-up pill with SUCCESS"
 else
-    fail "_hook_tui_complete routing" "tui_complete was called directly, bypassing out_complete"
+    fail "_hook_tui_complete wrap-up SUCCESS" \
+        "label='${_STAGE_END_LABEL}' verdict='${_STAGE_END_VERDICT}'"
+fi
+
+# --- Test 10: closes wrap-up pill with FAIL verdict on exit 1 ----------------
+echo "--- Test 10: exit 1 → tui_stage_end wrap-up FAIL ---"
+
+_STAGE_END_LABEL=""; _STAGE_END_VERDICT=""
+_hook_tui_complete 1
+
+if [[ "$_STAGE_END_LABEL" == "wrap-up" ]] && [[ "$_STAGE_END_VERDICT" == "FAIL" ]]; then
+    pass "_hook_tui_complete exit 1 closes wrap-up pill with FAIL"
+else
+    fail "_hook_tui_complete wrap-up FAIL" \
+        "label='${_STAGE_END_LABEL}' verdict='${_STAGE_END_VERDICT}'"
 fi
 
 echo ""

@@ -13,7 +13,7 @@
 #   _hook_failure_context          — LAST_FAILURE_CONTEXT.json on failure
 #   _hook_update_check             — non-intrusive update check
 #   _hook_final_dashboard_status   — last-chance dashboard run_state write
-#   _hook_tui_complete             — out_complete() for the TUI sidecar
+#   _hook_tui_complete             — per-pass wrap-up signal for TUI sidecar
 # =============================================================================
 set -euo pipefail
 
@@ -140,18 +140,23 @@ _hook_final_dashboard_status() {
     emit_dashboard_run_state 2>/dev/null || true
 }
 
-# Must run last: calls out_complete, which reads action_items populated by
-# _hook_commit. If it runs earlier, those items are absent from the status
-# JSON the TUI sidecar reads.
+# Must run last: closes the wrap-up pill and emits a pass-complete summary
+# event AFTER _hook_commit has populated action_items. The sidecar itself is
+# not torn down here — its lifecycle matches the outer tekhton.sh invocation,
+# not a single finalize_run pass, so multi-pass modes (--complete, --fix-nb,
+# --fix-drift, --human --complete) keep the same sidecar across iterations.
+# Final hold-on-complete + teardown happens once at the top-level dispatch
+# site in tekhton.sh via out_complete.
 _hook_tui_complete() {
     local exit_code="${1:-0}"
     local verdict="SUCCESS"
     [[ "$exit_code" -ne 0 ]] && verdict="FAIL"
-    # M107: close the wrap-up pill before out_complete flips the sidecar into
-    # hold-on-complete. All commit, archive, and version-bump hooks have
-    # already run by this point, so finalization really is done.
     if declare -f tui_stage_end &>/dev/null; then
         tui_stage_end "wrap-up" "" "" "" "$verdict" 2>/dev/null || true
     fi
-    out_complete "$verdict" 2>/dev/null || true
+    if declare -f tui_append_summary_event &>/dev/null; then
+        local level="success"
+        [[ "$verdict" != "SUCCESS" ]] && level="error"
+        tui_append_summary_event "$level" "Pass complete: ${verdict}" 2>/dev/null || true
+    fi
 }

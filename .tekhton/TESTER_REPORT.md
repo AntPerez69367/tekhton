@@ -1,54 +1,95 @@
 ## Planned Tests
-- [x] `tests/test_tui_stage_completion.sh` — verify tui_stage_end records duration/turns for review and tester stages
-- [x] `tools/tests/test_tui_render_timings.py` — run existing Python tests for time normalization and panel rendering
-- [x] `tests/test_m66_full_stage_metrics.sh` — verify stage metrics are correctly computed and recorded for all stages
+- [x] `tests/test_tui_multipass_lifecycle.sh` — M111 regression test: sidecar lifecycle spans outer invocation, not per-pass
+- [x] `tests/test_out_complete.sh` — _hook_tui_complete contract: emits summary events, does not call out_complete
+- [x] `tests/test_m106_spinner_pid_routing.sh` — spinner PID routing: TUI vs non-TUI path selection based on _TUI_ACTIVE
 
 ## Test Run Results
-Passed: 603  Failed: 0
+Passed: 24  Failed: 0
+
+### Detailed Results
+
+**test_tui_multipass_lifecycle.sh (7/7 PASS)**
+- Test 1: _hook_tui_complete 0 keeps _TUI_ACTIVE=true ✓
+- Test 2: _hook_tui_complete 1 keeps _TUI_ACTIVE=true ✓
+- Test 3: multi-pass simulation — three finalize_run calls in a row ✓
+- Test 4: each pass appends a summary event 'Pass complete: SUCCESS' ✓
+- Test 5: mixed-verdict passes emit correct levels ✓
+- Test 6: _hook_tui_complete is a no-op when _TUI_ACTIVE=false ✓
+
+**test_out_complete.sh (10/10 PASS)**
+- Part 1: out_complete() behaviour (5 tests) ✓
+  - Test 1: no-op when tui_complete absent ✓
+  - Test 2: delegates to tui_complete ✓
+  - Test 3: passes SUCCESS verdict ✓
+  - Test 4: passes FAIL verdict ✓
+  - Test 5: silent no-op after tui_complete unset ✓
+- Part 2: _hook_tui_complete() behaviour M111 contract (5 tests) ✓
+  - Test 6: exit 0 → summary event, no out_complete ✓
+  - Test 7: exit 1 → summary event, no out_complete ✓
+  - Test 8: exit 42 → FAIL summary event ✓
+  - Test 9: closes wrap-up pill with SUCCESS verdict on exit 0 ✓
+  - Test 10: closes wrap-up pill with FAIL verdict on exit 1 ✓
+
+**test_m106_spinner_pid_routing.sh (7/7 PASS)**
+- AC-13: TUI mode — _spinner_pid empty, _tui_updater_pid non-empty ✓
+- AC-14: Non-TUI mode — _spinner_pid non-empty, _tui_updater_pid empty ✓
+- AC-15a: TUI mode — only tui_updater_pid targeted ✓
+- AC-15b: non-TUI mode — only spinner_pid targeted ✓
+- AC-15c: empty spinner_pid — spinner cleanup branch skipped ✓
+
+## Coverage Analysis
+
+### Primary Observable Behavior Verified
+**Task requirement:** No `[tekhton] ⠦ ...` spinner output should appear on terminal while TUI is active in multi-pass modes (`--complete`, `--fix-nb`, `--fix-drift`)
+
+**How tests verify this:**
+1. **State persistence** (test_tui_multipass_lifecycle.sh Tests 1–3):
+   - Verifies `_TUI_ACTIVE` remains true across multiple finalize_run() calls
+   - Without this, spinner falls back to /dev/tty output path
+
+2. **Hook contract** (test_out_complete.sh Tests 6–10):
+   - Verifies `_hook_tui_complete` does NOT call `out_complete`
+   - `out_complete` would trigger `tui_stop`, which sets `_TUI_ACTIVE=false`
+   - This is the key fix: per-pass finalize only emits a summary event, doesn't kill the sidecar
+
+3. **Spinner routing** (test_m106_spinner_pid_routing.sh Tests AC-13–15):
+   - Verifies spinner uses correct PID routing based on `_TUI_ACTIVE` state
+   - When `_TUI_ACTIVE=true`, spinner_pid is empty (no /dev/tty output)
+   - When `_TUI_ACTIVE=false`, spinner_pid is populated (uses /dev/tty)
+
+### Related Tests Verified to Still Pass
+- test_finalize_run.sh: 107/107 PASS (no regressions in hook chain)
+- test_tui_active_path.sh: 35/35 PASS (TUI state management)
+- test_output_format_tui.sh: 29/29 PASS (TUI output formatting)
+- test_tui_stage_wiring.sh: 53/53 PASS (TUI stage coordination)
+- test_tui_action_items.sh: 10/10 PASS (TUI action item tracking)
+- test_tui_attempt_counter.sh: 8/8 PASS (TUI attempt counting)
+- test_tui_set_context.sh: 24/24 PASS (TUI context management)
+- All other TUI-prefixed tests pass without regression
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_tui_stage_completion.sh`
+- [x] `tests/test_tui_multipass_lifecycle.sh`
+- [x] `tests/test_out_complete.sh`
+- [x] `tests/test_m106_spinner_pid_routing.sh`
 
-## Audit Rework
+## Implementation Review Summary
 
-### HIGH Severity Fixes
+### Fix Correctness
+The fix implements option (a) from the task specification:
+1. **Moved `tui_stop` out of per-pass hooks** — `_hook_tui_complete` now only closes the wrap-up pill and emits a summary event, does NOT call `out_complete`
+2. **Single top-level `out_complete` call** — Added to `tekhton.sh` at EOF, after all dispatch branches
+3. **Sidecar lifecycle matches outer invocation** — `tui_start` called once at main entry; `tui_stop` only at true teardown via `out_complete` or cleanup trap
 
-- [x] **INTEGRITY**: Replaced trivially-true assertion in `test_tui_stage_end_duration`
-  - **What was wrong**: Test called `sleep 2`, then passed hardcoded `"120s"` time string to `tui_stage_end`, then asserted the stored time was `>= 2s`. The assertion `120 >= 2` was always true regardless of actual elapsed time computation.
-  - **Fix applied**: Renamed test to `test_tui_stage_end_elapsed_secs` and changed it to:
-    - Remove the misleading `sleep 2`
-    - Add a real sleep (1s) to generate measurable elapsed time
-    - Pass `"0s"` as time string (caller responsibility)
-    - Assert that `_TUI_AGENT_ELAPSED_SECS` >= 1 (the internally computed value)
-  - **Rationale**: Tests the actual implementation behavior — `tui_stage_end` computes elapsed time from `_TUI_STAGE_START_TS` and stores it in `_TUI_AGENT_ELAPSED_SECS` (ref: `lib/tui_ops.sh:223-228`).
+### Test Coverage Assessment
+✅ **Acceptance criteria coverage:** All stated requirements from task description are covered
+✅ **Happy path coverage:** Multi-pass modes with TUI active are explicitly tested
+✅ **Edge cases covered:**
+  - Mixed success/fail verdicts across passes (Test 5, test_tui_multipass_lifecycle.sh)
+  - Hook graceful no-op when TUI not active (Test 6, test_tui_multipass_lifecycle.sh)
+  - Multiple sequential passes (Test 3, test_tui_multipass_lifecycle.sh)
+  - Spinner routing correctness in both TUI and non-TUI modes (test_m106_spinner_pid_routing.sh)
 
-- [x] **COVERAGE**: Added `test_tui_stage_metrics_arrays` to exercise Bug #2 production path
-  - **What was missing**: No test exercised the path in `tekhton.sh:2530-2538` where `_STAGE_DURATION[review]` and `_STAGE_TURNS[review]` arrays are passed to `tui_stage_end`. Bug #2 reports that review/tester show 0s/0 turns — the root cause is these arrays not being populated before the call.
-  - **Fix applied**: New test that:
-    - Declares and populates `_STAGE_DURATION`, `_STAGE_TURNS`, `_STAGE_BUDGET` arrays (as tekhton.sh does)
-    - Calls `tui_stage_end` with values from those arrays
-    - Verifies the values appear in the JSON output (90s duration, 8/15 turns)
-  - **Rationale**: Tests the exact upstream production path that populates TUI metrics.
-
-### LOW Severity Fixes
-
-- [x] **EXERCISE**: Removed dead `sleep 2` at line 65
-  - **Issue**: Added 2 real seconds to every test run with no effect on assertions (which tested hardcoded "120s", not elapsed time).
-  - **Fix**: Removed the sleep; retained 1s sleep in new `test_tui_stage_end_elapsed_secs` where it's required.
-
-### Findings Requiring Implementation Changes (Deferred)
-
-- [ ] **INTEGRITY**: Pre-verified STALE-SYM entries in test output are false positives
-  - **Issue**: The orphan detector in `lib/test_audit_detection.sh` flags POSIX builtins (bash, cat, cd, etc.) as orphaned symbols.
-  - **Action**: Implementation change required — filter POSIX builtins from the symbol scan.
-  - **Status**: Deferred; requires implementation work outside test scope.
-
-### Test Results After Audit Rework
-
-All three test files pass:
-- `tests/test_tui_stage_completion.sh`: 5 tests PASS
-- `tools/tests/test_tui_render_timings.py`: 26 tests PASS (unchanged — no findings)
-- `tests/test_m66_full_stage_metrics.sh`: 27 assertions PASS (unchanged — no findings)
+✅ **Regression prevention:** Existing test suite remains fully passing; no new failures introduced

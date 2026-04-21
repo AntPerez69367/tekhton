@@ -1,37 +1,37 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 59 test cases
-(test_tui_stage_completion.sh: 5 functions; test_tui_render_timings.py: 26 methods; test_m66_full_stage_metrics.sh: 28 assertions)
+Tests audited: 3 files, 24 test assertions
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: test_tui_stage_metrics_arrays overstates what it verifies
-- File: tests/test_tui_stage_completion.sh:139-179
-- Issue: The test comment claims it exercises "the exact upstream production path" from `tekhton.sh:2530-2538` where `_STAGE_DURATION[review]` and `_STAGE_TURNS[review]` are passed to `tui_stage_end`. The actual Bug #2 root cause was that `tekhton.sh` wrote to `_STAGE_*[reviewer]` (with the 'r' suffix) but then read from `_STAGE_*[review]` (without it), producing 0s/0 turns in the TUI. This test only verifies the interface round-trip: if you pre-populate `_STAGE_DURATION["review"]=90` and pass those values explicitly to `tui_stage_end`, they appear in the JSON. It does not call any tekhton.sh code or verify the key-rename fix in `tekhton.sh`. The comment misleads future readers about test coverage.
+#### SCOPE: test_m106_spinner_pid_routing.sh listed as modified but git status shows no change
+- File: tests/test_m106_spinner_pid_routing.sh
+- Issue: The tester report's "Files Modified" list includes this file and the audit context lists it as "modified this run," but the git working tree shows no staged or unstaged change to it. Only `tests/test_out_complete.sh` (` M` unstaged) and `tests/test_tui_multipass_lifecycle.sh` (`??` new untracked) appear in git status. The test file content is valid M106 spinner PID routing coverage — it correctly exercises `lib/agent_spinner.sh`'s TUI/non-TUI PID routing via `_start_agent_spinner` and `_stop_agent_spinner` with real spawned processes. No integrity issue with the test itself.
+- Severity: LOW
+- Action: Remove `test_m106_spinner_pid_routing.sh` from the tester report's "Files Modified" list if it was not actually changed this run. No change to the test file is needed.
+
+#### NAMING: Test 6 description implies _hook_tui_complete itself guards on _TUI_ACTIVE
+- File: tests/test_tui_multipass_lifecycle.sh:184
+- Issue: The pass message reads "hook does not resurrect an inactive sidecar or emit events." This is imprecise. `_hook_tui_complete` in `lib/finalize_dashboard_hooks.sh:150-162` does NOT check `_TUI_ACTIVE` — it unconditionally calls `tui_stage_end` and `tui_append_summary_event` whenever those functions are defined. The no-op behavior occurs inside `tui_stage_end` (`lib/tui_ops.sh:216`: `[[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0`) and `tui_append_event` (`lib/tui_ops.sh:76`: same guard). The assertion is correct — no events land in `_TUI_RECENT_EVENTS` when `_TUI_ACTIVE=false` because real functions from `lib/tui_ops.sh` are sourced — but the pass message implies the short-circuit lives in `_hook_tui_complete` rather than downstream.
+- Severity: LOW
+- Action: Update the pass message to "downstream TUI functions no-op when _TUI_ACTIVE=false; no events emitted" to accurately describe where the guard fires and avoid misleading future readers.
+
+#### COVERAGE: No test exercises the tekhton.sh top-level dispatch changes directly
+- File: tekhton.sh (implementation), no corresponding test file
+- Issue: The fix has two halves: (1) `_hook_tui_complete` no longer calls `out_complete` — covered by `test_out_complete.sh` Tests 6–8; and (2) `tekhton.sh` now calls `out_complete "SUCCESS"` exactly once at its top-level dispatch site, and two previously-present `tui_start` re-arm calls were removed from `_run_fix_nonblockers_loop` and `_run_fix_drift_loop`. The second half has no test. A regression where one of the dispatch loops reintroduces a `tui_stop` or `tui_start` call would not be caught. `test_tui_multipass_lifecycle.sh` simulates the lifecycle correctly but bypasses `tekhton.sh`'s orchestration layer entirely.
 - Severity: MEDIUM
-- Action: Trim the comment to accurately state what is tested: "Verifies tui_stage_end correctly serialises duration and turns values from caller-populated arrays." The actual fix (renaming `[reviewer]` → `[review]` in tekhton.sh) is partially covered by the test_m66 fixture update; no implementation change is needed to satisfy this test.
+- Action: Consider a test that stubs/sources the affected `tekhton.sh` dispatch functions and asserts `out_complete` fires exactly once at teardown, not inside the loop body. Alternatively, accept the gap as tested-by-proxy via the hook contract tests and document the decision in the TESTER_REPORT.
 
-#### SCOPE: test_m66_full_stage_metrics.sh was modified but not reported
-- File: tests/test_m66_full_stage_metrics.sh:82-83
-- Issue: The TESTER_REPORT lists `test_m66_full_stage_metrics.sh` under unchanged files with "no findings," but the file was modified this run (4 +/- lines per git diff). The change is correct: fixtures were updated from `_STAGE_DURATION=([coder]=180 [reviewer]=60 ...)` to `_STAGE_DURATION=([coder]=180 [review]=60 ...)` to match the tekhton.sh key rename fix. The modification is not a weakening — it aligns the test fixtures with the bug fix so the test continues to exercise the right code path. However, the omission from the TESTER_REPORT means a future auditor cannot tell whether the change was intentional.
+#### EXERCISE: test_out_complete.sh Part 2 uses mocks that bypass the _TUI_ACTIVE guard
+- File: tests/test_out_complete.sh:157-168
+- Issue: Tests 6–10 define mock stubs for `tui_stage_end` and `tui_append_summary_event` that capture call arguments but do not check `_TUI_ACTIVE`. The test also does not set `_TUI_ACTIVE=true` before calling `_hook_tui_complete`. The production implementations of both functions gate on `_TUI_ACTIVE` (`lib/tui_ops.sh:216`, `lib/tui_ops.sh:76`). As a result these tests verify the hook's call-dispatch contract (which functions are called, with which arguments) but not that the full production chain fires correctly when TUI is actually active. The end-to-end behavior with real functions and `_TUI_ACTIVE=false` is covered separately by `test_tui_multipass_lifecycle.sh` Test 6. No test uses real (non-mocked) downstream functions with `_TUI_ACTIVE=true` in the `test_out_complete.sh` context.
 - Severity: LOW
-- Action: No test change needed. The modification is correct. Update the TESTER_REPORT to list `test_m66_full_stage_metrics.sh` under "Files Modified" with a brief note on why (key rename alignment).
+- Action: For completeness, add one test variant that sources `lib/tui_ops.sh` directly, sets `_TUI_ACTIVE=true`, and verifies an event lands in `_TUI_RECENT_EVENTS` after `_hook_tui_complete 0`. Not required for PASS.
 
-#### INTEGRITY: Pre-verified STALE-SYM entries are false positives, not real orphans
-- File: tests/test_m66_full_stage_metrics.sh (suite-level)
-- Issue: The orphan detector flags `bash`, `cat`, `cd`, `chmod`, `command`, `dirname`, `echo`, `exit`, `grep`, `mkdir`, `mktemp`, `printf`, `pwd`, `rm`, `sed`, `set`, `source`, `trap` as STALE-SYM. These are POSIX shell builtins and standard system utilities, not references to Tekhton symbols. No tests are orphaned.
+#### None: STALE-SYM warnings for shell builtins are false positives
+- File: tests/test_m106_spinner_pid_routing.sh, tests/test_out_complete.sh
+- Issue: The pre-verified STALE-SYM list flags `:`, `awk`, `cd`, `command`, `continue`, `declare`, `dirname`, `echo`, `eval`, `exit`, `mktemp`, `printf`, `pwd`, `read`, `set`, `source`, `touch`, `trap`, `true`, `wait` as "not found in any source definition." These are POSIX shell builtins or standard system utilities, not Tekhton symbols. No tests are orphaned.
 - Severity: LOW
-- Action: No test change needed. Update `lib/test_audit_detection.sh` to exclude POSIX builtins and standard PATH utilities from its symbol scan (deferred implementation work per TESTER_REPORT).
-
-### Notes
-
-**tests/test_tui_stage_completion.sh — all prior HIGH findings resolved.**
-The previously flagged trivially-true assertion (`120 >= 2`) has been replaced with `test_tui_stage_end_elapsed_secs`, which sets `_TUI_STAGE_START_TS`, sleeps 1s, and then asserts the implementation-computed `_TUI_AGENT_ELAPSED_SECS >= 1`. This is a genuine test: `tui_ops.sh:223-227` computes `_final_elapsed` from `_TUI_STAGE_START_TS` and stores it in `_TUI_AGENT_ELAPSED_SECS`. The dead `sleep 2` was removed. All five test functions source real implementation files (`lib/tui_ops.sh`, `lib/tui_helpers.sh`), write to temp-directory status files, and assert against actual JSON output. Isolation is correct: `_TUI_STATUS_FILE` and `_TUI_STATUS_TMP` are set to TMPDIR paths before any write, and the trap cleans up on exit.
-
-**tools/tests/test_tui_render_timings.py — PASS (no findings).**
-All 26 methods exercise real implementation code via direct calls to `_normalize_time` and `_build_timings_panel`. The `_fmt_duration` format was verified in `tools/tui_render_common.py:14-23`: it returns compact form (`"1m30s"`, not `"1m 30s"`), so the strict equality assertions in `TestNormalizeTime` (e.g., `result == "1m30s"`) are correct. The permissive OR pattern in panel tests (`"1m23s" in panel_str or "1m 23s" in panel_str`) is conservative due to Rich's terminal rendering behaviour and is acceptable. The primary Bug #1 regression test (`test_normalized_time_in_completed_row`) correctly verifies that "83s" is normalised to a minutes-format string in completed-stage rows. Edge cases cover empty, whitespace, zero, sub-minute, exactly-60s, large values, already-formatted inputs, missing fields, failed verdicts, and live-vs-completed format consistency.
-
-**tests/test_m66_full_stage_metrics.sh — PASS (no findings).**
-All 28 assertions exercise `record_run_metrics()` and both parser paths (Python + bash fallback) with controlled fixtures written to a temp directory. Assertions check exact field names and values in JSONL output. Sparse-key behaviour (fields omitted when stages did not run), sub-step key coexistence (Test 7), backward compatibility with old records (Test 6), and the new `test_audit_duration_s`/`analyze_cleanup_duration_s` fields (Test 8) are all covered. The `[reviewer]` → `[review]` fixture update correctly aligns with the tekhton.sh key rename and does not weaken any assertion.
+- Action: None — detector false positives. No test changes required.

@@ -2735,10 +2735,6 @@ _run_fix_nonblockers_loop() {
 
         log "Fix-nonblockers pass ${nb_attempt}: ${remaining} item(s) remaining."
 
-        # Re-arm TUI sidecar for this pass (tui_complete from the previous
-        # pass will have stopped it; tui_start is a no-op if TUI is inactive).
-        if declare -f tui_start &>/dev/null; then tui_start; fi
-
         # M110 §9: pass-boundary event for passes ≥2 so the runtime chronology
         # in the hold view shows a clear "Starting pass N" marker between passes.
         if [[ "$nb_attempt" -ge 2 ]] && declare -f tui_append_event &>/dev/null; then
@@ -2824,10 +2820,6 @@ _run_fix_drift_loop() {
         fi
 
         log "Fix-drift pass ${drift_attempt}: ${remaining} observation(s) remaining."
-
-        # Re-arm TUI sidecar for this pass (tui_complete from the previous
-        # pass will have stopped it; tui_start is a no-op if TUI is inactive).
-        if declare -f tui_start &>/dev/null; then tui_start; fi
 
         # M110 §9: pass-boundary event for passes ≥2 so the runtime chronology
         # in the hold view shows a clear "Starting pass N" marker between passes.
@@ -2978,4 +2970,14 @@ else
 
     finalize_run 0
     echo
+fi
+
+# --- TUI final hold-on-complete + teardown -----------------------------------
+# Single top-level out_complete: the sidecar lifecycle matches the outer
+# tekhton.sh invocation, not per-pass finalize_run() calls. Per-pass
+# _hook_tui_complete only closes the wrap-up pill and emits a summary event;
+# only this site triggers hold-on-complete + tui_stop. The cleanup trap at
+# the top of the file still calls tui_stop as a safety net for crashes.
+if declare -f out_complete &>/dev/null; then
+    out_complete "SUCCESS" 2>/dev/null || true
 fi

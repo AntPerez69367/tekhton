@@ -182,8 +182,11 @@ classify_failure_diag() {
     done
 
     # Should never reach here (_rule_unknown always matches)
+    # shellcheck disable=SC2034  # Used by lib/diagnose_helpers.sh, lib/diagnose_output.sh
     DIAG_CLASSIFICATION="UNKNOWN"
+    # shellcheck disable=SC2034
     DIAG_CONFIDENCE="low"
+    # shellcheck disable=SC2034
     DIAG_SUGGESTIONS=("No specific failure pattern identified.")
 }
 
