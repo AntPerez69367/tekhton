@@ -40,43 +40,71 @@ helpers instead of adding stage-specific patches at call sites.
 
 ### 1) Canonical Stage Taxonomy
 
-Define four activity classes and keep them explicit in protocol state:
+Define five activity classes and keep them explicit in protocol state:
 
-1. Pipeline stage: top-level ordered work unit shown in pill row and timings.
-2. Pre-stage: run-level gate before pipeline loop; visible in active bar and
-   timings, optional in pills by configuration. `preflight` and `intake` are
-   separate pre-stages and must never be conflated.
-3. Sub-stage: child phase owned by a parent stage (for example scout under coder,
-   rework under review); visibility is policy-driven, not ad-hoc.
-4. Operation: long shell operation (`run_op`) shown only as active-bar work.
+1. Pipeline stage: top-level ordered work unit shown in pill row and timings
+   (scout/coder/security/review/docs/test_verify/test_write).
+2. Pre-stage: run-level gate before the pipeline loop; visible in active bar and
+   timings, optional in pills by configuration. `preflight`, `intake`, and
+   conditional `architect` audit are separate pre-stages and must never be
+   conflated with each other or with pipeline stages.
+3. Post-stage: run-level gate after the pipeline loop (currently `wrap-up`),
+   which activates during `finalize_run()` and must own the active bar and a
+   timings row until the run terminates.
+4. Sub-stage: child phase owned by a parent stage (for example scout under coder,
+   rework under review, architect-remediation under architect); visibility is
+   policy-driven, not ad-hoc.
+5. Operation: long shell operation (`run_op`) shown only as active-bar work.
+   Operations never produce pill-row state and never add timings rows.
 
 Scope rule:
-- Every active status update must belong to one declared class.
+- Every active status update must belong to exactly one declared class.
 - Spinner updates must target the currently declared lifecycle owner, never the
-  previously completed stage.
+  previously completed stage or the stage that just ended.
+- A class change requires a new lifecycle entry; you cannot mutate a pipeline
+  stage into a sub-stage or vice versa.
 
 ### 2) Stage Ownership Policy (single source of truth)
 
-Add a central policy map in shell (same layer as stage label mapping) that decides,
-per class/stage, where it appears:
+Add a central policy lookup in `lib/pipeline_order.sh`, co-located with
+`get_stage_display_label`, that returns rendering rules per stage name. Encoding
+rule (keep the shell footprint small to minimize rewrite cost): one function
+`get_stage_policy NAME` implemented as a single `case` statement that echoes a
+fixed-shape record `"class|pill|timings|active|parent"` where:
 
-- In pill row (`pill=true/false`)
-- In timings (`timings=true/false`)
-- In active-bar label (`active=true/false`)
-- Parent stage for sub-stages (`parent=coder`, `parent=review`, etc.)
+- `class`    ∈ `pipeline | pre | post | sub`
+- `pill`     ∈ `yes | no | conditional`
+- `timings`  ∈ `yes | no`
+- `active`   ∈ `yes | no`
+- `parent`   ∈ stage name or `-`
 
-Initial policy:
-- preflight: pill yes (or configurable), timings yes, active yes
-- intake: pill yes, timings yes, active yes
-- architect: pill no, timings yes, active yes
-- architect remediation coder/jr/review: pill no, timings yes, active yes,
-  parent architect
-- scout: pill no (or inherited), timings yes, active yes, parent coder
-- rework: keep current behavior, but policy-defined
-- run_op operations: active only
+One function, one record shape, no associative arrays, no registry layer.
+Call sites never read fields directly; they call protocol helpers which call
+the policy lookup. This keeps the portable surface to ~25 lines of shell.
 
-The policy is read by protocol helpers so call sites provide semantic intent, not
-rendering decisions.
+Initial policy (authoritative — any disagreement elsewhere in the doc defers
+to this table):
+
+| Stage                    | class    | pill        | timings | active | parent    |
+|--------------------------|----------|-------------|---------|--------|-----------|
+| preflight                | pre      | yes         | yes     | yes    | -         |
+| intake                   | pre      | yes         | yes     | yes    | -         |
+| architect                | pre      | conditional | yes     | yes    | -         |
+| architect-remediation    | sub      | no          | yes     | yes    | architect |
+| scout                    | sub      | no          | yes     | yes    | coder     |
+| coder                    | pipeline | yes         | yes     | yes    | -         |
+| security                 | pipeline | yes         | yes     | yes    | -         |
+| review                   | pipeline | yes         | yes     | yes    | -         |
+| docs                     | pipeline | yes         | yes     | yes    | -         |
+| test_write / tester-write| pipeline | yes         | yes     | yes    | -         |
+| test_verify / tester     | pipeline | yes         | yes     | yes    | -         |
+| rework                   | sub      | no          | yes     | yes    | review    |
+| wrap-up                  | post     | yes         | yes     | yes    | -         |
+| run_op operations        | op       | no          | no      | yes    | -         |
+
+`conditional` pills are rendered by the planner (§3), not by live protocol
+traffic. Call sites pass only the stage name; the helper resolves the class
+and visibility rules. Test coverage for this lookup is mandatory (§10).
 
 ### 3) Deterministic Run Stage Plan (precomputed pills)
 
@@ -108,15 +136,26 @@ Ordering guarantees:
 - Dynamic insertion is allowed only for policy-approved conditional placeholders,
    preserving deterministic relative order.
 
-Architect handling:
+Architect handling (binds §2 and §3):
 
-- Architect should not be silently absent when drift audit is likely.
-- If audit predicate is unresolved at startup, include architect as a conditional
-   placeholder pill (or at minimum reserve timings/active ownership) so activation
-   never looks like a stale-label bug.
+- Architect's policy is `pill=conditional`. The planner decides at startup
+  whether to promote the placeholder to `scheduled` based on:
+  `FORCE_AUDIT=true`, pending drift observations above
+  `DRIFT_OBSERVATION_THRESHOLD`, or `runs_since_audit >= DRIFT_RUNS_SINCE_AUDIT_THRESHOLD`.
+- When promoted to `scheduled`, architect appears in the pill row in the
+  pre-stage slot (after intake, before pipeline stages) and owns the active bar
+  and a timings row during execution.
+- When not promoted, architect is suppressed from the pill row entirely for
+  this run — no placeholder is shown. Timings/active ownership are still
+  reserved so any late activation is well-formed rather than stale-label.
+- Rationale: rendering a persistent grey "maybe architect" pill on every run
+  was rejected; it adds visual noise for the common case where audit does not
+  run. Defer any distinctive rendering for possible-but-not-scheduled
+  placeholders until a concrete need arises.
 
-This planner should live in one shell-layer function and feed both output bus
-context and TUI state; no per-stage caller should manually patch stage order.
+This planner lives in one shell-layer function (`get_run_stage_plan()` in
+`lib/pipeline_order.sh`) and feeds both `_OUT_CTX[stage_order]` and the TUI
+bootstrap. No per-stage caller is permitted to manually patch stage order.
 
 ### 4) Atomic Transition API (remove grey-gap regressions)
 
@@ -134,16 +173,34 @@ rework cycle transitions) should use transition instead of separate end/begin ca
 
 ### 5) Lifecycle Invariants Enforced in Protocol Layer
 
-Enforce these invariants in one place (tui protocol code):
+Lifecycle identity contract:
 
-1. No stale reactivation: once a stage is marked complete, it cannot become active
-   again unless a new lifecycle entry is explicitly opened for that same label.
-2. Parent consistency: a sub-stage update must resolve to an active parent context
-   or fail closed to a neutral active label (never last completed stage).
-3. Monotonic pill state: pending -> running -> complete/fail, no complete -> running
-   regressions without explicit new cycle semantics.
-4. Timings ownership: each row has a stable lifecycle id; elapsed and turns attach
-   to that id, not to mutable current-label globals.
+- Every `tui_stage_begin` allocates a lifecycle id of the form
+  `"<stage>#<cycle>"` where `<cycle>` is a per-stage monotonic counter
+  maintained in a shell associative array `_TUI_STAGE_CYCLE` (e.g. first
+  rework is `rework#1`, second is `rework#2`).
+- The current owner is tracked as two fields in the status file:
+  `current_lifecycle_id` and `current_stage_label`.
+- Every `tui_update_agent` / spinner call resolves to `current_lifecycle_id`
+  and is silently dropped if the id has changed since the call was queued
+  (guards against late updates leaking into the next stage).
+- Completed stage records in `stages_complete[]` carry their lifecycle id
+  verbatim. Timings rows key off lifecycle id, not label.
+- Lifecycle ids are strings, not structs; the shell surface stays portable.
+
+Invariants enforced in the protocol layer (single code path — `lib/tui_ops.sh`):
+
+1. No stale reactivation: once a lifecycle id is marked complete, no further
+   updates to that id are accepted. Reusing a label requires allocating a new
+   id (`rework#2`, not `rework#1` again).
+2. Parent consistency: a sub-stage begin must resolve to an open parent
+   lifecycle id per the policy table (§2). If the parent is not open, fail
+   closed to a neutral active label (never the last completed stage).
+3. Monotonic pill state: `pending → running → complete|fail`. Any transition
+   from `complete` back to `running` for the same label is only legal when a
+   new lifecycle id has been allocated for that label.
+4. Timings ownership: each timings row has a stable lifecycle id; elapsed and
+   turns attach to that id, not to mutable current-label globals.
 
 ### 6) Timings Column Compatibility
 
@@ -161,32 +218,76 @@ ownership model:
 Timing integrity rules:
 
 - Completed rows must never reset elapsed to `0s` unless true elapsed is zero.
-- Stage-duration lookup must use a canonical key mapping, not raw loop labels
-   where aliases differ (for example `review` vs `reviewer`, `test_verify` vs
-   `tester`).
-- Completed and live rows must use the same formatter contract (`_fmt_duration`)
-   for human-readable consistency.
-- Raw seconds may be stored in status payload, but rendering should normalize via
-   one formatter path.
+- Stage-duration lookup must use a canonical key resolver, not raw loop labels
+  where aliases differ. The resolver lives next to `get_stage_display_label`
+  and must normalize all known aliases to their display key before any metric
+  lookup. Known alias pairs that must be covered (verified against call sites
+  in `stages/*.sh` and `lib/metrics*.sh`):
+
+  | Internal / metric key | Display label (canonical) |
+  |-----------------------|---------------------------|
+  | `reviewer`            | `review`                  |
+  | `test_verify`         | `tester`                  |
+  | `test_write`          | `tester-write`            |
+  | `wrap_up`             | `wrap-up`                 |
+  | `jr_coder`            | `rework` (sub-stage)      |
+
+  The resolver must be a single function `get_stage_metrics_key NAME` that
+  accepts either side and returns the canonical display label. Any new stage
+  or alias added in future work must extend this one function.
+
+- Completed and live rows must use the same formatter contract (`_fmt_duration`
+  in `tools/tui_render_common.py`) for human-readable consistency. No ad-hoc
+  duration formatting is permitted elsewhere in the render tree.
+- Raw seconds may be stored in status payload, but rendering must normalize via
+  the one formatter path. The status-file schema should store both raw seconds
+  (`elapsed_secs`) and the canonical lifecycle id so the renderer can recompute
+  if needed without trusting mutable label globals.
+- On `tui_stage_end`, duration and turns must be resolved via the canonical
+  key resolver *before* the status record is written. Missing metric lookups
+  must not silently default to `0s` — they must log a warning and inherit the
+  last observed elapsed for the open lifecycle id.
 
 ### 7) Integration Plan (minimal churn)
 
-Implement in this order to reduce risk:
+Implement in this order to reduce risk. The whole M110 implementation must be
+gated by a `TUI_LIFECYCLE_V2` config flag (default `true` once merged, with a
+documented fallback to the pre-M110 path for one release cycle). This
+preserves a cheap rollback if a field regression surfaces post-merge.
 
-1. Add policy and lifecycle-id support in `lib/tui_ops.sh` and `lib/tui_helpers.sh`.
-2. Add deterministic stage planner and feed it into output bus + TUI bootstrap.
-3. Update `tools/tui_render.py` to render policy-driven labels and lifecycle-safe
-   current row selection.
-4. Introduce canonical stage-metrics key resolver for turns/duration lookups
-   before `tui_stage_end` (prevent alias-key default-to-zero regressions).
-5. Wire architect and architect-remediation call sites to explicit protocol stages.
-6. Replace fragile end/begin pairs with transition helper on scout->coder path.
-7. Add event-stream phase typing so completion recap fields are rendered as
-    summary metadata, not chronological runtime events.
-8. Add per-pass output-bus/TUI state reset hooks for multi-pass modes
-   (`fix-nb`, `fix-drift`, `complete` loop variants as needed).
-9. Keep existing APIs as wrappers during migration; remove old direct patterns only
-   after tests pass.
+1. Add canonical stage-metrics key resolver (`get_stage_metrics_key`) in
+   `lib/pipeline_order.sh` alongside `get_stage_display_label`. This is
+   foundational — every subsequent step relies on it.
+2. Add stage policy lookup (`get_stage_policy`) in `lib/pipeline_order.sh`.
+   Pure function, no side effects, tested in isolation.
+3. Add lifecycle-id allocation and `current_lifecycle_id` tracking in
+   `lib/tui_ops.sh` and `lib/tui_helpers.sh`. Extend status-file JSON schema
+   to include `lifecycle_id` on `current` and `stages_complete[]` entries.
+4. Add deterministic stage planner (`get_run_stage_plan`) in
+   `lib/pipeline_order.sh` and feed it into `_OUT_CTX[stage_order]` and the
+   TUI bootstrap (replacing the direct `get_display_stage_order` call at run
+   start).
+5. Update `tools/tui_render.py` and `tools/tui_render_timings.py` to render
+   policy-driven labels and lifecycle-id-keyed current row selection. Keep
+   `_fmt_duration` as the single formatter entry point.
+6. Add `tui_stage_transition FROM TO [MODEL]` to `lib/tui_ops.sh`. Single
+   status-file write (end `FROM`, begin `TO`, one atomic swap).
+7. Wire architect and architect-remediation call sites in `stages/architect.sh`
+   to explicit protocol stages.
+8. Replace the scout→coder end/begin pair in `stages/coder.sh` with
+   `tui_stage_transition`.
+9. Add event-stream phase typing (`runtime` vs `summary`) in
+   `lib/tui_helpers.sh` (event record) and route recap fields through
+   `lib/output_format.sh` as `summary` events. Update `tools/tui_hold.py` to
+   render a separate summary block.
+10. Add per-pass output-bus/TUI state reset helper (`out_reset_pass`) in
+    `lib/output.sh` and invoke it from the `_run_fix_nonblockers_loop` and
+    `_run_fix_drift_loop` functions in `tekhton.sh` before each iteration.
+11. Emit explicit `pass_boundary` events before each pass ≥ 2 and a terminal
+    `loop_terminal` event when remaining work is zero.
+12. Keep pre-M110 code paths alive behind the `TUI_LIFECYCLE_V2` flag during
+    migration; remove the legacy paths only after a full release cycle with
+    the flag defaulting to on.
 
 ### 8) Event Stream Chronology and Completion Summary Boundaries
 
@@ -229,33 +330,90 @@ Required reset boundaries:
 
 Control-flow clarity rules:
 
-- After hold-on-complete Enter, if another pass is required, emit an explicit
-   `Starting pass N+1` boundary event before stage events.
-- If no work remains (for example non-blocking count is 0), no new pipeline pass
-   may start; loop must terminate with a clear terminal message.
-- TUI re-arm on subsequent passes must be deterministic and observable (either
-   sidecar starts or explicit reason is emitted when disabled).
+- After hold-on-complete Enter, the decision whether to start another pass
+  must live in the parent shell loop (`_run_fix_nonblockers_loop` /
+  `_run_fix_drift_loop` in `tekhton.sh`), not in `tools/tui_hold.py`. The
+  sidecar's only responsibility is to unblock on Enter; the shell then
+  evaluates remaining-work count and either terminates or continues.
+- If another pass is required, the shell must emit an explicit
+  `Starting pass N+1` boundary event (typed as `runtime`) before any stage
+  events and re-arm the TUI sidecar for the new pass.
+- If no work remains (for example non-blocking count is 0), no new pipeline
+  pass may start; the loop must emit a terminal event and exit cleanly.
+- TUI re-arm on subsequent passes must be deterministic and observable:
+  either the sidecar starts (visible in logs), or an explicit reason event is
+  emitted when disabled (`TUI_ENABLED=false` or missing venv).
+
+### 10) Testing & Rollout
+
+Given the blast radius (15 files, 17 acceptance items), the test matrix must
+cover each new contract explicitly, not merely the end-to-end behavior:
+
+Unit tests (`tools/tests/test_tui.py`, shell-side via bats or fixture scripts):
+
+- `get_stage_policy` returns correct record shape for every stage in the §2
+  table; unknown stages fall back to a defined `op` record.
+- `get_stage_metrics_key` normalizes every alias pair listed in §6 and is
+  idempotent when called on a canonical key.
+- `get_run_stage_plan` output for each run mode:
+  - bare task (`INTAKE_AGENT_ENABLED=true`, no flags)
+  - bare task with `SKIP_SECURITY=true`
+  - bare task with `DOCS_AGENT_ENABLED=true`
+  - `--milestone` mode
+  - `--fix nb` mode
+  - `--fix drift` mode (architect promoted to `scheduled`)
+  - `--start-at review`
+- Lifecycle-id monotonicity: repeated `tui_stage_begin "rework"` calls
+  allocate `rework#1`, `rework#2`, ... never reuse a completed id.
+- Spinner updates against a closed lifecycle id are dropped.
+- `tui_stage_transition` produces exactly one status-file write.
+- Event type routing: `out_kv "Task" ...` produces a `summary` event, not
+  `runtime`.
+- `out_reset_pass` clears `_OUT_CTX[action_items]` and per-pass summary keys
+  but preserves run-invariant keys (`mode`, `task`, `cli_flags`).
+
+Integration tests (`tests/test_tui_stage_wiring.sh`):
+
+- Scout → coder transition: zero grey-gap frames in captured status-file
+  sequence (no status frame has `current_stage_label=""` between the two).
+- Rework cycle: two successive rework entries both appear in timings with
+  distinct lifecycle ids, no pill regression.
+- Architect promotion: with drift observations seeded above threshold,
+  architect pill appears and owns active bar during execution; with no
+  drift, no architect pill is rendered.
+- Multi-pass reset: `_run_fix_nonblockers_loop` with 2 passes shows cleared
+  action items between passes; pass-boundary event is emitted between them.
+- Hold → no-work Enter: synthetic hold view Enter with remaining-work=0
+  exits cleanly without starting a new pass.
+
+Rollout:
+
+- Merge with `TUI_LIFECYCLE_V2=true` as default. Document the flag in
+  `CLAUDE.md` template-variables table and `pipeline.conf.example`.
+- Keep the legacy code path reachable for one release cycle (one completed
+  post-V3 initiative milestone). Remove only after a clean field report.
+- Post-merge: run the full self-test suite (`bash tests/run_tests.sh`) plus
+  a manual smoke test against a small target project covering bare task,
+  `--fix nb`, and `--fix drift`.
 
 ## Files Modified
 
 | File | Change |
 |------|--------|
-| `lib/pipeline_order.sh` | Add stage ownership policy lookup helpers |
-| `lib/pipeline_order.sh` | Add deterministic run-stage planner helpers |
-| `lib/tui_ops.sh` | Add lifecycle-aware begin/end and transition helper |
-| `lib/tui_helpers.sh` | Emit lifecycle identifiers and policy-aware status fields |
-| `tekhton.sh` | Canonical stage-metrics key mapping for duration/turns lookup |
-| `tekhton.sh` | Architect/pre-stage wiring and transition usage |
-| `stages/coder.sh` | Scout->coder transition handoff |
-| `stages/review.sh` | Policy-driven rework lifecycle wiring |
-| `stages/architect.sh` | Explicit architect and remediation lifecycle ownership |
-| `tools/tui_render.py` | Policy-aware live row and timings rendering |
-| `tools/tui_hold.py` | Separate runtime event log from completion summary metadata |
-| `lib/output_format.sh` | Route recap fields with explicit summary event type |
-| `lib/output.sh` | Add per-pass action-item reset helper for Output Bus context |
-| `tekhton.sh` | Enforce multi-pass boundary events and no-work terminal break |
-| `tools/tests/test_tui.py` | Unit tests for lifecycle invariants and rendering |
-| `tests/test_tui_stage_wiring.sh` | Integration tests for transitions and no-regression behavior |
+| `lib/pipeline_order.sh` | Add `get_stage_policy`, `get_stage_metrics_key`, `get_run_stage_plan` (policy + canonical key resolver + planner) |
+| `lib/tui_ops.sh` | Add lifecycle-id allocation, `tui_stage_transition`, `TUI_LIFECYCLE_V2` gating |
+| `lib/tui_helpers.sh` | Emit `lifecycle_id` and `current_lifecycle_id` in status JSON; add `type` field to events (`runtime` / `summary`) |
+| `lib/output.sh` | Add `out_reset_pass` helper (clears `_OUT_CTX[action_items]` and per-pass summary keys) |
+| `lib/output_format.sh` | Route recap fields through `summary` event type; no chronological ts on summary metadata |
+| `stages/coder.sh` | Replace scout end/begin pair with `tui_stage_transition "scout" "coder"` |
+| `stages/review.sh` | Route rework wiring through policy (sub-stage with `parent=review`) |
+| `stages/architect.sh` | Explicit architect and architect-remediation lifecycle wiring (currently has no TUI protocol calls) |
+| `stages/tester.sh`, `stages/tester_tdd.sh`, `stages/tester_fix.sh` | Route through `get_stage_metrics_key` so `test_verify`/`test_write`/`tester` alias resolution is consistent with renderer |
+| `tekhton.sh` | Pre-stage wiring (preflight/intake/architect), consume `get_run_stage_plan` at bootstrap, call `out_reset_pass` in `_run_fix_nonblockers_loop` + `_run_fix_drift_loop`, emit pass-boundary + loop-terminal events |
+| `tools/tui_render.py`, `tools/tui_render_timings.py` | Lifecycle-id-keyed row selection; policy-driven label rendering; single `_fmt_duration` path |
+| `tools/tui_hold.py` | Separate runtime event log from summary metadata block; Enter only unblocks — no pass-decision logic |
+| `tools/tests/test_tui.py` | Unit tests for lifecycle invariants, policy lookup, alias resolver, planner output |
+| `tests/test_tui_stage_wiring.sh` | Integration tests for transitions, multi-pass reset, repeated-cycle rework, no stale-label regression |
 
 ## Acceptance Criteria
 
