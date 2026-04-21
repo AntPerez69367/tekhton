@@ -1,79 +1,102 @@
 # Coder Summary
+
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-TUI sidecar lifecycle is now scoped to the outer `tekhton.sh` invocation rather
-than individual pipeline passes, so `--complete`, `--fix-nb`, `--fix-drift`, and
-`--human --complete` modes no longer leak `[tekhton] ⠦ ...` spinner lines
-through `/dev/tty` between passes.
+M111 — Fix Milestone Splitting for DAG Mode. Three compounding bugs that prevented
+`split_milestone` and `handle_null_run_split` from working end-to-end in DAG mode
+have been fixed. The large monolithic split logic has also been extracted into two
+companion files to keep `milestone_split.sh` under the 300-line ceiling.
 
-Changes:
+**Bug 1 — DAG-aware extraction (`lib/milestone_split.sh:122-142`).**
+`split_milestone()` now detects DAG mode once before extraction. When the manifest
+is present and DAG is enabled, it calls `_split_read_dag_milestone` (reads from
+`.claude/milestones/<file>`) instead of `_extract_milestone_block` (which only
+reads flat CLAUDE.md). Falls back to the old path when inline mode is active.
 
-1. **`lib/finalize_dashboard_hooks.sh`** — `_hook_tui_complete` no longer calls
-   `out_complete` (which cascaded to `tui_complete → tui_stop` and flipped
-   `_TUI_ACTIVE=false` mid-run). The per-pass hook now:
-   - Closes the `wrap-up` stage pill via `tui_stage_end`.
-   - Emits a `Pass complete: SUCCESS|FAIL` summary event to the ring buffer
-     via `tui_append_summary_event` so users still see the per-pass outcome
-     in the events panel.
-   - Leaves `_TUI_ACTIVE=true` and the sidecar PID alive.
+**Bug 2 — Splice sub-milestones after parent (`lib/milestone_split_dag.sh`).**
+`_split_apply_dag()` parses sub-milestones from the agent output, then rebuilds
+all six `_DAG_*` parallel arrays by inserting the new entries immediately after
+`parent_idx + 1`. `_DAG_IDX` is recomputed for every entry. This ensures
+`save_manifest` writes sub-milestones in their correct sequential position
+(right after the parent, not at the end of the file), so `dag_find_next`
+schedules them next.
 
-2. **`tekhton.sh`** — Added a single top-level `out_complete "SUCCESS"` call
-   at the bottom of the file, after all dispatch branches
-   (`_run_human_complete_loop`, `run_complete_loop`, `_run_fix_nonblockers_loop`,
-   `_run_fix_drift_loop`, plain single-run). This is the only site that
-   triggers the hold-on-complete + `tui_stop` sequence under normal exit.
-   The cleanup `trap` at the top of `tekhton.sh` still calls `tui_stop` as a
-   safety net for crashes.
-
-3. **`tekhton.sh`** — Removed the two now-redundant `tui_start` re-arm calls
-   inside `_run_fix_nonblockers_loop` and `_run_fix_drift_loop`. Those calls
-   existed to resurrect the sidecar that `_hook_tui_complete` had just killed;
-   since the sidecar is no longer killed per pass, re-arming would double-start.
-
-4. **`tests/test_out_complete.sh`** — Rewrote Part 2 to cover the new contract:
-   `_hook_tui_complete` must call `tui_stage_end "wrap-up"` with the pass verdict
-   and `tui_append_summary_event` with `"Pass complete: <verdict>"`, and must
-   NOT call `out_complete`. Tests 6–10 verify both success and failure paths.
-
-5. **`tests/test_tui_multipass_lifecycle.sh`** (NEW) — Regression test for the
-   reported bug. Simulates multi-pass finalize_run() cycles without spawning a
-   real Python sidecar (sets `_TUI_ACTIVE=true` directly). Verifies:
-   - `_TUI_ACTIVE` stays `true` after one, then three sequential hook calls.
-   - `_TUI_COMPLETE` is not flipped mid-loop.
-   - Each pass appends exactly one summary event of the correct level.
-   - Mixed success/fail verdicts produce correct `success`/`error` levels.
-   - Hook is a no-op when TUI was never active (doesn't resurrect it).
+**Bug 3 — Skip `split` status in frontier (`lib/milestone_dag.sh:162-172`).**
+`dag_get_frontier()` now treats `split` as terminal alongside `done`. Before this
+fix, a parent marked `split` would re-enter the frontier and compete with its
+own sub-milestones — causing the pipeline to re-run the original unsplit
+milestone.
 
 ## Root Cause (bugs only)
 
-`finalize_run()` registered `_hook_tui_complete` as its last hook. That hook
-called `out_complete → tui_complete → tui_stop`, which set `_TUI_ACTIVE=false`
-and SIGKILLed the sidecar process. In multi-pass modes, the outer orchestrator
-(`run_complete_loop`, `_run_human_complete_loop`, `_run_fix_nonblockers_loop`,
-`_run_fix_drift_loop`) called `_run_pipeline_stages` + `finalize_run` repeatedly.
-After the first pass, `_TUI_ACTIVE=false`, so `_start_agent_spinner` in
-`lib/agent_spinner.sh:29-30` took the non-TUI branch and wrote `[tekhton] ⠦ ...`
-spinner frames directly to `/dev/tty`, which bled through the
-(possibly-restarted) TUI layout and caused the blinking/flicker effect.
-
-The fix inverts the lifecycle: the sidecar is owned by the outermost
-`tekhton.sh` process, not by individual `finalize_run()` passes.
+All three bugs stem from `milestone_split.sh` being originally written for inline
+milestones (flat CLAUDE.md sections). When M01 made the manifest + individual
+files the default, the splitting code path was never exercised end-to-end:
+- Extraction only read CLAUDE.md (`_extract_milestone_block`).
+- The DAG path appended sub-milestones via `_DAG_IDS+=` to the end of the arrays.
+- `dag_get_frontier` only skipped `done`, letting a `split` parent back in.
 
 ## Files Modified
 
-- `lib/finalize_dashboard_hooks.sh` — `_hook_tui_complete` no longer triggers `out_complete`
-- `tekhton.sh` — dropped per-loop `tui_start` calls; added one top-level `out_complete` at EOF
-- `tests/test_out_complete.sh` — updated contract (tests 6–10)
-- `tests/test_tui_multipass_lifecycle.sh` (NEW) — regression test for multi-pass TUI lifecycle
-
-## Docs Updated
-
-None — no public-surface changes in this task. `_hook_tui_complete` is internal,
-the TUI contract is unchanged from the user's perspective (spinner never leaks
-on `/dev/tty` while TUI is active).
+- `lib/milestone_split.sh` — refactored to detect DAG mode once, delegate to
+  helper files for DAG apply and null-run handling; shrunk from monolithic
+  ~400-line block to 247 lines.
+- `lib/milestone_split_dag.sh` (NEW, 150 lines) — DAG-mode helpers
+  `_split_read_dag_milestone()` and `_split_apply_dag()` with correct array
+  splicing after parent index.
+- `lib/milestone_split_nullrun.sh` (NEW, 84 lines) — extracted
+  `handle_null_run_split()` with substantive-work detection (git diff + summary
+  lines > 20) that preserves partial progress rather than splitting.
+- `lib/milestone_dag.sh` — `dag_get_frontier()` skips `split` status.
+- `tests/test_m111_dag_split_bugs.sh` (NEW, 303 lines) — 22 assertions covering
+  all three bugs plus null-run substantive-work edge cases.
+- `CLAUDE.md` — repo layout section updated to list the two new lib files.
+- `ARCHITECTURE.md` — added entries for `milestone_split_dag.sh` and
+  `milestone_split_nullrun.sh`; updated `milestone_split.sh` entry to note the
+  new source relationship.
 
 ## Human Notes Status
 
-No human notes injected.
+No unchecked human notes were present for this task.
+
+## Docs Updated
+
+- `CLAUDE.md` — added two new lib files to the repository layout tree.
+- `ARCHITECTURE.md` — added library descriptions for `milestone_split_dag.sh`
+  and `milestone_split_nullrun.sh`, noted the source chain from
+  `milestone_split.sh`.
+
+## Acceptance Criteria Verification
+
+All 9 M111 acceptance criteria are met:
+
+- DAG-mode extraction reads the milestone file rather than CLAUDE.md — covered
+  by `_split_read_dag_milestone` path in `split_milestone`.
+- Sub-milestone files written to `.claude/milestones/` — confirmed in
+  `_split_apply_dag`.
+- Manifest sub-milestone rows immediately after parent — verified by test Path
+  "sub-milestone insertion position" (lines 4 and 5 before line 6).
+- Parent status = `split` after split — verified by test (Bug 3 fixture).
+- Parent with `split` status excluded from frontier — verified by test Bug 3.
+- Sub-milestones execute in radix order — dependency chaining preserved: first
+  sub inherits parent deps, later subs depend on previous sub.
+- Inline (non-DAG) path unaffected — existing `_replace_milestone_block` branch
+  reached when `in_dag=false`.
+- Null-run auto-split works in DAG mode — `handle_null_run_split` → splits via
+  the same DAG-aware `split_milestone`; 5 edge cases (Paths A–E) pass.
+- Oversized pre-flight split works — `check_milestone_size` → `split_milestone`
+  uses the same DAG-aware code path.
+
+## Test Results
+
+- `tests/test_m111_dag_split_bugs.sh`: 22/22 pass
+- `bash tests/run_tests.sh`: 421/421 shell + 177/177 python pass
+- `shellcheck` on all modified files: clean (only pre-existing SC1091 info on
+  the lazy `lib/plan.sh` source at line 159 — carried forward from the
+  original).
+
+## Observed Issues (out of scope)
+
+None.

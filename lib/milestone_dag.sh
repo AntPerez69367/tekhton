@@ -155,12 +155,14 @@ dag_deps_satisfied() {
 }
 
 # dag_get_frontier
-# Prints IDs of milestones whose status is not "done" and all deps are satisfied.
+# Prints IDs of milestones whose status is actionable (not "done" and not
+# "split" — a parent marked "split" has been decomposed into sub-milestones
+# that already carry the work forward) and whose dependencies are satisfied.
 # Output: one ID per line, in manifest order.
 dag_get_frontier() {
     local i
     for (( i = 0; i < ${#_DAG_IDS[@]}; i++ )); do
-        if [[ "${_DAG_STATUSES[$i]}" == "done" ]]; then
+        if [[ "${_DAG_STATUSES[$i]}" == "done" ]] || [[ "${_DAG_STATUSES[$i]}" == "split" ]]; then
             continue
         fi
         if dag_deps_satisfied "${_DAG_IDS[$i]}"; then

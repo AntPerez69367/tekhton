@@ -61,6 +61,8 @@ tekhton/
 │   ├── milestone_archival.sh   # Milestone archival to MILESTONE_ARCHIVE.md
 │   ├── milestone_metadata.sh   # Milestone metadata HTML comments
 │   ├── milestone_split.sh  # Pre-flight milestone splitting
+│   ├── milestone_split_dag.sh     # DAG-mode splitting: file read + array splice
+│   ├── milestone_split_nullrun.sh # Null-run auto-split handler
 │   ├── orchestrate.sh      # Outer orchestration loop (--complete)
 │   ├── orchestrate_helpers.sh  # Orchestration support functions
 │   ├── orchestrate_recovery.sh # Failure classification + recovery
