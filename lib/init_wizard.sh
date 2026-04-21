@@ -65,7 +65,8 @@ _wizard_reset_state() {
           _WIZARD_REPO_MAP_ENABLED \
           _WIZARD_SERENA_ENABLED \
           _WIZARD_NEEDS_VENV \
-          _WIZARD_PYTHON_FOUND
+          _WIZARD_PYTHON_FOUND \
+          _WIZARD_VENV_CREATED
 }
 
 # run_feature_wizard — Orchestrates the feature wizard.
@@ -174,7 +175,7 @@ _wizard_run_setup_script() {
     shift 3
     if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
         bash "$script" "$@"
-        return $?
+        return
     fi
     if bash "$script" "$@" > "$log_file" 2>&1; then
         success "${label} ready"
@@ -188,6 +189,8 @@ _wizard_run_setup_script() {
 # when the user enabled any Python feature. Failure does not abort init —
 # config remains valid and features degrade at runtime.
 # Args: $1 = project_dir, $2 = tekhton_home, $3 = conf_dir
+# Exports _WIZARD_VENV_CREATED=true when setup was attempted so init.sh can
+# record the venv in its file-written bookkeeping.
 _run_wizard_venv_setup() {
     [[ "${_WIZARD_NEEDS_VENV:-}" == "true" ]] || return 0
 
@@ -214,13 +217,14 @@ _run_wizard_venv_setup() {
     if [[ "${_WIZARD_SERENA_ENABLED:-}" == "true" ]]; then
         local serena_script="${tekhton_home}/tools/setup_serena.sh"
         local serena_path="${SERENA_PATH:-.claude/serena}"
+        local serena_log="${conf_dir}/logs/serena_setup.log"
         if [[ -f "$serena_script" ]]; then
             if ! _wizard_run_setup_script "Serena LSP" \
-                    "$serena_script" "$indexer_log" "$project_dir" "$serena_path"; then
+                    "$serena_script" "$serena_log" "$project_dir" "$serena_path"; then
                 warn "You can retry later with: tekhton --setup-indexer --with-lsp"
             fi
         fi
     fi
 
-    _INIT_FILES_WRITTEN+=(".claude/indexer-venv/|Python environment for enhanced features")
+    export _WIZARD_VENV_CREATED="true"
 }

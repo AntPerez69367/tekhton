@@ -10,10 +10,16 @@ M106 and M107 introduced a stage protocol (`tui_stage_begin`/`tui_stage_end`) an
 M108 introduced the stage timings column. Live runs now show a deeper mismatch:
 
 - Completed stages can become active again (intake turned yellow during architect work).
+- Intake ordering can drift in the pill row (observed rendering with intake at end
+   instead of the front of pre-stages).
 - Pre-stage and sub-stage work is not modeled consistently (architect and architect
   remediation activity has no coherent stage ownership).
 - Scout-to-coder handoff can briefly regress the coder pill to pending (grey)
   between `tui_stage_end("scout")` and coder begin.
+- Completed-row timing output is inconsistent and can regress to zero for some
+   stages (observed review/tester resetting to `0s` after counting up).
+- Completed-row duration string format can drift across states (live vs completed
+   rows show different notations for equivalent elapsed values).
 - The active bar, stage pills, and timings rows do not share a single lifecycle
   contract, so they can drift apart.
 
@@ -29,7 +35,8 @@ Define four activity classes and keep them explicit in protocol state:
 
 1. Pipeline stage: top-level ordered work unit shown in pill row and timings.
 2. Pre-stage: run-level gate before pipeline loop; visible in active bar and
-   timings, optional in pills by configuration.
+   timings, optional in pills by configuration. `preflight` and `intake` are
+   separate pre-stages and must never be conflated.
 3. Sub-stage: child phase owned by a parent stage (for example scout under coder,
    rework under review); visibility is policy-driven, not ad-hoc.
 4. Operation: long shell operation (`run_op`) shown only as active-bar work.
@@ -50,6 +57,7 @@ per class/stage, where it appears:
 - Parent stage for sub-stages (`parent=coder`, `parent=review`, etc.)
 
 Initial policy:
+- preflight: pill yes (or configurable), timings yes, active yes
 - intake: pill yes, timings yes, active yes
 - architect: pill no, timings yes, active yes
 - architect remediation coder/jr/review: pill no, timings yes, active yes,
@@ -82,6 +90,14 @@ Planner output:
 - `planned_pills`: ordered list shown in grey at run start
 - `possible_pills`: conditional placeholders (optional style) for gates that may run
 - `lifecycle_policy`: resolved visibility rules consumed by protocol helpers
+
+Ordering guarantees:
+
+- Pre-stage order is deterministic and stable: `preflight` -> `intake` -> optional
+   `architect` (when scheduled/possible).
+- A stage cannot move later in the row due to late protocol registration.
+- Dynamic insertion is allowed only for policy-approved conditional placeholders,
+   preserving deterministic relative order.
 
 Architect handling:
 
@@ -133,6 +149,17 @@ ownership model:
 - No duplicate rows for the same lifecycle id; repeated labels are allowed only
   when they represent separate cycles.
 
+Timing integrity rules:
+
+- Completed rows must never reset elapsed to `0s` unless true elapsed is zero.
+- Stage-duration lookup must use a canonical key mapping, not raw loop labels
+   where aliases differ (for example `review` vs `reviewer`, `test_verify` vs
+   `tester`).
+- Completed and live rows must use the same formatter contract (`_fmt_duration`)
+   for human-readable consistency.
+- Raw seconds may be stored in status payload, but rendering should normalize via
+   one formatter path.
+
 ### 7) Integration Plan (minimal churn)
 
 Implement in this order to reduce risk:
@@ -141,9 +168,11 @@ Implement in this order to reduce risk:
 2. Add deterministic stage planner and feed it into output bus + TUI bootstrap.
 3. Update `tools/tui_render.py` to render policy-driven labels and lifecycle-safe
    current row selection.
-4. Wire architect and architect-remediation call sites to explicit protocol stages.
-5. Replace fragile end/begin pairs with transition helper on scout->coder path.
-6. Keep existing APIs as wrappers during migration; remove old direct patterns only
+4. Introduce canonical stage-metrics key resolver for turns/duration lookups
+   before `tui_stage_end` (prevent alias-key default-to-zero regressions).
+5. Wire architect and architect-remediation call sites to explicit protocol stages.
+6. Replace fragile end/begin pairs with transition helper on scout->coder path.
+7. Keep existing APIs as wrappers during migration; remove old direct patterns only
    after tests pass.
 
 ## Files Modified
@@ -154,6 +183,7 @@ Implement in this order to reduce risk:
 | `lib/pipeline_order.sh` | Add deterministic run-stage planner helpers |
 | `lib/tui_ops.sh` | Add lifecycle-aware begin/end and transition helper |
 | `lib/tui_helpers.sh` | Emit lifecycle identifiers and policy-aware status fields |
+| `tekhton.sh` | Canonical stage-metrics key mapping for duration/turns lookup |
 | `tekhton.sh` | Architect/pre-stage wiring and transition usage |
 | `stages/coder.sh` | Scout->coder transition handoff |
 | `stages/review.sh` | Policy-driven rework lifecycle wiring |
@@ -165,6 +195,9 @@ Implement in this order to reduce risk:
 ## Acceptance Criteria
 
 - [ ] Intake no longer reactivates during architect or architect remediation work.
+- [ ] Pre-flight and Intake are represented as distinct stages in lifecycle state,
+      with deterministic pre-stage ordering.
+- [ ] Intake does not appear at the end of the pill row in any run mode.
 - [ ] Pill row is computed deterministically before stage execution begins and
    includes only scheduled/possible stages for this run mode.
 - [ ] No pills appear for stages that cannot run in the active invocation mode.
@@ -174,6 +207,10 @@ Implement in this order to reduce risk:
 - [ ] Scout-to-coder handoff has no visible grey/pending regression gap.
 - [ ] Active bar, pill row, and timings row always reference the same current
       lifecycle owner.
+- [ ] Review and tester completed rows preserve real elapsed duration and do not
+   reset to `0s` after completion.
+- [ ] Completed-row duration notation is consistent with live-row notation for
+   equivalent elapsed values.
 - [ ] Protocol enforces no stale-label reactivation even under spinner updates.
 - [ ] Existing M108 timings column still renders completed stage rows correctly.
 - [ ] New and updated tests cover architect pre-stage flow, scout->coder transition,

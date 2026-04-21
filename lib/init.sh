@@ -158,6 +158,9 @@ run_smart_init() {
     # Python feature interactively. Failure is non-fatal: features degrade
     # gracefully at runtime and the user can retry with --setup-indexer.
     _run_wizard_venv_setup "$project_dir" "$tekhton_home" "$conf_dir"
+    if [[ "${_WIZARD_VENV_CREATED:-}" == "true" ]]; then
+        _INIT_FILES_WRITTEN+=(".claude/indexer-venv/|Python environment for enhanced features")
+    fi
 
     # Phase 5: Agent role customization
     _install_agent_roles "$project_dir" "$tekhton_home" "$languages"

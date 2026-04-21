@@ -176,7 +176,7 @@ get_display_stage_order() {
     fi
 
     stages=$(get_pipeline_order)
-    local s
+    local s label
     # shellcheck disable=SC2086
     for s in $stages; do
         case "$s" in
@@ -185,18 +185,19 @@ get_display_stage_order() {
                    || [[ "${SKIP_SECURITY:-false}" == "true" ]]; then
                     continue
                 fi
-                display="${display:+$display }security"
                 ;;
             docs)
                 if [[ "${SKIP_DOCS:-false}" == "true" ]]; then
                     continue
                 fi
-                display="${display:+$display }docs"
                 ;;
-            test_verify) display="${display:+$display }tester" ;;
-            test_write)  display="${display:+$display }tester-write" ;;
-            *)           display="${display:+$display }$s" ;;
         esac
+        # Single canonical label mapping — keeps pill labels in lockstep with
+        # tui_stage_begin/end call sites, which also route through
+        # get_stage_display_label. A new stage added to the pipeline order is
+        # labeled consistently in both paths via the shared registry.
+        label=$(get_stage_display_label "$s")
+        display="${display:+$display }${label}"
     done
 
     # wrap-up is always the final pill; it activates during finalize_run().
@@ -224,10 +225,10 @@ get_stage_display_label() {
         rework)          echo "rework" ;;
         wrap_up|wrap-up) echo "wrap-up" ;;
         # Fallback: replace underscores with hyphens. New stages MUST be added
-        # above; this catch-all prevents hard failures during development but
-        # will not produce a label that matches get_display_stage_order() output.
-        # NOTE: get_display_stage_order()'s * case passes internal names unmodified
-        # (no hyphenation). Both must be updated in tandem when a new stage is added.
+        # above; this catch-all prevents hard failures during development.
+        # get_display_stage_order() routes its labels through this function,
+        # so pill-row output and tui_stage_begin/end call sites stay aligned
+        # even if a new stage only hits the fallback.
         *)               echo "${1//_/-}" ;;
     esac
 }

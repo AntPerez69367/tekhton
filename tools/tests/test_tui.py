@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time as _time
 from pathlib import Path
 
 import pytest
@@ -770,8 +771,6 @@ def test_watchdog_disabled_when_secs_zero(tmp_path):
 # =============================================================================
 # M108: stage timings panel
 # =============================================================================
-
-import time as _time  # noqa: E402
 
 
 def test_timings_panel_empty():

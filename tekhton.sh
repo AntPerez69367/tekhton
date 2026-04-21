@@ -2338,7 +2338,13 @@ _run_pipeline_stages() {
         # M107: notify TUI sidecar of stage change via the M106 protocol API.
         # Use get_stage_display_label so pill bookkeeping matches the labels
         # emitted by get_display_stage_order (no raw internal names).
-        if declare -f tui_stage_begin &>/dev/null; then
+        # Gated on should_run_stage so resume runs (--start-at review) don't
+        # flash pills active→complete instantly for skipped upstream stages.
+        local _tui_will_run_stage="false"
+        if should_run_stage "$_stage_name" "$START_AT"; then
+            _tui_will_run_stage="true"
+        fi
+        if [[ "$_tui_will_run_stage" == "true" ]] && declare -f tui_stage_begin &>/dev/null; then
             local _tui_display_label
             _tui_display_label=$(get_stage_display_label "$_stage_name")
             tui_stage_begin "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}"
@@ -2499,7 +2505,8 @@ _run_pipeline_stages() {
         esac
 
         # M107: mark stage complete in TUI sidecar via the M106 protocol API.
-        if declare -f tui_stage_end &>/dev/null; then
+        # Only end pills we began — skipped stages never entered running state.
+        if [[ "$_tui_will_run_stage" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
             local _tui_display_label _tui_finish_dur
             _tui_display_label=$(get_stage_display_label "$_stage_name")
             _tui_finish_dur="${_STAGE_DURATION[$_stage_name]:-0}s"
