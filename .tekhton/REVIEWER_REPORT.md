@@ -1,4 +1,4 @@
-# Reviewer Report — M113: TUI Hierarchical Substage API
+# Reviewer Report — M114: TUI Renderer + Scout Substage Migration
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,13 +10,13 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tui_substage_end` accepts LABEL and VERDICT args for call-site symmetry but immediately discards both — the function body contains no reference to `$1` or `$2`. The comment documents this intent, but linters may eventually flag unused positional parameters. A future cleanup could add explicit `local _label="${1:-}" _verdict="${2:-}"` to silence tools.
-- `tui_stage_end` triggers three status file writes when a substage is auto-closed: one from `tui_append_event` inside `_tui_autoclose_substage_if_open`, one from `tui_finish_stage`, and one from the final `_tui_write_status` at end of `tui_stage_end`. All are atomic (tmp→mv), so no correctness impact — worth a consolidation pass in a later cleanup milestone.
-- `_json_field` in `tests/test_tui_substage_api.sh` shell-interpolates `$_TUI_STATUS_FILE` and `$1` directly into a Python `-c "..."` string literal (`open('$_TUI_STATUS_FILE')`). Safe for temp paths and simple field-name arguments, but fragile if a path ever contains a single-quote. A more robust pattern passes the path via sys.argv instead. Worth standardizing across TUI test helpers.
+- `test_substage_blanks_turns_column` only asserts `--/50` is absent; it does not directly assert the turns cell is empty. The inverse guard is functionally sufficient but doesn't prove the positive (blank cell). Low-risk, worth strengthening in a future test pass.
+- `test_parent_timer_continues_across_substage_boundary` uses `.split("(", 1)[0]` to exclude trailing panel text when checking that `5s` is absent. The comment acknowledges this is "crude but sufficient". The assertion is correct for current panel layout but could become a false negative if rich adds a `(` in the label before the timer column. Log for future hardening.
+- The `declare -f tui_substage_begin` guard in `stages/coder.sh` is correct and consistent with how other lib functions are guarded in `lib/common.sh`, `lib/output.sh`, etc. It is slightly redundant because `tui_substage_begin` already gates on `_TUI_ACTIVE == true`, but the double-guard is harmless and follows established convention.
+- `tui_substage_begin` accepts a second MODEL argument (as called from `stages/coder.sh:237`), but `lib/tui_ops_substage.sh` never binds or uses `$2`. The argument is silently dropped. Not a bug — the value cannot cause harm and the call-site comment explains intent — but future readers may wonder why the model is passed. A `local _model="${2:-}"` in the function body or removal of the arg from the call site would remove the ambiguity.
 
 ## Coverage Gaps
-- No explicit test case for `tui_substage_begin ""` (empty label) — the guard `[[ -z "$label" ]] && return 0` is present but untested directly.
-- No explicit test for `tui_substage_begin` when `_TUI_ACTIVE=false` (standard TUI no-op pattern but lacks an M113-specific assertion).
+- No test exercises the `tui_substage_end` call path in `stages/coder.sh` at the integration level (i.e., verifying that the `current_substage_label` clears from `tui_status.json` after scout exits). The unit test `test_missing_substage_keys_tolerated` covers the renderer's no-substage path but not the end-to-end clearing flow. The M113 contract test in `tests/test_tui_substage_api.sh` partially covers this at the bash level.
 
 ## Drift Observations
-- [lib/milestone_split_dag.sh:77-78] Security agent flagged a LOW path-traversal risk (pre-existing from M111): `sub_file` is written without an explicit `*/*` guard, relying solely on `_slugify` to sanitize LLM-generated content. Carried forward from M112 review; cleanup pass owns the one-line fix.
+- `lib/tui_ops_substage.sh:27-35` — `tui_substage_begin` signature accepts a MODEL positional arg (documented in the function header comment as `tui_substage_begin LABEL [MODEL]`) but the body only assigns `label="${1:-}"`. The MODEL is never stored or forwarded anywhere. If future milestones want to display the substage model in the TUI, the infrastructure to pass it in is already present at the call site (`${CLAUDE_SCOUT_MODEL:-}`) but the receiving code is absent. Either document the ignore explicitly with a `local _model="${2:-}"` binding, or remove MODEL from the public signature in the header comment to avoid confusion.

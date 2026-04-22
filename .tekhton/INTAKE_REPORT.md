@@ -2,12 +2,13 @@
 PASS
 
 ## Confidence
-93
+92
 
 ## Reasoning
-- Scope is precisely defined: two new shell functions, two globals, JSON extensions, one new test file; non-goals explicitly call out what is deferred to M114–M117
-- Acceptance criteria are fully testable: variable names, exact warn message text, byte-identical caller constraint, and status-file key names are all specified
-- Design section resolves all likely implementation questions (no-op gate, auto-close semantics, parent-state non-mutation, optional JSON tolerance) — two developers would arrive at essentially the same implementation
-- Files-modified table is complete and specific; blast radius is intentionally narrow (tui_ops.sh, tui_helpers.sh, one new test)
-- No new user-facing config keys are introduced; the two new JSON fields are optional with stated tolerance requirements, so no migration section is needed
-- Historical pass rate on same-scope TUI milestones (M110 series) is high; no rework risk flags
+- Scope is tightly defined: five files are listed with specific per-file change descriptions, and non-goals explicitly defer four adjacent concerns to M115–M117
+- Before/after code blocks eliminate ambiguity on the shell migration — a developer has an exact diff target in the milestone text
+- Acceptance criteria are concrete and machine-verifiable (JSON field values, rendered string format, test file pass/fail)
+- New-key backward-compatibility requirement (Goal 2) is stated with both directions of the rollout window covered
+- No new config flags introduced, so no Migration Impact section is needed
+- TUI rendering changes are covered by the new `test_tui_render_timings.py` test cases required in the acceptance criteria — UI testability is satisfied
+- Historical pattern (M87, M92 each had one FAIL/PASS cycle on similar TUI wiring work) is not a concern here: those failures were scope gaps, and M114 has tighter spec than either

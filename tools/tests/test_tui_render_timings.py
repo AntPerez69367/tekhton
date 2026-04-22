@@ -347,3 +347,123 @@ class TestBuildTimingsPanel:
         # Both should show "1m15s" or similar formatted duration
         # (live row uses _fmt_duration directly, completed uses _normalize_time)
         assert "1m" in panel_str
+
+
+class TestSubstageBreadcrumb:
+    """M114 — substage rendering in the live row."""
+
+    def test_substage_breadcrumb_in_live_row(self):
+        """Active substage renders as 'parent » substage' breadcrumb."""
+        current_time = int(_time.time())
+        status = {
+            "stages_complete": [],
+            "stage_label": "coder",
+            "current_agent_status": "running",
+            "stage_start_ts": current_time - 30,
+            "agent_turns_max": 50,
+            "current_substage_label": "scout",
+            "current_substage_start_ts": current_time - 5,
+        }
+        panel = tui_render_timings._build_timings_panel(status)
+        panel_str = _render_panel(panel)
+        assert "coder" in panel_str
+        assert "scout" in panel_str
+        # Breadcrumb separator " » " must appear linking the two labels.
+        assert "»" in panel_str
+
+    def test_substage_blanks_turns_column(self):
+        """Turns column is blank while a substage is active."""
+        current_time = int(_time.time())
+        status = {
+            "stages_complete": [],
+            "stage_label": "coder",
+            "current_agent_status": "running",
+            "stage_start_ts": current_time - 30,
+            "agent_turns_max": 50,
+            "current_substage_label": "scout",
+        }
+        panel = tui_render_timings._build_timings_panel(status)
+        panel_str = _render_panel(panel)
+        # Parent's "--/50" turn placeholder must NOT appear while scout runs;
+        # surfacing the parent counter during a substage misleads the user
+        # into thinking coder is making progress.
+        assert "--/50" not in panel_str
+
+    def test_parent_timer_continues_across_substage_boundary(self):
+        """Live-row duration is computed from the parent stage_start_ts.
+
+        The substage's own start ts is irrelevant to the live row — entering
+        a substage must NOT visually reset the timer to ~0s.
+        """
+        now = int(_time.time())
+        # Parent stage started 120s ago; substage opened 5s ago.
+        status = {
+            "stages_complete": [],
+            "stage_label": "coder",
+            "current_agent_status": "running",
+            "stage_start_ts": now - 120,
+            "agent_turns_max": 50,
+            "current_substage_label": "scout",
+            "current_substage_start_ts": now - 5,
+        }
+        panel = tui_render_timings._build_timings_panel(status)
+        panel_str = _render_panel(panel)
+        # Should display ~2m of parent elapsed, not the substage's 5s.
+        assert "2m" in panel_str
+        assert "5s" not in panel_str.split("(", 1)[0]  # crude but sufficient
+
+    def test_missing_substage_keys_tolerated(self):
+        """Renderer must not raise when substage keys are absent."""
+        current_time = int(_time.time())
+        # Old bash → new Python: status JSON lacks both substage fields.
+        status = {
+            "stages_complete": [],
+            "stage_label": "coder",
+            "current_agent_status": "running",
+            "stage_start_ts": current_time - 30,
+            "agent_turns_max": 50,
+        }
+        panel = tui_render_timings._build_timings_panel(status)
+        panel_str = _render_panel(panel)
+        # No substage active → live row reverts to the regular form with
+        # parent label and "--/max" turn placeholder.
+        assert "coder" in panel_str
+        assert "»" not in panel_str
+        assert "--/50" in panel_str
+
+    def test_substage_label_empty_string_treated_as_absent(self):
+        """Empty current_substage_label must NOT render a breadcrumb."""
+        current_time = int(_time.time())
+        status = {
+            "stages_complete": [],
+            "stage_label": "coder",
+            "current_agent_status": "running",
+            "stage_start_ts": current_time - 30,
+            "agent_turns_max": 50,
+            "current_substage_label": "",
+            "current_substage_start_ts": 0,
+        }
+        panel = tui_render_timings._build_timings_panel(status)
+        panel_str = _render_panel(panel)
+        assert "»" not in panel_str
+        assert "--/50" in panel_str
+
+    def test_substage_ignored_in_working_state(self):
+        """During shell-op 'working' state, the breadcrumb is suppressed.
+
+        Working mode owns the live label slot via current_operation; the
+        substage breadcrumb only applies to agent runs.
+        """
+        current_time = int(_time.time())
+        status = {
+            "stages_complete": [],
+            "stage_label": "coder",
+            "current_agent_status": "working",
+            "current_operation": "running tests",
+            "stage_start_ts": current_time - 10,
+            "current_substage_label": "scout",  # stale leftover, ignored here
+        }
+        panel = tui_render_timings._build_timings_panel(status)
+        panel_str = _render_panel(panel)
+        assert "running tests" in panel_str
+        assert "»" not in panel_str

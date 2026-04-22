@@ -43,6 +43,11 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
     stage_start_ts = int(status.get("stage_start_ts", 0) or 0)
     elapsed_secs = int(status.get("agent_elapsed_secs", 0) or 0)
     turns_max = int(status.get("agent_turns_max", 0) or 0)
+    # M114: substage fields are optional — default to empty so old bash →
+    # new Python and new bash → old Python remain compatible. We only need the
+    # label here; the live-row timer keeps using the parent's stage_start_ts so
+    # there is no visible reset at the substage boundary.
+    substage_label = status.get("current_substage_label") or ""
 
     grid = Table.grid(padding=(0, 1))
     grid.add_column(no_wrap=True)
@@ -79,6 +84,14 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
         else:
             display_label = current_label
 
+        # M114: when a substage is active, render breadcrumb form
+        # "{stage} » {substage}" so the user sees the transient phase without
+        # the parent stage label disappearing. Substage attribution applies
+        # only to agent runs (running), not shell ops (working) — working
+        # already owns the label slot via current_operation.
+        if substage_label and agent_status == "running" and current_label:
+            display_label = f"{current_label} » {substage_label}"
+
         if stage_start_ts > 0:
             live_elapsed = max(0, int(time.time()) - stage_start_ts)
         else:
@@ -86,7 +99,14 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
 
         # Turns are unknown until the agent exits — Claude CLI reports the
         # final count only on process termination. Always show "--/max".
-        live_turns = f"--/{turns_max}" if turns_max else "--"
+        # M114: while a substage is active, the parent stage's turn counter is
+        # not meaningfully advancing (the substage is its own agent run with
+        # its own turn budget that is not surfaced here). Render blank to
+        # avoid presenting a stale parent count.
+        if substage_label and agent_status == "running":
+            live_turns = ""
+        else:
+            live_turns = f"--/{turns_max}" if turns_max else "--"
         char = _SPIN_CHARS[int(time.time() * 10) % len(_SPIN_CHARS)]
         grid.add_row(
             Text(f"{char} {display_label}", style="yellow bold"),

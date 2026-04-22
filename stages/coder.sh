@@ -227,12 +227,14 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
 
         SCOUT_PROMPT=$(render_prompt "scout")
 
-        # M107/M110: notify TUI sidecar that scout is active (no-op when
-        # inactive). Scout is a sub-stage (policy: pill=no) — its begin opens a
-        # scout lifecycle id without mutating the pill row. The outer coder
-        # pill remains visible; the active-stage frame temporarily shows scout.
-        if declare -f tui_stage_begin &>/dev/null; then
-            tui_stage_begin "scout" "${CLAUDE_SCOUT_MODEL:-}"
+        # M114: scout runs as a *substage* inside the open coder pipeline
+        # stage. tui_substage_begin/end record current_substage_label without
+        # mutating the parent coder lifecycle id, _TUI_STAGE_ORDER, or
+        # _TUI_STAGES_COMPLETE — so the pill row stays "coder" and the
+        # completed-stages list never grows a "scout" entry. The renderer
+        # turns this into a "coder » scout" breadcrumb in the live timings row.
+        if declare -f tui_substage_begin &>/dev/null; then
+            tui_substage_begin "scout" "${CLAUDE_SCOUT_MODEL:-}"
         fi
         run_agent \
             "Scout" \
@@ -241,18 +243,8 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "$SCOUT_PROMPT" \
             "$LOG_FILE" \
             "$_scout_tools"
-        # M110: atomic scout→coder handoff. Using tui_stage_transition instead
-        # of tui_stage_end+begin prevents the grey-gap frame where
-        # current_stage_label="" between scout closing and the coder agent
-        # starting. The transition closes scout's lifecycle id, writes its
-        # completion entry, and opens a fresh coder lifecycle id in a single
-        # status-file write.
-        if declare -f tui_stage_transition &>/dev/null; then
-            tui_stage_transition "scout" "coder" "${CLAUDE_CODER_MODEL:-}"
-        elif declare -f tui_stage_end &>/dev/null; then
-            tui_stage_end "scout" "${CLAUDE_SCOUT_MODEL:-}" \
-                "${LAST_AGENT_TURNS:-0}/${SCOUT_MAX_TURNS:-10}" \
-                "${LAST_AGENT_ELAPSED:-0}s" ""
+        if declare -f tui_substage_end &>/dev/null; then
+            tui_substage_end "scout" "PASS"
         fi
 
         if [ -f "${SCOUT_REPORT_FILE}" ]; then
