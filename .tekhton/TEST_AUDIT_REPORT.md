@@ -1,75 +1,59 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 22 test functions (13 in test_dedup.sh, 9 in test_dedup_callsites.sh)
+Tests audited: 4 files, 73 test functions/assertions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: New call sites verified structurally only
-- File: tests/test_dedup_callsites.sh:115-116 (Suite 4.6/4.7)
-- Issue: Dedup wiring for `stages/coder_prerun.sh` and `stages/tester_fix.sh` is verified only by grep (function name present in file), not by any functional test that exercises those paths at runtime. The `test_dedup.sh` suite tests the dedup library end-to-end, but no test exercises `run_prerun_clean_sweep` or `_run_tester_inline_fix` actually calling `test_dedup_can_skip`/`test_dedup_record_pass` under live conditions.
+#### ISOLATION: _activate_m110 missing substage global resets
+- File: tests/test_tui_stage_wiring.sh:253
+- Issue: `_activate_m110()` resets `_TUI_STAGE_CYCLE`, `_TUI_CURRENT_LIFECYCLE_ID`, and `_TUI_CLOSED_LIFECYCLE_IDS` but omits `_TUI_CURRENT_SUBSTAGE_LABEL` and `_TUI_CURRENT_SUBSTAGE_START_TS`. M113 added those globals and wired `_tui_autoclose_substage_if_open` into `tui_stage_end` — so every M110 test that calls `tui_stage_end` now implicitly invokes that helper, which reads `_TUI_CURRENT_SUBSTAGE_LABEL`. The tests pass today only because `lib/tui.sh` initialises both variables at source time (`""` and `0`) and no M110 test calls `tui_substage_begin`, so the autoclose guard `[[ -z "$sublabel" ]] && return 0` fires immediately and is harmless. Any future test in this file that opens a substage and forgets to close it before calling `_activate_m110` would leave dirty globals that silently corrupt subsequent M110 assertions.
 - Severity: LOW
-- Action: Acceptable given the complexity of mocking the full prerun/tester-fix environment. The structural check combined with library-level functional tests provides adequate coverage at this milestone scope. Document as a known test-coverage gap if desired.
+- Action: Add `_TUI_CURRENT_SUBSTAGE_LABEL=""` and `_TUI_CURRENT_SUBSTAGE_START_TS=0` to `_activate_m110()` alongside the existing `_TUI_CURRENT_LIFECYCLE_ID=""` reset (line 273). Two lines, no logic change.
 
-#### COVERAGE: Suite 6.2 grep pattern brittle against loop refactors
-- File: tests/test_dedup_callsites.sh:177
-- Issue: `grep -n 'while.*test_exit.*ne.*0'` locates the fix loop in `lib/hooks_final_checks.sh`. Pattern matches the current line (`while [ $test_exit -ne 0 ] && ...`) but would miss the loop if the variable is renamed or `[[ ]]` syntax is adopted. Failure mode is correct — the test emits a hard failure when the pattern does not match — so there is no silent false-pass risk.
+#### COVERAGE: Substantial overlap between test_pipeline_order_policy.sh and test_pipeline_order_m110.sh
+- File: tests/test_pipeline_order_policy.sh, tests/test_pipeline_order_m110.sh
+- Issue: Both files test the same three functions (`get_stage_metrics_key`, `get_stage_policy`, `get_run_stage_plan`) against nearly identical input sets. `test_pipeline_order_m110.sh` is a strict superset — it adds boundary-condition cases for drift thresholds and the fix-drift flag combination that the policy file lacks. The tester modified both files without consolidating, resulting in 40+ redundant assertions that add run time without adding coverage.
 - Severity: LOW
-- Action: Consider widening to `'while.*test_exit'` for robustness, or accept as-is given the correct failure mode.
+- Action: No immediate action required; the overlap does not weaken either suite. If the team runs a future coverage cleanup pass, `test_pipeline_order_policy.sh` is the candidate for retirement and its unique cases (`get_stage_array_key`, empty-input passthrough) should be merged into `test_pipeline_order_m110.sh` first.
 
-### Detailed Rubric Results
+---
 
-#### 1. Assertion Honesty — PASS
-All assertions test real behavior derived from actual function calls or grep results on real
-source files. No hard-coded magic values unconnected to implementation logic.
-- Suite 4.5: Creates a real git commit and verifies fingerprint changes — directly exercises
-  the M112 HEAD inclusion added to `_test_dedup_fingerprint` (`lib/test_dedup.sh:50-58`).
-- Suite 4.6: Verifies `record_pass` does not write a file when `TEST_DEDUP_ENABLED=false` —
-  confirmed against the early-return guard at `lib/test_dedup.sh:75`.
-- Suite 4.8: Asserts ≥2 calls each in `coder_prerun.sh`. Inspection confirms exactly 2
-  `test_dedup_can_skip` calls (lines 67, 130) and 2 `test_dedup_record_pass` calls
-  (lines 77, 142) — both the initial sweep and the fix-loop path are wired.
+### Per-File Detail
 
-#### 2. Edge Case Coverage — PASS
-`test_dedup.sh` covers: no-fingerprint must-run, post-record skip, disabled flag, three
-file-change invalidation types (modify/add untracked/delete), TEST_CMD change, HEAD change
-across commits (new in M112), non-git graceful degradation. Error-path to happy-path ratio
-is approximately 7:3 — well above threshold.
+**tests/test_tui_substage_api.sh** (NEW — created by coder; M113-9 and M113-10 added by tester)
 
-#### 3. Implementation Exercise — PASS
-Both suites source `lib/test_dedup.sh` directly and call the real functions. Sandboxed git
-repositories are created in temp dirs to exercise the fingerprinting code against real
-`git rev-parse HEAD` and `git status --porcelain` output. No mocking of the dedup library.
-`test_dedup_callsites.sh` Suite 7 creates a real git repo and exercises `test_dedup_can_skip`
-with genuine fingerprint state.
+- Assertion honesty: All assertions derive from actual `tui_substage_begin`/`tui_substage_end`/`tui_stage_end` calls. JSON field checks (M113-1c/1d, M113-8a/8b) use Python reading the real status file written by `_tui_write_status` via `_tui_json_build_status` in `lib/tui_helpers.sh:209-210`. No hard-coded magic values unrelated to implementation logic.
+- Edge case coverage: Eight coder-authored sections cover: begin/set, parent-state preservation, end/clear, full begin/end cycle, auto-close-and-warn, V2=false no-op (begin, end, and autoclose), external readability, and idle JSON keys. The tester-added M113-9 covers the empty-label guard (`[[ -z "$label" ]] && return 0` in `tui_ops_substage.sh:31`); M113-10 covers the inactive-TUI guard (`[[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0`). Both are real guards present in the implementation.
+- Implementation exercise: `lib/tui.sh` sourced directly, which sources `lib/tui_ops_substage.sh` (line 25 of tui.sh). All three new functions in the implementation file are called. No mocking of production code.
+- Test weakening: No pre-existing tests modified — only M113-9 and M113-10 were added by the tester.
+- Naming: Pass names encode scenario and expected outcome throughout (e.g., "M113-5b: exactly one auto-close warn event emitted", "M113-6a: tui_substage_begin no-op under V2=false").
+- Scope alignment: All tested functions (`tui_substage_begin`, `tui_substage_end`, `_tui_autoclose_substage_if_open`) exist in `lib/tui_ops_substage.sh`. All tested globals (`_TUI_CURRENT_SUBSTAGE_LABEL`, `_TUI_CURRENT_SUBSTAGE_START_TS`) are declared in `lib/tui.sh:72-73`.
+- Isolation: Creates its own `$TMPDIR` with `trap 'rm -rf "$TMPDIR"' EXIT`. Status file is written to `$TMPDIR/status.json`. No mutable project state is read.
+- Result: No findings.
 
-#### 4. Test Weakening Detection — PASS
-The tester added new suites only (4.5 and 4.6 in `test_dedup.sh`; suites 4.6, 4.7, 4.8 in
-`test_dedup_callsites.sh`). Pre-existing suites 1–4 in `test_dedup.sh` and suites 1–3, 5–7
-in `test_dedup_callsites.sh` are unchanged. No assertions removed or broadened.
+**tests/test_tui_stage_wiring.sh** (modified — M110 regression guard)
 
-#### 5. Test Naming and Intent — PASS
-All pass/fail strings encode scenario and expected outcome:
-  "4.5.1: Should NOT skip across commits with clean working tree"
-  "4.6.1: record_pass wrote fingerprint despite TEST_DEDUP_ENABLED=false"
-  "4.8.2: coder_prerun.sh should have >=2 record_pass calls, found N"
-No opaque names.
+- Assertion honesty: All assertions test real TUI state transitions. JSON checks use Python on a real status file.
+- Edge case coverage: Covers lifecycle monotonicity (M110-1), stale-id drop (M110-3), transition atomicity (M110-5/6), event-type field in ring buffer (M110-9/10/11), multi-cycle rework (M110-12), and the intake-at-end regression guard (M110-13).
+- Implementation exercise: Sources real `lib/tui.sh` and `lib/pipeline_order.sh`. No mocking.
+- Naming: Descriptive (e.g., "M110-3a: update with closed lifecycle id is dropped (turns_used stays 0)").
+- Scope alignment: All functions referenced exist in the current implementation.
+- Isolation: `_activate()` and `_activate_m110()` reset in-memory state; status file is in `$TMPDIR`. LOW finding on missing substage resets in `_activate_m110` — see above.
 
-#### 6. Scope Alignment — PASS
-- `test_dedup.sh` Suites 4.5/4.6 target the two M112 changes to `lib/test_dedup.sh`
-  (HEAD inclusion in fingerprint hash; `record_pass` no-op when disabled). Aligned.
-- `test_dedup_callsites.sh` Suites 4.6/4.7/4.8 target the three new call sites added by M112
-  in `stages/coder_prerun.sh` (both functions) and `stages/tester_fix.sh`. Aligned.
-- Deleted file `.tekhton/test_dedup.fingerprint` is a runtime artifact; no tests import or
-  reference it as a test fixture. No orphaned tests.
-- STALE-SYM entries (cd, dirname, echo, exit, mkdir, etc.) are shell builtins and POSIX
-  utilities, not Tekhton-defined symbols. All are false positives from the symbol detector.
+**tests/test_pipeline_order_policy.sh** (modified — regression guard)
 
-#### 7. Test Isolation — PASS
-`test_dedup.sh`: Creates `TEST_TMP=$(mktemp -d)` with `trap 'rm -rf "$TEST_TMP"' EXIT` and
-exports `TEKHTON_DIR` into that temp dir for all fingerprint storage. Suite 5 creates a
-separate isolated temp dir. No mutable project state files read.
-`test_dedup_callsites.sh`: Suites 1–6 read only immutable source files under `TEKHTON_HOME`.
-Suite 7 creates a sandboxed git repo in a temp dir with a cleanup trap. No pipeline run state
-files (reports, logs, `.tekhton/` artifacts) are accessed.
+- Assertion honesty: Expected values (`"pre|yes|yes|yes|-"`, stage plans) are derived from the §2 policy table in `lib/pipeline_order_policy.sh`. Verified by cross-reading the implementation.
+- Edge case coverage: Covers all alias pairs, idempotent canonical keys, unknown-stage fallback, empty-input, and all `get_run_stage_plan` flag combinations. No boundary arithmetic to test here, so coverage is appropriate.
+- Implementation exercise: Calls production functions directly with no stubs.
+- Isolation: `TMPDIR=$(mktemp -d)` with cleanup trap. No mutable project state read.
+- Result: Overlap note only (LOW, see above). No other findings.
+
+**tests/test_pipeline_order_m110.sh** (modified — regression guard)
+
+- Assertion honesty: `assert_eq` expected values match the implementation's policy records and stage-plan output strings. Verified against `lib/pipeline_order_policy.sh` and `lib/pipeline_order.sh`.
+- Edge case coverage: Adds drift-threshold boundary conditions (equal, above, below for both count and runs-since-audit thresholds), the FORCE_AUDIT+SKIP_SECURITY combination (Phase 18), and the no-preflight+no-intake+FORCE_AUDIT combination (Phase 18.2) that `test_pipeline_order_policy.sh` does not cover.
+- Implementation exercise: Calls `get_stage_metrics_key`, `get_stage_policy`, `get_run_stage_plan` directly from `lib/pipeline_order.sh`. Sources `lib/common.sh` for logging stubs.
+- Isolation: `_reset_env()` unsets all relevant env vars between test phases. No mutable project state read.
+- Result: Overlap note only (LOW, see above). No other findings.

@@ -206,6 +206,8 @@ _tui_json_build_status() {
     printf '"stage_total":%s,' "$stage_total"
     printf '"stage_label":"%s",' "$(_tui_escape "$stage_label")"
     printf '"current_lifecycle_id":"%s",' "$(_tui_escape "${_TUI_CURRENT_LIFECYCLE_ID:-}")"
+    printf '"current_substage_label":"%s",' "$(_tui_escape "${_TUI_CURRENT_SUBSTAGE_LABEL:-}")"
+    printf '"current_substage_start_ts":%s,' "${_TUI_CURRENT_SUBSTAGE_START_TS:-0}"
     printf '"agent_turns_used":%s,' "$turns_used"
     printf '"agent_turns_max":%s,' "$turns_max"
     printf '"agent_elapsed_secs":%s,' "$agent_elapsed"

@@ -161,7 +161,7 @@ _run_tester_inline_fix() {
         if [[ -n "${TEST_CMD:-}" ]]; then
             if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
                 log "[dedup] Tests passed with no file changes since last run — skipping"
-                if command -v emit_event &>/dev/null; then
+                if declare -f emit_event &>/dev/null; then
                     emit_event "test_dedup_skip" "${_CURRENT_STAGE:-tester_fix}" \
                         "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
                 fi

@@ -66,7 +66,7 @@ _run_prerun_fix_agent() {
         local _pr_verify_output=""
         if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
             log "[dedup] Tests passed with no file changes since last run — skipping"
-            if command -v emit_event &>/dev/null; then
+            if declare -f emit_event &>/dev/null; then
                 emit_event "test_dedup_skip" "${_CURRENT_STAGE:-prerun_fix}" \
                     "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
             fi
@@ -129,7 +129,7 @@ run_prerun_clean_sweep() {
     local _prerun_output=""
     if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
         log "[dedup] Tests passed with no file changes since last run — skipping"
-        if command -v emit_event &>/dev/null; then
+        if declare -f emit_event &>/dev/null; then
             emit_event "test_dedup_skip" "${_CURRENT_STAGE:-prerun_check}" \
                 "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
         fi

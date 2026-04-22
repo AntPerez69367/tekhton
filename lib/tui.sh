@@ -21,6 +21,9 @@ source "${TEKHTON_HOME}/lib/tui_helpers.sh"
 # shellcheck source=lib/tui_ops.sh
 source "${TEKHTON_HOME}/lib/tui_ops.sh"
 
+# shellcheck source=lib/tui_ops_substage.sh
+source "${TEKHTON_HOME}/lib/tui_ops_substage.sh"
+
 # --- Activation state --------------------------------------------------------
 
 # Exported so child processes (e.g. tests spawned via `bash tests/...`) see the
@@ -61,6 +64,13 @@ declare -a _TUI_STAGE_ORDER=()
 declare -gA _TUI_STAGE_CYCLE=()
 _TUI_CURRENT_LIFECYCLE_ID=""
 declare -gA _TUI_CLOSED_LIFECYCLE_IDS=()
+
+# M113 hierarchical substage API. A substage is a transient phase (scout,
+# rework, architect-remediation) that runs inside an already-open pipeline
+# stage. Its begin/end calls never mutate the parent stage's label, start
+# timestamp, lifecycle id, or the stages_complete record array.
+_TUI_CURRENT_SUBSTAGE_LABEL=""
+_TUI_CURRENT_SUBSTAGE_START_TS=0
 
 # --- Activation check --------------------------------------------------------
 

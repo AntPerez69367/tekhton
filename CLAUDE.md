@@ -122,6 +122,8 @@ tekhton/
 │   ├── migrate_cli.sh      # Migration CLI interface
 │   ├── notes_core.sh       # Notes core rewrite
 │   ├── notes_core_normalize.sh # Markdown blank-line normalization helper
+│   ├── pipeline_order.sh    # Configurable pipeline stage ordering (PIPELINE_ORDER config key)
+│   ├── pipeline_order_policy.sh # M110 policy, metrics key resolution, and stage plan helpers — sourced by pipeline_order.sh
 │   ├── notes_cli.sh        # Notes CLI subcommand
 │   ├── notes_cli_write.sh  # Notes CLI write operations
 │   ├── notes_cleanup.sh    # Notes cleanup operations
@@ -165,7 +167,8 @@ tekhton/
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
-│   └── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers
+│   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers
+│   └── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate

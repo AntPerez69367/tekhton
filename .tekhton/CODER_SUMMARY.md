@@ -4,101 +4,93 @@
 
 ## What Was Implemented
 
-M110 — TUI Stage Lifecycle Semantics and Timings Coherence.
+M113 — TUI Hierarchical Substage API.
 
-Verification pass: confirmed every M110 acceptance criterion is already
-satisfied by code committed in `7756f44` and the follow-up M111 / M112
-commits. The milestone file was flipped back to `in_progress` in the
-working tree (no other content changes), so this run is a no-op
-re-verification rather than new implementation.
+Added the first half of the M113–M119 substage/lifecycle fix: a dormant API
+for declaring a transient substage inside an already-open pipeline stage.
+The API sets and clears substage globals, publishes them in `tui_status.json`,
+and auto-closes with a single warn event if the parent stage ends while a
+substage is still active. No caller is migrated in M113; the API is wired
+into `lib/tui_ops.sh` (via `tui_stage_end` auto-close) and `lib/tui_helpers.sh`
+(status JSON) but `stages/coder.sh`, `stages/review.sh`, and
+`stages/architect.sh` remain byte-identical.
 
-### Infrastructure audit against the §2 policy table
+### Key design points
 
-- `lib/pipeline_order_policy.sh:24-33` — `get_stage_metrics_key` covers
-  every alias pair listed in §6 (reviewer↔review, test_verify↔tester,
-  test_write↔tester-write, jr_coder↔rework, wrap_up↔wrap-up) and is
-  idempotent on canonical keys.
-- `lib/pipeline_order_policy.sh:64-83` — `get_stage_policy` emits the
-  fixed `class|pill|timings|active|parent` record for all 12 stages in
-  the authoritative §2 table plus the `op` fallback.
-- `lib/pipeline_order_policy.sh:97-131` — `get_run_stage_plan` emits
-  `preflight? intake? architect? <pipeline> wrap-up` deterministically,
-  honoring PREFLIGHT_ENABLED, INTAKE_AGENT_ENABLED, FORCE_AUDIT, drift
-  thresholds, SKIP_SECURITY, SECURITY_AGENT_ENABLED, SKIP_DOCS.
-- `lib/tui_ops.sh:147-297` — lifecycle-id allocation
-  (`_tui_alloc_lifecycle_id`), current-owner tracking, closed-set guard
-  on late spinner updates, and atomic `tui_stage_transition` (single
-  status-file write).
-- `lib/tui_helpers.sh:22-40, 154-227` — status JSON carries
-  `current_lifecycle_id` and per-`stages_complete[]` `lifecycle_id`;
-  events carry `type` ∈ `runtime|summary` with legacy-shape fallback.
-- `lib/output.sh:44-48` — `out_reset_pass` clears per-pass state
-  (`action_items`, `current_stage`, `current_model`) and preserves
-  run-identity keys (`mode`, `task`, `cli_flags`, `attempt`,
-  `max_attempts`, `milestone*`, `stage_order`).
-- `stages/coder.sh:244-254` — scout→coder handoff uses
-  `tui_stage_transition` (eliminates grey-gap frame).
-- `stages/architect.sh:80-217, 390-395` — architect and
-  architect-remediation explicit protocol wiring including
-  `tui_stage_transition` for sub-stage handoff.
-- `stages/review.sh:265-325` — rework cycles allocate fresh lifecycle
-  ids each pass via `tui_stage_begin/end "rework"` pairs.
-- `tools/tui_hold.py:50-86` — §8 event chronology split: runtime
-  events rendered first, summary (recap) block rendered separately
-  after `Pipeline Complete` terminator.
-- `tools/tui_render_common.py:14-23` — canonical `_fmt_duration`
-  shared by `tui_render.py` and `tui_render_timings.py`.
-- `lib/config_defaults.sh` — `TUI_LIFECYCLE_V2:=true` default with
-  fallback path preserved behind the flag.
+- **New file** `lib/tui_ops_substage.sh` — holds `tui_substage_begin`,
+  `tui_substage_end`, and the `_tui_autoclose_substage_if_open` helper.
+  Split out of `lib/tui_ops.sh` because that file was already at 297 lines;
+  inlining the substage API would have crossed the 300-line ceiling. Sourced
+  by `lib/tui.sh` immediately after `lib/tui_ops.sh`.
+- **Parent-state preservation** — substage begin/end never touch
+  `_TUI_CURRENT_STAGE_LABEL`, `_TUI_CURRENT_STAGE_START_TS`,
+  `_TUI_CURRENT_LIFECYCLE_ID`, or `_TUI_STAGES_COMPLETE`. Verified by
+  M113-2/M113-4 test assertions.
+- **Auto-close in `tui_stage_end`** — call guarded with
+  `declare -f _tui_autoclose_substage_if_open &>/dev/null && ...` so that
+  callers (e.g. `tests/test_tui_stage_completion.sh`) that source only
+  `lib/tui_ops.sh` without the substage companion continue to work.
+- **Opt-out** — all substage behavior and the auto-close warning are gated
+  on `TUI_LIFECYCLE_V2` (default `true`). Users who opted out of M110
+  semantics see a pure no-op (M113-6a/b/c).
+- **Status JSON** — two optional keys added:
+  `current_substage_label` (string, `""` when idle) and
+  `current_substage_start_ts` (int, `0` when idle). Always emitted; readers
+  already tolerate extra keys.
+- **Readability** — `_TUI_CURRENT_SUBSTAGE_LABEL` is a plain shell global,
+  visible to `lib/common.sh` without re-sourcing `lib/tui_ops.sh`. Required
+  by M117 (event attribution).
 
 ### Verification
 
-- `bash tests/test_tui_stage_wiring.sh` → 53 passed, 0 failed
-  (including the M110-1 through M110-13 sections covering lifecycle
-  monotonicity, atomic transition, stale-id guard, runtime vs summary
-  typing, out_reset_pass preserve-vs-clear, and the
-  intake-not-at-end-of-plan regression guard).
-- `bash tests/run_tests.sh` → 422 shell tests pass, 177 Python tests
-  pass.
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh` → exit 0, zero
-  warnings.
+- `bash tests/test_tui_substage_api.sh` — 20 passed, 0 failed.
+- `bash tests/test_tui_stage_wiring.sh` — 53 passed, 0 failed (M110
+  regression guard).
+- `bash tests/test_tui_multipass_lifecycle.sh` — 7 passed, 0 failed (M111
+  regression guard).
+- `bash tests/test_tui_stage_completion.sh` — all passed (confirms
+  substage auto-close helper does not regress parent timer computation).
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh tests/test_tui_substage_api.sh`
+  — exit 0, zero warnings.
+- File lengths: `lib/tui_ops.sh` 298, `lib/tui_helpers.sh` 229,
+  `lib/tui.sh` 265, `lib/tui_ops_substage.sh` 62 — all under 300.
 
 ### Acceptance Criteria Mapping
 
-All 18 criteria from the milestone acceptance list map to existing
-infrastructure and passing tests. Highlights:
-
-- Intake does not reactivate under architect work — lifecycle-id
-  closed-set in `tui_update_agent` drops late updates
-  (`tests/test_tui_stage_wiring.sh` M110-3).
-- Intake does not appear at the end of the pill row — planner seeds
-  order; guard documented in M110-13.
-- Pill row computed deterministically — `get_run_stage_plan`.
-- Conditional architect pill — handled by
-  `pill=conditional` policy + planner promotion.
-- Scout→coder has no grey-gap regression — `tui_stage_transition`
-  single-write path (M110-5).
-- Completed rows preserve real elapsed — lifecycle-id-keyed timings.
-- Runtime vs summary split — `tui_append_event [TYPE]` +
-  `tui_append_summary_event` + `tui_hold.py` split block (M110-9/10/11).
-- Multi-pass action items reset — `out_reset_pass` (M110-7/8).
-- Rework repeats get distinct ids — M110-12.
+| Criterion | Test |
+|-----------|------|
+| begin sets globals + writes status | M113-1a/1b/1c/1d |
+| end clears globals, no stages_complete row | M113-3a/3b/3c |
+| parent state untouched across cycle | M113-2a/2b/2c, M113-4 |
+| auto-close + single warn on parent end | M113-5a/5b/5c |
+| V2=false → both functions no-op | M113-6a/6b/6c |
+| status JSON carries new keys when active, empty when idle | M113-1c/1d, M113-8a/8b |
+| label externally readable without sourcing tui_ops.sh | M113-7 |
+| no existing caller modified | git diff stages/ → empty |
+| shellcheck clean | shellcheck exit 0 |
+| new test covers full contract | tests/test_tui_substage_api.sh, 20 cases |
 
 ## Root Cause (bugs only)
 
-N/A — verification pass only. The prior commit `7756f44` implemented
-M110 in full; commits `4276198` (M111) and `8fddbe4` (M112) build on
-that foundation and continue to pass all M110 regression tests.
+N/A — feature task introducing dormant API infrastructure.
 
 ## Files Modified
 
-None. Milestone status transition in
-`.claude/milestones/m110-tui-stage-lifecycle-timings-coherence.md` and
-`.claude/milestones/MANIFEST.cfg` (done → in_progress) is handled by
-the pipeline milestone state machine, not by this coder pass. The
-modified `.tekhton/INTAKE_REPORT.md` and deleted
-`.tekhton/test_dedup.fingerprint` in working tree are pipeline
-artifacts managed outside coder scope.
+- `lib/tui.sh` — added `_TUI_CURRENT_SUBSTAGE_LABEL` and
+  `_TUI_CURRENT_SUBSTAGE_START_TS` globals; sourced
+  `lib/tui_ops_substage.sh` after `lib/tui_ops.sh`.
+- `lib/tui_ops.sh` — `tui_stage_end` now calls
+  `_tui_autoclose_substage_if_open` when defined.
+- `lib/tui_ops_substage.sh` (NEW) — substage API +
+  `_tui_autoclose_substage_if_open` helper. 62 lines.
+- `lib/tui_helpers.sh` — `_tui_json_build_status` now emits
+  `current_substage_label` and `current_substage_start_ts`.
+- `tests/test_tui_substage_api.sh` (NEW) — 8 test sections, 20
+  assertions covering the M113 contract.
+- `CLAUDE.md` — repository layout table lists
+  `lib/tui_ops_substage.sh`.
+- `ARCHITECTURE.md` — Layer 3 library catalog entry for
+  `lib/tui_ops_substage.sh`.
 
 ## Human Notes Status
 
@@ -106,20 +98,9 @@ No human notes listed for this milestone.
 
 ## Docs Updated
 
-None — no public-surface changes in this task.
+- `CLAUDE.md` — repository layout table (project-facing structural doc).
+- `ARCHITECTURE.md` — Layer 3 library catalog (architecture doc).
 
-## Observed Issues (out of scope)
-
-- `stages/coder_prerun.sh:69` and `stages/tester_fix.sh:164` — dedup
-  skip-event guards use `command -v emit_event &>/dev/null` while all
-  other `emit_event` guards in the same files use
-  `declare -f emit_event &>/dev/null`. Mixed idioms for the same
-  pattern. Introduced by M112; M110 scope does not cover it. Already
-  captured in REVIEWER_REPORT / Non-Blocking Notes from the prior
-  run — cleanup stage owns the resolution.
-
-## Files Modified (auto-detected)
-- `.claude/milestones/m110-tui-stage-lifecycle-timings-coherence.md`
-- `.tekhton/CODER_SUMMARY.md`
-- `.tekhton/INTAKE_REPORT.md`
-- `.tekhton/test_dedup.fingerprint`
+The Documentation Responsibilities section of CLAUDE.md treats the repo
+layout and ARCHITECTURE.md library catalog as public-surface references;
+new library files land in both.

@@ -137,10 +137,10 @@ else
     fail "Expected total_time_s=$expected_total, got $actual_total"
 fi
 
-# Test 6: JSON validity — ensure total_time_s is valid JSON number
-echo "Test 6: total_time_s produces valid JSON"
+# Test 6: JSON validity — ensure total_time_s is valid JSON number and reviewer_duration_s is correct
+echo "Test 6: total_time_s produces valid JSON and reviewer_duration_s has correct value"
 rm -f "$LOG_DIR/metrics.jsonl"
-declare -A _STAGE_DURATION=([coder]=100 [reviewer]=50)
+declare -A _STAGE_DURATION=([coder]=100 [review]=50)
 TASK="Test task 6"
 record_run_metrics
 json=$(tail -1 "$LOG_DIR/metrics.jsonl" 2>/dev/null || echo "")
@@ -150,6 +150,13 @@ if echo "$json" | grep -q '"total_time_s":[0-9]*[,}]'; then
     pass "total_time_s in valid JSON format"
 else
     fail "total_time_s not in valid JSON format: $json"
+fi
+
+# Verify reviewer_duration_s is 50 (from [review]=50 key)
+if echo "$json" | grep -q '"reviewer_duration_s":50'; then
+    pass "reviewer_duration_s correctly set to 50 from [review] key"
+else
+    fail "reviewer_duration_s not set to 50 in JSON: $json"
 fi
 
 echo ""

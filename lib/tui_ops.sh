@@ -214,6 +214,7 @@ tui_stage_begin() {
 # was passed to tui_stage_begin.
 tui_stage_end() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    declare -f _tui_autoclose_substage_if_open &>/dev/null && _tui_autoclose_substage_if_open
     local label="${1:-}"
     local model="${2:-}"
     local turns="${3:-}"
