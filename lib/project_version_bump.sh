@@ -50,6 +50,31 @@ compute_next_version() {
         datestamp)
             date +%Y-%m-%d
             ;;
+        milestone)
+            local major minor patch target_milestone
+            IFS='.' read -r major minor patch <<< "$current"
+            major="${major:-0}"
+            minor="${minor:-0}"
+            patch="${patch:-0}"
+            patch="${patch%%[^0-9]*}"
+
+            case "$bump_type" in
+                milestone:*)
+                    target_milestone="${bump_type#milestone:}"
+                    if [[ "$target_milestone" =~ ^[0-9]+$ ]]; then
+                        echo "${major}.${target_milestone}.0"
+                    else
+                        echo "$current"
+                    fi
+                    ;;
+                major)
+                    echo "$((major + 1)).0.0"
+                    ;;
+                patch|minor|*)
+                    echo "${major}.${minor}.$((patch + 1))"
+                    ;;
+            esac
+            ;;
         none)
             echo "$current"
             ;;

@@ -33,7 +33,23 @@ _hook_project_version_bump() {
     fi
 
     local hint
-    hint=$(get_version_bump_hint)
+    if [[ "$strategy" == "milestone" ]] \
+        && [[ "${MILESTONE_MODE:-false}" == "true" ]] \
+        && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+        case "${_CACHED_DISPOSITION:-}" in
+            COMPLETE_AND_CONTINUE|COMPLETE_AND_WAIT)
+                hint="milestone:${_CURRENT_MILESTONE}"
+                ;;
+            *)
+                hint="patch"
+                ;;
+        esac
+    elif [[ "$strategy" == "milestone" ]]; then
+        hint="patch"
+    else
+        hint=$(get_version_bump_hint)
+    fi
+
     bump_version_files "$hint"
 }
 

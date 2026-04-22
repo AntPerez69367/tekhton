@@ -82,6 +82,20 @@ result=$(compute_next_version "1.2.3" "none" "patch")
 if [[ "$result" == "1.2.3" ]]; then pass "strategy=none is no-op"; else fail "strategy=none: got $result"; fi
 
 # =============================================================================
+# compute_next_version — milestone
+# =============================================================================
+echo "=== compute_next_version: milestone ==="
+
+result=$(compute_next_version "3.111.0" "milestone" "milestone:119")
+if [[ "$result" == "3.119.0" ]]; then pass "milestone completion sets MINOR to milestone and resets patch"; else fail "milestone completion: got $result"; fi
+
+result=$(compute_next_version "3.119.0" "milestone" "patch")
+if [[ "$result" == "3.119.1" ]]; then pass "milestone strategy patch increments PATCH only"; else fail "milestone patch: got $result"; fi
+
+result=$(compute_next_version "3.119.7" "milestone" "milestone:120")
+if [[ "$result" == "3.120.0" ]]; then pass "next milestone resets patch after note runs"; else fail "milestone reset: got $result"; fi
+
+# =============================================================================
 # bump_version_files — package.json
 # =============================================================================
 echo "=== bump_version_files: package.json ==="
@@ -166,6 +180,32 @@ PROJECT_DIR="$PROJ" PROJECT_VERSION_CONFIG=".claude/project_version.cfg" \
 
 file_ver=$(tr -d '[:space:]' < "$PROJ/VERSION")
 if [[ "$file_ver" == "1.0.0" ]]; then pass "strategy=none no-op"; else fail "strategy=none modified file: $file_ver"; fi
+
+# =============================================================================
+# bump_version_files — milestone strategy
+# =============================================================================
+echo "=== bump_version_files: milestone strategy ==="
+
+PROJ="${TEST_TMPDIR}/bump_milestone"
+mkdir -p "$PROJ/.claude"
+echo "3.118.2" > "$PROJ/VERSION"
+cat > "$PROJ/.claude/project_version.cfg" <<'EOF'
+VERSION_STRATEGY=milestone
+VERSION_FILES=VERSION:.
+CURRENT_VERSION=3.118.2
+EOF
+
+PROJECT_DIR="$PROJ" PROJECT_VERSION_CONFIG=".claude/project_version.cfg" \
+    PROJECT_VERSION_ENABLED="true" bump_version_files "milestone:119"
+
+new_ver=$(tr -d '[:space:]' < "$PROJ/VERSION")
+if [[ "$new_ver" == "3.119.0" ]]; then pass "milestone strategy writes 3.119.0"; else fail "milestone strategy: got $new_ver"; fi
+
+PROJECT_DIR="$PROJ" PROJECT_VERSION_CONFIG=".claude/project_version.cfg" \
+    PROJECT_VERSION_ENABLED="true" bump_version_files "patch"
+
+new_ver=$(tr -d '[:space:]' < "$PROJ/VERSION")
+if [[ "$new_ver" == "3.119.1" ]]; then pass "milestone strategy patch writes 3.119.1"; else fail "milestone patch write: got $new_ver"; fi
 
 # =============================================================================
 # bump_version_files — pyproject.toml

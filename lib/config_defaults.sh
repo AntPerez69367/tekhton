@@ -474,7 +474,7 @@ set -euo pipefail
 
 # --- Project version management defaults (Milestone 76) ---
 : "${PROJECT_VERSION_ENABLED:=true}"
-: "${PROJECT_VERSION_STRATEGY:=semver}"          # semver | calver | datestamp | none
+: "${PROJECT_VERSION_STRATEGY:=semver}"          # semver | calver | datestamp | milestone | none
 : "${PROJECT_VERSION_CONFIG:=.claude/project_version.cfg}"
 : "${PROJECT_VERSION_DEFAULT_BUMP:=patch}"       # fallback when no rule matches
 : "${PROJECT_VERSION_TAG_ON_BUMP:=false}"        # git tag vX.Y.Z on bump

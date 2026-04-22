@@ -11,7 +11,17 @@ set -euo pipefail
 #   _write_version_config         — update a key in the version config file
 #   _detect_version_from_file     — extract version from a single file
 #   _accessor_for_file            — map filename to accessor type
+#   _default_version_for_strategy — initial version when no version file exists
 # =============================================================================
+
+# _default_version_for_strategy
+#   Pick an initial version for projects with no version file.
+_default_version_for_strategy() {
+    case "${PROJECT_VERSION_STRATEGY:-semver}" in
+        milestone) echo "0.0.0" ;;
+        *)         echo "0.1.0" ;;
+    esac
+}
 
 # _detect_version_from_file FILE ACCESSOR
 #   Extract version string from a file using the given accessor method.
@@ -122,11 +132,11 @@ detect_project_version_files() {
 
     # If none found, create VERSION file as source of truth
     if [[ "$detected" != true ]]; then
-        echo "0.1.0" > "${project_dir}/VERSION"
+        current_version=$(_default_version_for_strategy)
+        echo "$current_version" > "${project_dir}/VERSION"
         version_files="VERSION:."
-        current_version="0.1.0"
         if command -v log &>/dev/null; then
-            log "No version file found — created VERSION with 0.1.0"
+            log "No version file found — created VERSION with ${current_version}"
         fi
     fi
 

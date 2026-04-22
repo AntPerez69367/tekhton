@@ -164,15 +164,6 @@ _tekhton_cleanup() {
 }
 trap _tekhton_cleanup EXIT
 
-# --- Version -----------------------------------------------------------------
-# Format: MAJOR.MINOR.PATCH
-#   MAJOR = initiative version (1, 2, 3, ...)
-#   MINOR = last completed milestone within this initiative (resets each major)
-#   PATCH = hotfixes between milestones
-# Updated on each milestone completion.
-TEKHTON_VERSION="3.111.0"
-export TEKHTON_VERSION
-
 # --- Path resolution ---------------------------------------------------------
 # TEKHTON_HOME: where this script (and lib/, stages/, prompts/) lives.
 # PROJECT_DIR:  the target project — always the caller's working directory.
@@ -182,6 +173,19 @@ PROJECT_DIR="$(pwd)"
 
 export TEKHTON_HOME
 export PROJECT_DIR
+
+# --- Version -----------------------------------------------------------------
+# Format: MAJOR.MINOR.PATCH
+#   MAJOR = initiative version (1, 2, 3, ...)
+#   MINOR = last completed milestone within this initiative (resets each major)
+#   PATCH = hotfixes between milestones
+# Source of truth: ${TEKHTON_HOME}/VERSION.
+if [ -f "${TEKHTON_HOME}/VERSION" ]; then
+    TEKHTON_VERSION="$(tr -d '[:space:]' < "${TEKHTON_HOME}/VERSION")"
+else
+    TEKHTON_VERSION="0.0.0"
+fi
+export TEKHTON_VERSION
 
 # TEKHTON_DIR: subdirectory under PROJECT_DIR for pipeline artifacts.
 # Set early so early-exit paths and config_defaults.sh can reference it.

@@ -113,7 +113,8 @@ the next run will pick up the unchecked ones.
 `DRIFT_LOG.md` and `ARCHITECTURE_LOG.md` record what changed and why.
 Run `tekhton --replan` when the plan stops matching reality.
 
-**5. Ship.** `CHANGELOG.md` and project version files auto-update.
+**5. Ship.** `CHANGELOG.md` and project version files auto-update. For Tekhton
+self-hosting, `VERSION` is the CLI source of truth.
 Tag when ready.
 
 ## What's in `docs/`

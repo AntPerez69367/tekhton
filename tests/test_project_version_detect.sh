@@ -181,6 +181,17 @@ if [[ -f "$PROJ/VERSION" ]]; then pass "VERSION file created"; else fail "VERSIO
 if grep -q 'CURRENT_VERSION=0.1.0' "$cfg"; then pass "default 0.1.0 in config"; else fail "default version not 0.1.0: $(cat "$cfg")"; fi
 
 # =============================================================================
+# Test: milestone strategy with no version file → creates VERSION with 0.0.0
+# =============================================================================
+echo "=== detect: no version file (milestone strategy) ==="
+PROJ=$(make_proj "empty_milestone")
+PROJECT_DIR="$PROJ" PROJECT_VERSION_CONFIG=".claude/project_version.cfg" \
+    PROJECT_VERSION_STRATEGY="milestone" detect_project_version_files
+cfg="$PROJ/.claude/project_version.cfg"
+if [[ -f "$PROJ/VERSION" ]]; then pass "milestone VERSION file created"; else fail "milestone VERSION file not created"; fi
+if grep -q 'CURRENT_VERSION=0.0.0' "$cfg"; then pass "milestone default 0.0.0 in config"; else fail "milestone default version not 0.0.0: $(cat "$cfg")"; fi
+
+# =============================================================================
 # Test: idempotent — config not overwritten
 # =============================================================================
 echo "=== detect: idempotency ==="

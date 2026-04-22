@@ -57,17 +57,17 @@ minimal privilege scope.
 
 ## Cutting a release
 
-1. Bump `TEKHTON_VERSION` in `tekhton.sh`:
+1. Bump `VERSION`:
 
    ```bash
    # Example: completing milestone 78
-   sed -i 's/TEKHTON_VERSION=".*"/TEKHTON_VERSION="3.78.0"/' tekhton.sh
+  printf '3.78.0\n' > VERSION
    ```
 
 2. Commit and tag:
 
    ```bash
-   git add tekhton.sh
+  git add VERSION
    git commit -m "chore: bump version to 3.78.0"
    git tag v3.78.0
    git push origin main --tags
