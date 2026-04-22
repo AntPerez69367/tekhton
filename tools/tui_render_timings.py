@@ -77,19 +77,16 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
         )
 
     if has_live_row:
-        # During shell-op "working" state the meaningful label lives in
-        # current_operation (the agent stage label may be from the prior step).
-        if agent_status == "working":
-            display_label = status.get("current_operation") or current_label
-        else:
-            display_label = current_label
+        display_label = current_label
 
-        # M114: when a substage is active, render breadcrumb form
+        # M114/M115: when a substage is active, render breadcrumb form
         # "{stage} » {substage}" so the user sees the transient phase without
-        # the parent stage label disappearing. Substage attribution applies
-        # only to agent runs (running), not shell ops (working) — working
-        # already owns the label slot via current_operation.
-        if substage_label and agent_status == "running" and current_label:
+        # the parent stage label disappearing. Applies to both agent runs
+        # ("running") and shell ops ("working") — M115 migrated run_op onto
+        # the substage API, so the working state now flows through the same
+        # path instead of the retired current_operation override.
+        if substage_label and current_label and agent_status in ("running",
+                                                                 "working"):
             display_label = f"{current_label} » {substage_label}"
 
         if stage_start_ts > 0:
@@ -98,12 +95,13 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
             live_elapsed = elapsed_secs
 
         # Turns are unknown until the agent exits — Claude CLI reports the
-        # final count only on process termination. Always show "--/max".
-        # M114: while a substage is active, the parent stage's turn counter is
-        # not meaningfully advancing (the substage is its own agent run with
-        # its own turn budget that is not surfaced here). Render blank to
-        # avoid presenting a stale parent count.
-        if substage_label and agent_status == "running":
+        # final count only on process termination. Normal running rows show
+        # "--/max"; during a substage (M114) or a shell op (M115 working
+        # state, which does not use turns at all) the parent counter is
+        # either stale or meaningless, so blank the column.
+        if agent_status == "working" or (
+            substage_label and agent_status == "running"
+        ):
             live_turns = ""
         else:
             live_turns = f"--/{turns_max}" if turns_max else "--"

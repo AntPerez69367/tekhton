@@ -6,12 +6,13 @@
 # called from agent.sh and other stages (tui_update_stage, tui_finish_stage,
 # tui_update_agent, tui_append_event) plus run_op(), the long-running-command
 # wrapper introduced in M104.
+#
+# M115: run_op is now built on the M113 substage API. The label a run_op
+# registers travels through the substage globals and is rendered by the
+# breadcrumb logic in tui_render_timings.py.
 # =============================================================================
 set -euo pipefail
 # shellcheck source=lib/tui.sh
-
-# Operation label for the JSON status file (empty outside a run_op call).
-_TUI_OPERATION_LABEL=""
 
 # --- Update functions --------------------------------------------------------
 
@@ -95,13 +96,14 @@ tui_append_summary_event() {
     tui_append_event "${1:-info}" "${2:-}" "summary"
 }
 
-# --- run_op: long-running-command wrapper (M104) ------------------------------
+# --- run_op: long-running-command wrapper (M104, M115 substage migration) ----
 
 # run_op LABEL CMD [ARGS...]
 # Wraps CMD in TUI "working" state with a heartbeat subprocess so the watchdog
-# never fires during long operations (test suites, build analysis, etc.).
-# Falls back to transparent passthrough when TUI is not active — zero overhead
-# for non-TUI users. Preserves CMD exit code.
+# never fires during long operations (tests, build analysis). Transparent
+# passthrough when TUI is inactive. Preserves CMD exit code.
+# M115: label travels through the M113 substage API — renderer picks it up via
+# current_substage_label and displays a "parent » label" breadcrumb.
 run_op() {
     local _label="$1"; shift
     if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
@@ -110,13 +112,10 @@ run_op() {
     fi
 
     _TUI_AGENT_STATUS="working"
-    _TUI_OPERATION_LABEL="$_label"
-    _tui_write_status 2>/dev/null || true
+    tui_substage_begin "$_label"
 
-    # Heartbeat subprocess: re-writes the status file every ~10s so the
-    # sidecar's watchdog timer never expires during long-running commands.
-    # TERM/INT trap ensures `kill` returns immediately without leaving a
-    # sleeping child behind.
+    # Heartbeat: re-write status every ~10s so watchdog never fires during
+    # long commands. TERM trap lets `kill` return without a stuck sleeper.
     (
         trap 'exit 0' TERM INT
         while true; do
@@ -133,8 +132,10 @@ run_op() {
     kill "$_hb_pid" 2>/dev/null || true
     wait "$_hb_pid" 2>/dev/null || true
 
+    local _verdict="PASS"
+    [[ "$_rc" -ne 0 ]] && _verdict="FAIL"
+    tui_substage_end "$_label" "$_verdict"
     _TUI_AGENT_STATUS="idle"
-    _TUI_OPERATION_LABEL=""
     _tui_write_status 2>/dev/null || true
 
     return "$_rc"

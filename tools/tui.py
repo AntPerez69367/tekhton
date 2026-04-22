@@ -78,7 +78,6 @@ def _empty_status() -> dict[str, Any]:
         "pipeline_elapsed_secs": 0,
         "stages_complete": [],
         "current_agent_status": "idle",
-        "current_operation": "",
         "recent_events": [],
         "run_mode": "task",
         "cli_flags": "",

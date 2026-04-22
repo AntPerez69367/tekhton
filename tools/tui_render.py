@@ -81,7 +81,21 @@ def _model_short(model: str) -> str:
 
 
 def _build_working_bar(status: dict[str, Any]) -> Table:
-    op_label = status.get("current_operation") or "Working\u2026"
+    # M115: current_operation was retired in favour of the M113 substage API.
+    # During run_op the wrapped label lives in current_substage_label and the
+    # parent pipeline stage continues to own stage_label. Render them as a
+    # "parent » label" breadcrumb when both are present; fall back
+    # gracefully when only one (or neither) is set.
+    stage_label = status.get("stage_label") or ""
+    sublabel = status.get("current_substage_label") or ""
+    if stage_label and sublabel:
+        op_label = f"{stage_label} » {sublabel}"
+    elif sublabel:
+        op_label = sublabel
+    elif stage_label:
+        op_label = stage_label
+    else:
+        op_label = "Working\u2026"
     char = _SPIN_CHARS[int(time.time() * 10) % len(_SPIN_CHARS)]
     grid = Table.grid(padding=(0, 1), expand=False)
     grid.add_column(no_wrap=True); grid.add_column(no_wrap=True)

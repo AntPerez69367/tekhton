@@ -4,141 +4,74 @@
 
 ## What Was Implemented
 
-M114 — TUI Renderer + Scout Substage Migration. Three coordinated changes:
+Milestone 115 — `run_op` migration onto the M113 substage API and full
+retirement of the `_TUI_OPERATION_LABEL` bash global + `current_operation`
+JSON field.
 
-1. **Renderer breadcrumb (`tools/tui_render_timings.py`)**
-   - `_build_timings_panel` reads the optional `current_substage_label`
-     from the status JSON (defaulting to empty string when absent — old
-     bash → new Python compatibility).
-   - When a substage is active during a `running` agent state, the live
-     row label renders as `"{stage} » {substage}"` (e.g. `coder » scout`).
-   - The live-row duration continues to use the **parent** stage's
-     `stage_start_ts`, so entering a substage does NOT visually reset the
-     timer.
-   - The turns column blanks while a substage is active (the parent
-     counter is stale during the substage run and the substage's own
-     count isn't surfaced in this row).
-   - The breadcrumb is suppressed during shell-op `working` state, where
-     `current_operation` already owns the label slot.
-
-2. **Header/pill row defenses (`tools/tui_render.py`)**
-   - No code changes required. Verified that `_build_stage_pills`,
-     `_build_active_bar`, `_build_context`, `_build_header_bar`, and
-     `_stage_state` all consume `stage_label` / `stage_order` and never
-     reference `current_substage_*`. Substage activity therefore cannot
-     mutate the pill row or flip the header label to `scout`.
-
-3. **Scout call-site migration (`stages/coder.sh`)**
-   - Replaced the `tui_stage_begin "scout"` … `tui_stage_transition
-     "scout" "coder"` pair around the `run_agent "Scout"` call with
-     `tui_substage_begin "scout"` … `tui_substage_end "scout" "PASS"`.
-   - Scout no longer allocates its own stage lifecycle id, never mutates
-     `_TUI_STAGE_ORDER`, and never contributes an entry to
-     `_TUI_STAGES_COMPLETE`. The outer `tui_stage_begin "coder"` (in
-     `tekhton.sh`) remains the single owner of the coder pipeline-stage
-     lifecycle.
-   - `tui_stage_transition` in `lib/tui_ops.sh` is left intact for the
-     architect-remediation caller (deferred to M116).
-
-4. **Renderer tests (`tools/tests/test_tui_render_timings.py`)**
-   - Added a `TestSubstageBreadcrumb` class with six new cases covering:
-     breadcrumb rendering, blank turns column during substage, parent
-     timer continuity across the substage boundary, missing-key
-     tolerance, empty-label edge case, and breadcrumb suppression in
-     `working` state.
+- `run_op` in `lib/tui_ops.sh` now calls `tui_substage_begin "$_label"` /
+  `tui_substage_end "$_label" PASS|FAIL` around the wrapped command, letting
+  the M113 substage globals (`_TUI_CURRENT_SUBSTAGE_LABEL`,
+  `_TUI_CURRENT_SUBSTAGE_START_TS`) carry the op label into the status JSON.
+  Heartbeat subprocess, passthrough-on-inactive, and exit-code preservation
+  are all unchanged.
+- `_tui_json_build_status` in `lib/tui_helpers.sh` no longer emits the
+  `current_operation` field. `_empty_status()` in `tools/tui.py` also drops it.
+- The Python renderer (`tools/tui_render.py:_build_working_bar` and
+  `tools/tui_render_timings.py:_build_timings_panel`) now sources the working-
+  row label from `current_substage_label` via the M114 breadcrumb path, so
+  shell ops and in-agent substages render through a single code path. The
+  turns column is blanked during `working` state and during any `running`
+  state with an active substage (shell ops do not use turns; parent counter
+  is stale during an agent substage).
+- `run_op` does NOT mutate `stage_label` or append to `stages_complete` —
+  the parent pipeline stage stays on screen and its pill remains in the
+  running state while the sub-op executes.
+- JSON schema compatibility: new-bash → old-Python tolerates the missing
+  `current_operation`; old-bash → new-Python tolerates the missing
+  `current_substage_label` (both renderers use `.get(...) or ""`).
 
 ## Root Cause (bugs only)
 
-N/A — feature work, not a bug fix.
+N/A — milestone implementation, not a bug fix.
 
 ## Files Modified
 
-| File | Notes |
-|------|-------|
-| `tools/tui_render_timings.py` | M114 substage breadcrumb + blank turns + missing-key tolerance |
-| `stages/coder.sh` | Scout migrated to substage API (`tui_substage_begin/end`) |
-| `tools/tests/test_tui_render_timings.py` | Added `TestSubstageBreadcrumb` (6 new tests) |
-| `.tekhton/CODER_SUMMARY.md` | This summary |
+| File | Change |
+|------|--------|
+| `lib/tui_ops.sh` | Dropped `_TUI_OPERATION_LABEL` global; rewrote `run_op` on the M113 substage API. |
+| `lib/tui_helpers.sh` | Removed `current_operation` from `_tui_json_build_status` output. |
+| `tools/tui.py` | Dropped `current_operation` from `_empty_status()`. |
+| `tools/tui_render.py` | `_build_working_bar` now renders `"{stage} » {substage}"` breadcrumb from `current_substage_label`. |
+| `tools/tui_render_timings.py` | Removed working-state override; substage breadcrumb + blanked turns apply to both `running` and `working`. |
+| `tests/test_run_op_lifecycle.sh` | Full rewrite onto substage contract: 18 tests (passthrough, idle/working/idle transitions, substage label in JSON, parent stage label preserved, stages_complete not appended, exit-code preservation on success/failure, heartbeat cleanup, stub overrides). |
+| `tools/tests/test_tui.py` | Dropped `current_operation` stubs from timings panel tests; rewrote `test_timings_panel_working_row` to assert the substage breadcrumb + blank turns column. |
+| `tools/tests/test_tui_render_timings.py` | `test_live_stage_working` now exercises the substage path; inverted `test_substage_ignored_in_working_state` → `test_substage_breadcrumb_in_working_state` (working state now DOES render the breadcrumb under M115). |
+| `.tekhton/CODER_SUMMARY.md` | This file. |
 
-No new files were created. `tools/tui_render.py` is listed in the milestone's
-Files Modified table only as "verify no regression"; verification confirmed
-no code change is needed.
+## Acceptance Criteria Self-Check
 
-## Docs Updated
-
-None — no public-surface changes in this task. The scout migration is an
-internal call-site change; the substage API itself was added (and its
-contract documented) in M113. The renderer change is an internal display
-behavior with no new config keys, CLI flags, or exported functions. No
-README or `docs/` page documents the Python TUI renderer's internal label
-formatting.
-
-## Acceptance Criteria — Self-Verification
-
-- [x] `tui_status.json` carries `current_stage_label="coder"` and
-      `current_substage_label="scout"` simultaneously while scout runs.
-      Verified by reading `lib/tui_helpers.sh::_tui_json_build_status`,
-      which emits both fields independently from `_TUI_CURRENT_STAGE_LABEL`
-      and `_TUI_CURRENT_SUBSTAGE_LABEL`. The substage API touches only the
-      latter; the parent stage label remains untouched.
-- [x] Live row renders `coder » scout` while scout is active.
-      (`test_substage_breadcrumb_in_live_row`.)
-- [x] Live-row duration uses parent `stage_start_ts`; no visible reset.
-      (`test_parent_timer_continues_across_substage_boundary` — parent
-      shows "2m" elapsed while substage is only 5s old.)
-- [x] Turns column blank while substage is active; reverts to parent
-      `--/max` after substage ends.
-      (`test_substage_blanks_turns_column` and
-      `test_missing_substage_keys_tolerated`.)
-- [x] `stages_complete` never contains a `scout` entry.
-      Mechanically guaranteed: `tui_substage_end` does not call
-      `tui_finish_stage`. The M113 contract test
-      `tests/test_tui_substage_api.sh` already asserts no row is added.
-- [x] Pill row identical to pre-M114 (no scout pill).
-      `tui_substage_begin` does not mutate `_TUI_STAGE_ORDER`. Verified by
-      reading `lib/tui_ops_substage.sh:27-35`.
-- [x] Header continues to show `coder`; never flips to `scout`.
-      `tui_substage_begin` does not call `tui_update_stage` and does not
-      assign to `_TUI_CURRENT_STAGE_LABEL`.
-- [x] Python renderer tolerates missing `current_substage_label` /
-      `current_substage_start_ts`.
-      `.get(...) or ""` default; `test_missing_substage_keys_tolerated`.
-- [x] `stages/architect.sh`'s `tui_stage_transition` call unchanged.
-      Confirmed via grep — only edit was in `stages/coder.sh`.
-- [x] All `tests/test_tui_stage_wiring.sh` tests still pass.
-      Full bash suite: 423 passed, 0 failed.
-- [x] New renderer test cases pass.
-      `tools/tests/test_tui_render_timings.py`: 32 passed including 6 new.
-- [x] Shellcheck clean for `stages/coder.sh`.
-      `shellcheck -x stages/coder.sh` → 0 warnings, only the pre-existing
-      SC1091 sourcing info note for the `coder_prerun.sh` include.
-
-## Test Results
-
-- `bash tests/run_tests.sh`: shell 423/423 pass, python 183/183 pass.
-- `python3 -m pytest tools/tests/test_tui_render_timings.py`: 32/32 pass.
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh`: clean (only pre-existing
-  SC1091 sourcing-info note for `lib/pipeline_order.sh`).
+- [x] `run_op` wraps its body in `tui_substage_begin` / `tui_substage_end`
+      with the call-site label (verified by test_run_op_lifecycle.sh Tests
+      6–15 and `declare -f run_op` assertion in Test 17).
+- [x] `_TUI_OPERATION_LABEL` global removed — `grep -rn _TUI_OPERATION_LABEL
+      lib/ stages/ tests/` returns empty.
+- [x] `current_operation` JSON field removed — verified by Test 6
+      (asserts absence in `_tui_json_build_status` output).
+- [x] TUI renderer sources the working-row label from
+      `current_substage_label` via the M114 breadcrumb path.
+- [x] `run_op` preserves parent `stage_label` (Test 9) and does not append
+      to `stages_complete` (Test 10).
+- [x] Exit code preservation (Tests 1–5 passthrough, Test 14 TUI-active
+      failure path).
+- [x] Backwards-compat for old-bash → new-Python: `_build_timings_panel`
+      and `_build_working_bar` both tolerate missing `current_substage_label`
+      (verified by `test_missing_substage_keys_tolerated`).
+- [x] All files under 300-line ceiling: `tui_ops.sh`=299, `tui_helpers.sh`=227,
+      `tui_render.py`=241, `tui_render_timings.py`=115, `tui.py`=203.
+- [x] shellcheck clean on `tekhton.sh lib/*.sh stages/*.sh`.
+- [x] Full bash test suite: 424 passed, 0 failed.
+- [x] Full Python test suite: 183 passed.
 
 ## Human Notes Status
 
-No `HUMAN_NOTES.md` items were addressed — there were none in scope for
-M114. The clarifications block in the prompt contained answers to prior
-unrelated intake questions (Watchtower dashboard, NON_BLOCKING_LOG,
-init/plan circularity, HUMAN_NOTES inconsistency) which are not part of
-this milestone.
-
-## Observed Issues (out of scope)
-
-- `stages/coder.sh` is 1180 lines (over the 300-line ceiling). This is a
-  pre-existing condition — the file was already over 1190 lines before
-  M114 across multiple completed milestones (M107, M110). My M114 edit
-  reduces the file by ~10 lines. Refactoring it to <300 lines is a
-  multi-milestone cleanup well beyond the scope of M114.
-- The header `_build_active_bar` (in `tools/tui_render.py`) keeps the
-  parent stage label `coder` while scout runs but its turn counter shows
-  scout's progress (because `tui_update_agent` overwrites the parent's
-  `_TUI_AGENT_TURNS_USED`/`_TUI_AGENT_TURNS_MAX`). This is consistent with
-  M114 acceptance ("header shows coder continuously"), but a future
-  milestone may want to mirror the timings-row turn-blanking behavior in
-  the active bar for consistency. Flagging for consideration in M115/M117.
+No unchecked human notes passed to this run.

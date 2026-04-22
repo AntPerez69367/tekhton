@@ -1,4 +1,4 @@
-# Reviewer Report — M114: TUI Renderer + Scout Substage Migration
+# Reviewer Report — M115: run_op Substage Migration
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,13 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `test_substage_blanks_turns_column` only asserts `--/50` is absent; it does not directly assert the turns cell is empty. The inverse guard is functionally sufficient but doesn't prove the positive (blank cell). Low-risk, worth strengthening in a future test pass.
-- `test_parent_timer_continues_across_substage_boundary` uses `.split("(", 1)[0]` to exclude trailing panel text when checking that `5s` is absent. The comment acknowledges this is "crude but sufficient". The assertion is correct for current panel layout but could become a false negative if rich adds a `(` in the label before the timer column. Log for future hardening.
-- The `declare -f tui_substage_begin` guard in `stages/coder.sh` is correct and consistent with how other lib functions are guarded in `lib/common.sh`, `lib/output.sh`, etc. It is slightly redundant because `tui_substage_begin` already gates on `_TUI_ACTIVE == true`, but the double-guard is harmless and follows established convention.
-- `tui_substage_begin` accepts a second MODEL argument (as called from `stages/coder.sh:237`), but `lib/tui_ops_substage.sh` never binds or uses `$2`. The argument is silently dropped. Not a bug — the value cannot cause harm and the call-site comment explains intent — but future readers may wonder why the model is passed. A `local _model="${2:-}"` in the function body or removal of the arg from the call site would remove the ambiguity.
+- `run_op` sets `_TUI_AGENT_STATUS="idle"` after calling `tui_substage_end`, which itself writes the status file while the status is still "working" with an empty substage label. This produces one transitional write that renders as "Working…" before the final `idle` write. Harmless in practice (sub-millisecond window; renderer won't catch it), but setting `_TUI_AGENT_STATUS="idle"` before `tui_substage_end` would eliminate the ambiguous intermediate frame.
 
 ## Coverage Gaps
-- No test exercises the `tui_substage_end` call path in `stages/coder.sh` at the integration level (i.e., verifying that the `current_substage_label` clears from `tui_status.json` after scout exits). The unit test `test_missing_substage_keys_tolerated` covers the renderer's no-substage path but not the end-to-end clearing flow. The M113 contract test in `tests/test_tui_substage_api.sh` partially covers this at the bash level.
+- None
 
 ## Drift Observations
-- `lib/tui_ops_substage.sh:27-35` — `tui_substage_begin` signature accepts a MODEL positional arg (documented in the function header comment as `tui_substage_begin LABEL [MODEL]`) but the body only assigns `label="${1:-}"`. The MODEL is never stored or forwarded anywhere. If future milestones want to display the substage model in the TUI, the infrastructure to pass it in is already present at the call site (`${CLAUDE_SCOUT_MODEL:-}`) but the receiving code is absent. Either document the ignore explicitly with a `local _model="${2:-}"` binding, or remove MODEL from the public signature in the header comment to avoid confusion.
+- `tui_ops_substage.sh` is a runtime dependency of `run_op` (via `tui_substage_begin`/`tui_substage_end`), but the CLAUDE.md layout entry for `tui_ops.sh` still reads "M104 run_op wrapper + TUI update/event helpers" with no mention of the M113 substage dependency. A reader scanning the layout won't know the two modules are coupled.

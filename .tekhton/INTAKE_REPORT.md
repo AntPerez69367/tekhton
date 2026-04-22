@@ -2,13 +2,15 @@
 PASS
 
 ## Confidence
-92
+88
 
 ## Reasoning
-- Scope is tightly defined: five files are listed with specific per-file change descriptions, and non-goals explicitly defer four adjacent concerns to M115–M117
-- Before/after code blocks eliminate ambiguity on the shell migration — a developer has an exact diff target in the milestone text
-- Acceptance criteria are concrete and machine-verifiable (JSON field values, rendered string format, test file pass/fail)
-- New-key backward-compatibility requirement (Goal 2) is stated with both directions of the rollout window covered
-- No new config flags introduced, so no Migration Impact section is needed
-- TUI rendering changes are covered by the new `test_tui_render_timings.py` test cases required in the acceptance criteria — UI testability is satisfied
-- Historical pattern (M87, M92 each had one FAIL/PASS cycle on similar TUI wiring work) is not a concern here: those failures were scope gaps, and M114 has tighter spec than either
+- Scope is precisely bounded: 5 code files and 3 test files are enumerated; Non-Goals section is explicit and comprehensive
+- Acceptance criteria are highly testable — several use concrete grep commands (`grep -r _TUI_OPERATION_LABEL lib stages tests` must be empty), specific field names, and named test files
+- Before/after conceptual code blocks eliminate interpretation ambiguity for the `run_op` rewrite
+- Migration impact: no user-facing config keys added or removed; this is an internal TUI mechanism retirement, so no migration section is required
+- UI testability: the rendering criterion ("coder » Running completion tests" breadcrumb) is verifiable via `tools/tests/test_tui_render_timings.py`, which the milestone explicitly calls out for update
+- Return-code preservation criterion is stated clearly and is unit-testable
+- M113/M114 substage API dependency is implicit but well-established by the current branch history (M113 and M114 are already complete)
+- `gates_completion.sh:86` caller reference is specific enough that a developer can locate and verify the no-source-change guarantee
+- Historical run data shows comparable refactor milestones (M84, M85) passed on first attempt; no warning signals from rework history

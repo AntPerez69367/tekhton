@@ -183,20 +183,25 @@ class TestBuildTimingsPanel:
         assert "m" in panel_str or "s" in panel_str
 
     def test_live_stage_working(self):
-        """Panel with working (shell op) stage uses current_operation label."""
+        """Working (shell op) stage sources its label from the substage API.
+
+        M115 retired current_operation and routed run_op through the M113
+        substage API, so the wrapped label lives in current_substage_label.
+        """
         current_time = int(_time.time())
         status = {
             "stages_complete": [],
             "stage_label": "review",
             "current_agent_status": "working",
-            "current_operation": "reviewing changes",
+            "current_substage_label": "reviewing changes",
             "stage_start_ts": current_time - 30,
             "agent_turns_max": 15,
         }
         panel = tui_render_timings._build_timings_panel(status)
         panel_str = _render_panel(panel)
-        # Should use the current_operation label during working state
-        assert "reviewing changes" in panel_str or "review" in panel_str
+        assert "reviewing changes" in panel_str
+        assert "review" in panel_str
+        assert "»" in panel_str
 
     def test_completed_and_live_stages(self):
         """Panel with both completed and live stages renders both."""
@@ -448,22 +453,28 @@ class TestSubstageBreadcrumb:
         assert "»" not in panel_str
         assert "--/50" in panel_str
 
-    def test_substage_ignored_in_working_state(self):
-        """During shell-op 'working' state, the breadcrumb is suppressed.
+    def test_substage_breadcrumb_in_working_state(self):
+        """Shell-op 'working' state renders the substage breadcrumb too.
 
-        Working mode owns the live label slot via current_operation; the
-        substage breadcrumb only applies to agent runs.
+        M115 migrated run_op onto the substage API, so the wrapped label
+        reaches the renderer through current_substage_label — the same path
+        used for agent-run substages. Working rows now display the parent
+        stage plus the op label as a '{stage} » {op}' breadcrumb, and the
+        turns column is blanked because shell ops do not consume turns.
         """
         current_time = int(_time.time())
         status = {
             "stages_complete": [],
             "stage_label": "coder",
             "current_agent_status": "working",
-            "current_operation": "running tests",
+            "current_substage_label": "running tests",
             "stage_start_ts": current_time - 10,
-            "current_substage_label": "scout",  # stale leftover, ignored here
+            "agent_turns_max": 50,
         }
         panel = tui_render_timings._build_timings_panel(status)
         panel_str = _render_panel(panel)
+        assert "coder" in panel_str
         assert "running tests" in panel_str
-        assert "»" not in panel_str
+        assert "»" in panel_str
+        # Shell ops do not use turns; the parent counter is meaningless here.
+        assert "--/50" not in panel_str

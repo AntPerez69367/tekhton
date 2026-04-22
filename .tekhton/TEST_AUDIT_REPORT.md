@@ -1,72 +1,137 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 9 test assertions (across 4 numbered test sections)
+Tests audited: 3 files, 49 test functions
+(18 shell tests in test_run_op_lifecycle.sh; 20 Python tests in test_tui.py
+including the rewritten test_timings_panel_working_row; 11 Python tests in
+test_tui_render_timings.py including TestSubstageBreadcrumb)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Autoclose path not exercised under active-substage condition
-- File: tests/test_tui_substage_json_clear.sh:180
-- Issue: Test M114-json-4 calls `tui_stage_end` after `tui_substage_end` has already cleared
-  the substage, so `_tui_autoclose_substage_if_open` executes its early-return branch only.
-  The scenario where `tui_stage_end` fires while `_TUI_CURRENT_SUBSTAGE_LABEL` is still
-  non-empty — triggering the event-emit and forced clear — has no JSON-level coverage in this
-  file. The M113 test `tests/test_tui_substage_api.sh` covers the bash-global aspect; the gap
-  here is confirming the JSON flush that follows the autoclose.
+#### WEAKENING: Net-minus-one assertion count in test_run_op_lifecycle.sh
+- File: tests/test_run_op_lifecycle.sh:149–161 (Test 6)
+- Issue: The shell-based weakening detector reports "net loss of 1 assertion(s)
+  (removed 1, added 00)". Cross-referencing the implementation confirms this is
+  a counting artifact, not a real coverage gap. The old current_operation
+  presence assertion was retired along with the field itself; Test 6 replaces it
+  with an absence assertion using the form
+  `python3 -c "... sys.exit(0 if 'current_operation' not in d else 1)"`.
+  That inverted form does not match the detector's assertion-add pattern,
+  producing the apparent net loss. Functional coverage is richer in the rewrite:
+  field absence is verified (Test 6), substage label presence during execution
+  (Test 7), and substage label clearance on both success (Test 12) and failure
+  (Test 15) are new additions with no prior equivalents.
 - Severity: LOW
-- Action: Add a test section that calls `tui_substage_begin "scout"` followed immediately by
-  `tui_stage_end "coder"` (no explicit `tui_substage_end`) and asserts
-  `current_substage_label` is `""` in the JSON after the parent close.
+- Action: No test change required. The TESTER_REPORT already explains the
+  inversion. Optionally note in the detector that negated exit-code assertions
+  count as positive assertions.
 
-#### COVERAGE: Double-begin and orphaned-end not covered
-- File: tests/test_tui_substage_json_clear.sh (general)
-- Issue: No test calls `tui_substage_begin` twice without an intervening `tui_substage_end`,
-  nor `tui_substage_end` without a preceding `tui_substage_begin`. Both conditions are benign
-  by construction — `tui_substage_begin` is idempotent (overwrites the label), and
-  `tui_substage_end` clears unconditionally — but there is no coverage that the benign
-  behavior holds at the JSON level.
+#### WEAKENING: test_substage_ignored_in_working_state removed from test_tui_render_timings.py
+- File: tools/tests/test_tui_render_timings.py (removed function)
+- Issue: The detection flag is technically accurate — one test function was
+  removed. However, the removal is correct. The deleted test asserted that
+  working state ignored substage labels, which was the pre-M115 behavior.
+  M115 changed this: tui_render_timings.py:88–90 now renders the breadcrumb for
+  both "running" and "working" states. Retaining the old test would assert
+  incorrect behavior against the current implementation.
+  The replacement test_substage_breadcrumb_in_working_state (line 456) verifies
+  the new behavior and adds a turns-column blanking invariant
+  (assert "--/50" not in panel_str) that the removed test did not cover, making
+  the replacement strictly more thorough.
 - Severity: LOW
-- Action: No action required for M114 scope. Add if a future milestone introduces guard logic
-  for mismatched calls.
+- Action: No change required. Removal is a correct behavioral update.
+
+#### SCOPE: All STALE-SYM flags are false positives
+- File: tests/test_run_op_lifecycle.sh, tools/tests/test_tui.py,
+  tools/tests/test_tui_render_timings.py
+- Issue: Every flagged symbol (echo, cat, grep, jobs, wc, json, sys, pathlib,
+  pytest, Console, Panel, Table, etc.) is either a POSIX shell built-in or a
+  Python standard-library/third-party import. The orphan detector does not
+  recognize these as valid without a project-file definition. No real orphaned
+  tests exist: all imports resolve at runtime and all shell references are
+  interpreter built-ins.
+- Severity: LOW
+- Action: No test changes required. Consider scoping the orphan detector to
+  exclude known built-ins and stdlib modules to reduce false-positive noise.
+
+#### COVERAGE: Heartbeat liveness not verified during execution
+- File: tests/test_run_op_lifecycle.sh:304–316 (Test 16)
+- Issue: Test 16 verifies that no background jobs remain after run_op returns,
+  but there is no assertion that the heartbeat subprocess IS running while the
+  wrapped command executes. The heartbeat is the mechanism that prevents the
+  TUI watchdog from firing during long commands (the stated purpose at
+  tui_ops.sh:118–126). A test that checks kill -0 $hb_pid inside the wrapped
+  command would provide positive liveness coverage rather than only cleanup
+  coverage.
+- Severity: LOW
+- Action: Optional enhancement — not required for PASS verdict. Could add a test
+  where the wrapped command runs `jobs -r | wc -l` and asserts the count is 1.
+
+### Notes on Assertion Honesty
+
+All concrete values verified against implementation:
+- Test 7: "Running test baseline" is the literal label passed to run_op. ✓
+- Test 9: "coder" matches _TUI_CURRENT_STAGE_LABEL set immediately before the
+  call; run_op in tui_ops.sh:107–142 never mutates _TUI_CURRENT_STAGE_LABEL. ✓
+- Test 10: stages_count == "0" is correct; run_op calls tui_substage_begin/end,
+  never tui_finish_stage, so _TUI_STAGES_COMPLETE is never appended to. ✓
+- test_timings_panel_working_row: "running lint checks", "coder", "»" derive
+  from the status dict in the test; "--/40" absence is correct because
+  tui_render_timings.py:102–105 sets live_turns="" for working state. ✓
+- TestNormalizeTime: "1m30s" for "90s", "1m23s" for "83s", "1h2m5s" for "3725s"
+  all match _fmt_duration arithmetic in tui_render_common. ✓
+
+### Implementation–Test Alignment Spot-Check
+
+| Assertion | Implementation location | Match |
+|---|---|---|
+| current_operation absent in JSON | tui_helpers.sh:196–227 (field not emitted) | ✓ |
+| current_substage_label=label during exec | tui_ops.sh:115 tui_substage_begin call | ✓ |
+| stage_label unchanged by run_op | tui_ops.sh:107–142 (never touches _TUI_CURRENT_STAGE_LABEL) | ✓ |
+| stages_complete not appended | tui_ops.sh:107–142 (calls substage API, not tui_finish_stage) | ✓ |
+| working state renders breadcrumb | tui_render_timings.py:88–90 | ✓ |
+| working state blanks turns column | tui_render_timings.py:102–105 | ✓ |
+| _empty_status has no current_operation | tui.py:63–86 | ✓ |
+| _build_working_bar breadcrumb from current_substage_label | tui_render.py:83–104 | ✓ |
 
 ### Rubric Detail
 
 **1. Assertion Honesty — PASS**
-All checked values (`"scout"`, `""`, `"0"`, `"coder"`, non-zero ts) are direct outputs of the
-real implementation. `"scout"` is the literal passed to `tui_substage_begin`; `""` and `0`
-come from the unconditional clears in `tui_substage_end` (lib/tui_ops_substage.sh:44-45);
-`"coder"` comes from the `tui_stage_begin` call that precedes the substage. No hard-coded
-magic numbers unconnected to implementation logic.
+No hard-coded magic values unconnected to implementation logic. Every expected
+value is either the literal label passed to the function under test, a known
+field absence verified against the retired implementation, or a mathematical
+output of _fmt_duration for specific inputs.
 
-**2. Edge Case Coverage — LOW gap (noted above)**
-Happy paths and phase-sequence progression are well covered. The autoclose scenario (open
-substage + parent close) has a behavioral blind spot at the JSON level.
+**2. Edge Case Coverage — PASS with noted LOW gap**
+Success and failure paths both covered (Tests 3/4/13/14). TUI active and inactive
+paths both covered. Label-not-forwarded (Test 2), stages_complete not appended
+(Test 10), parent stage preserved (Test 9), and backward-compatibility (missing
+substage keys tolerated) are all exercised. The only LOW gap is heartbeat
+liveness during execution (see COVERAGE finding above).
 
 **3. Implementation Exercise — PASS**
-The test sources `lib/tui.sh`, which transitively sources `lib/output_format.sh`,
-`lib/tui_helpers.sh`, `lib/tui_ops.sh`, and `lib/tui_ops_substage.sh`. All four API
-functions under test (`tui_stage_begin`, `tui_substage_begin`, `tui_substage_end`,
-`tui_stage_end`) are called on their real implementations. JSON is read via `python3
-json.load` from the actual status file. The only stubs are logging helpers (`log`, `warn`,
-etc.), which is appropriate noise suppression.
+test_run_op_lifecycle.sh sources the real lib/tui.sh (and transitively
+tui_ops.sh and tui_helpers.sh). Python tests call real _build_timings_panel and
+_build_working_bar on real Rich renderable output. The only stubs are log/warn/
+error helpers (appropriate noise suppression) and color variables.
 
-**4. Test Weakening Detection — N/A**
-New file; no existing tests were modified.
+**4. Test Weakening Detection — LOW (both explained)**
+See WEAKENING findings above. Neither represents a genuine coverage regression.
 
 **5. Test Naming and Intent — PASS**
-Section headers (`=== M114-json-N: ... ===`) and in-line pass/fail messages encode the
-scenario and expected outcome. Naming convention is consistent with the existing Tekhton
-shell test corpus.
+Shell tests: section headers (=== Test N: ... ===) and pass() messages encode
+the scenario and expected outcome. Python tests: class and method names are
+descriptive (TestSubstageBreadcrumb.test_substage_breadcrumb_in_working_state,
+test_missing_substage_keys_tolerated, etc.).
 
 **6. Scope Alignment — PASS**
-No references to deleted symbols. `.tekhton/JR_CODER_SUMMARY.md` (deleted this run) is not
-referenced. All sourced libraries (`lib/tui.sh` and its transitive deps) remain in the
-repository unchanged by M114.
+No references to the retired _TUI_OPERATION_LABEL global or current_operation
+JSON field in any assertion (Test 6 verifies absence, which is correct).
+All sourced libraries and imported modules exist in the current repository.
 
 **7. Test Isolation — PASS**
-`_activate` initializes `_TUI_STATUS_FILE` and `_TUI_STATUS_TMP` to paths under a
-`mktemp -d` temporary directory cleaned by `trap 'rm -rf "$TMPDIR"' EXIT`. `PROJECT_DIR`
-is also redirected to `$TMPDIR`, so `_tui_kill_stale`'s PID-file path and any other
-`PROJECT_DIR`-relative write land in the temp dir. No mutable project state files are read
-without fixture isolation.
+test_run_op_lifecycle.sh: TMPDIR_TEST=$(mktemp -d) with trap cleanup; all
+status file paths are set to paths under this temp dir. Python tests: all use
+in-memory dicts or pytest's tmp_path fixture. No test reads mutable project
+state files (.tekhton/, .claude/logs/, etc.) without fixture isolation.

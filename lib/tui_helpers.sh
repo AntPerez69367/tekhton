@@ -177,7 +177,6 @@ _tui_json_build_status() {
     local agent_elapsed="${_TUI_AGENT_ELAPSED_SECS:-0}"
     local stage_start_ts="${_TUI_STAGE_START_TS:-0}"
     local agent_status="${_TUI_AGENT_STATUS:-idle}"
-    local op_label="${_TUI_OPERATION_LABEL:-}"
     local complete="${_TUI_COMPLETE:-false}"
     local verdict_json="null"
     if [[ -n "${_TUI_VERDICT:-}" ]]; then
@@ -216,7 +215,6 @@ _tui_json_build_status() {
     printf '"pipeline_elapsed_secs":%s,' "$elapsed"
     printf '"stages_complete":%s,' "$(_tui_stages_json)"
     printf '"current_agent_status":"%s",' "$(_tui_escape "$agent_status")"
-    printf '"current_operation":"%s",' "$(_tui_escape "$op_label")"
     printf '"run_mode":"%s",' "$(_tui_escape "$run_mode")"
     printf '"cli_flags":"%s",' "$(_tui_escape "$cli_flags")"
     printf '"stage_order":%s,' "$(_tui_stage_order_json)"

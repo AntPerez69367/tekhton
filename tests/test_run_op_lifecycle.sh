@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_run_op_lifecycle.sh — M104 — verify run_op passthrough behavior,
-# working→idle status lifecycle, and current_operation JSON field.
+# test_run_op_lifecycle.sh — M104 (lifecycle) + M115 (substage migration).
 #
-# Primary behavior: run_op sets current_agent_status="working" and
-# current_operation=LABEL in the TUI status file before the wrapped command
-# runs, restores them to idle/"" after, and falls back to transparent
-# passthrough when _TUI_ACTIVE=false.
+# run_op wraps a long-running shell command in TUI "working" state. In M115
+# the operation label is registered via the M113 substage API; the legacy
+# bash global and JSON override it replaced are both gone. These tests verify:
+#   - passthrough behavior when _TUI_ACTIVE=false (zero TUI overhead)
+#   - exit code preservation (success and failure paths)
+#   - agent_status transitions: idle → working → idle
+#   - current_substage_label in the JSON reflects the run_op label while the
+#     wrapped command executes, and clears to "" after return
+#   - the parent stage's current_stage_label is never mutated by run_op
+#   - background heartbeat subprocess is cleaned up
+#   - common.sh stub passthrough still works when tui.sh is not loaded
 # =============================================================================
 set -euo pipefail
 
@@ -55,7 +61,8 @@ _setup_tui_active() {
     _TUI_AGENT_TURNS_MAX=0
     _TUI_AGENT_ELAPSED_SECS=0
     _TUI_AGENT_STATUS="idle"
-    _TUI_OPERATION_LABEL=""
+    _TUI_CURRENT_SUBSTAGE_LABEL=""
+    _TUI_CURRENT_SUBSTAGE_START_TS=0
     _TUI_COMPLETE=false
     _TUI_VERDICT=""
     _TUI_RUN_MODE="task"
@@ -63,7 +70,7 @@ _setup_tui_active() {
     # shellcheck disable=SC2034
     TASK="test-task"
     # shellcheck disable=SC2034
-    _CURRENT_MILESTONE="104"
+    _CURRENT_MILESTONE="115"
     # shellcheck disable=SC2034
     _CURRENT_RUN_ID="run-test"
     # shellcheck disable=SC2034
@@ -139,61 +146,46 @@ else
 fi
 
 # =============================================================================
-echo "=== Test 6: current_operation field present in _tui_json_build_status output ==="
+echo "=== Test 6: current_operation field absent from _tui_json_build_status output ==="
 
+# M115: the current_operation field is retired. The JSON must not carry it.
 _setup_tui_active
-_TUI_OPERATION_LABEL="Running test baseline"
 _TUI_AGENT_STATUS="working"
 json=$(_tui_json_build_status 0)
 
-if printf '%s' "$json" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'current_operation' in d" 2>/dev/null; then
-    pass "JSON schema: current_operation field is present"
+if printf '%s' "$json" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if 'current_operation' not in d else 1)" 2>/dev/null; then
+    pass "JSON schema: current_operation field is absent (retired in M115)"
 else
-    fail "JSON schema" "current_operation field missing from _tui_json_build_status output"
+    fail "JSON schema" "current_operation field still emitted by _tui_json_build_status"
 fi
 
 # =============================================================================
-echo "=== Test 7: current_operation carries the label when status is working ==="
-
-_setup_tui_active
-_TUI_OPERATION_LABEL="Running test baseline"
-_TUI_AGENT_STATUS="working"
-json=$(_tui_json_build_status 0)
-
-op_val=$(printf '%s' "$json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('current_operation',''))" 2>/dev/null)
-if [[ "$op_val" == "Running test baseline" ]]; then
-    pass "JSON current_operation contains the label when status=working"
-else
-    fail "JSON current_operation label" "expected 'Running test baseline', got '$op_val'"
-fi
-
-# =============================================================================
-echo "=== Test 8: current_operation is empty string when status is idle ==="
-
-_setup_tui_active
-_TUI_OPERATION_LABEL=""
-_TUI_AGENT_STATUS="idle"
-json=$(_tui_json_build_status 0)
-
-op_val=$(printf '%s' "$json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('current_operation','MISSING'))" 2>/dev/null)
-if [[ "$op_val" == "" ]]; then
-    pass "JSON current_operation is empty string when idle"
-else
-    fail "JSON current_operation idle" "expected '', got '$op_val'"
-fi
-
-# =============================================================================
-echo "=== Test 9: run_op sets working status in file before wrapped command runs ==="
+echo "=== Test 7: current_substage_label carries the run_op label during execution ==="
 
 _setup_tui_active
 export _STATUS_FILE_FOR_TEST="$_TUI_STATUS_FILE"
 
-# The wrapped command reads the status file AFTER run_op has written working state
-# into it. run_op writes the status file, then runs "$@", so the file is already
-# in "working" state when the command executes.
+# The wrapped command reads the status file AFTER run_op has written the
+# substage state into it. run_op writes the status file, then runs "$@", so
+# the file is already in "working"+substage state when the command executes.
 # shellcheck disable=SC2016  # single-quoted intentionally; expands in subshell where var is exported
 during_json=$(run_op "Running test baseline" bash -c 'cat "$_STATUS_FILE_FOR_TEST"')
 
+sub_val=$(printf '%s' "$during_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('current_substage_label',''))" 2>/dev/null)
+if [[ "$sub_val" == "Running test baseline" ]]; then
+    pass "run_op: current_substage_label=LABEL in status file during execution"
+else
+    fail "run_op current_substage_label during execution" "expected 'Running test baseline', got '$sub_val'"
+fi
+
+# =============================================================================
+echo "=== Test 8: agent_status is 'working' during run_op execution ==="
+
+_setup_tui_active
+export _STATUS_FILE_FOR_TEST="$_TUI_STATUS_FILE"
+
+# shellcheck disable=SC2016
+during_json=$(run_op "Running test baseline" bash -c 'cat "$_STATUS_FILE_FOR_TEST"')
 agent_status=$(printf '%s' "$during_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('current_agent_status',''))" 2>/dev/null)
 if [[ "$agent_status" == "working" ]]; then
     pass "run_op: current_agent_status=working in status file during execution"
@@ -202,19 +194,40 @@ else
 fi
 
 # =============================================================================
-echo "=== Test 10: run_op sets current_operation label in file before wrapped command runs ==="
+echo "=== Test 9: parent stage_label is NOT mutated by run_op ==="
 
+# The core M115 invariant: run_op registers as a substage, never as a stage.
+# If a parent stage is already open (stage_label=coder) the wrapped command
+# must observe the parent label unchanged.
 _setup_tui_active
+_TUI_CURRENT_STAGE_LABEL="coder"
+_TUI_STAGE_START_TS=$(date +%s)
 export _STATUS_FILE_FOR_TEST="$_TUI_STATUS_FILE"
 
-# shellcheck disable=SC2016  # single-quoted intentionally; expands in subshell where var is exported
-during_json=$(run_op "Running test baseline" bash -c 'cat "$_STATUS_FILE_FOR_TEST"')
-
-op_val=$(printf '%s' "$during_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('current_operation',''))" 2>/dev/null)
-if [[ "$op_val" == "Running test baseline" ]]; then
-    pass "run_op: current_operation=label in status file during execution"
+# shellcheck disable=SC2016
+during_json=$(run_op "Running completion tests" bash -c 'cat "$_STATUS_FILE_FOR_TEST"')
+parent_label=$(printf '%s' "$during_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('stage_label',''))" 2>/dev/null)
+if [[ "$parent_label" == "coder" ]]; then
+    pass "run_op: parent stage_label preserved (coder) during run_op"
 else
-    fail "run_op current_operation during execution" "expected 'Running test baseline', got '$op_val'"
+    fail "run_op parent stage preservation" "expected 'coder', got '$parent_label'"
+fi
+
+# =============================================================================
+echo "=== Test 10: stages_complete is NOT appended to by run_op ==="
+
+# A run_op is a substage; it must never produce a stages_complete entry.
+_setup_tui_active
+_TUI_CURRENT_STAGE_LABEL="coder"
+_TUI_STAGE_START_TS=$(date +%s)
+
+run_op "Running completion tests" true
+
+stages_count=$(python3 -c "import json; print(len(json.load(open('$_TUI_STATUS_FILE'))['stages_complete']))")
+if [[ "$stages_count" == "0" ]]; then
+    pass "run_op: stages_complete is not appended to (run_op is a substage, not a stage)"
+else
+    fail "run_op stages_complete untouched" "expected 0 entries, got $stages_count"
 fi
 
 # =============================================================================
@@ -232,17 +245,17 @@ else
 fi
 
 # =============================================================================
-echo "=== Test 12: run_op clears current_operation after successful command ==="
+echo "=== Test 12: run_op clears current_substage_label after successful command ==="
 
 _setup_tui_active
 
 run_op "My Operation" true
 
-after_op=$(_json_field "$_TUI_STATUS_FILE" "current_operation")
-if [[ "$after_op" == "" ]]; then
-    pass "run_op: current_operation='' in status file after success"
+after_sub=$(_json_field "$_TUI_STATUS_FILE" "current_substage_label")
+if [[ "$after_sub" == "" ]]; then
+    pass "run_op: current_substage_label='' in status file after success"
 else
-    fail "run_op current_operation cleared after success" "expected '', got '$after_op'"
+    fail "run_op current_substage_label cleared after success" "expected '', got '$after_sub'"
 fi
 
 # =============================================================================
@@ -274,17 +287,17 @@ else
 fi
 
 # =============================================================================
-echo "=== Test 15: run_op clears current_operation after failing command ==="
+echo "=== Test 15: run_op clears current_substage_label after failing command ==="
 
 _setup_tui_active
 
 run_op "My Operation" false || true
 
-after_op=$(_json_field "$_TUI_STATUS_FILE" "current_operation")
-if [[ "$after_op" == "" ]]; then
-    pass "run_op: current_operation='' cleared after failure"
+after_sub=$(_json_field "$_TUI_STATUS_FILE" "current_substage_label")
+if [[ "$after_sub" == "" ]]; then
+    pass "run_op: current_substage_label='' cleared after failure"
 else
-    fail "run_op current_operation cleared after failure" "expected '', got '$after_op'"
+    fail "run_op current_substage_label cleared after failure" "expected '', got '$after_sub'"
 fi
 
 # =============================================================================
@@ -308,12 +321,13 @@ echo "=== Test 17: common.sh stub is overridden by tui_ops.sh implementation ===
 # In normal pipeline execution: common.sh is sourced first (defines stub),
 # then tui.sh is sourced (which sources tui_ops.sh, redefining run_op with
 # the full TUI implementation). Verify the final definition references the
-# TUI guard (_TUI_ACTIVE).
+# TUI guard (_TUI_ACTIVE) and the substage API (tui_substage_begin).
 fn_body=$(declare -f run_op)
-if printf '%s' "$fn_body" | grep -q "_TUI_ACTIVE"; then
-    pass "run_op definition (after tui.sh sourced) contains TUI implementation"
+if printf '%s' "$fn_body" | grep -q "_TUI_ACTIVE" \
+   && printf '%s' "$fn_body" | grep -q "tui_substage_begin"; then
+    pass "run_op definition (after tui.sh sourced) is the TUI + substage implementation"
 else
-    fail "run_op override" "tui.sh implementation not active; _TUI_ACTIVE guard missing from declare -f run_op"
+    fail "run_op override" "tui.sh implementation not active; missing _TUI_ACTIVE or tui_substage_begin in declare -f run_op"
 fi
 
 # =============================================================================

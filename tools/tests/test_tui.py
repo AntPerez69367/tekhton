@@ -767,7 +767,7 @@ def test_watchdog_disabled_when_secs_zero(tmp_path):
 
 def test_timings_panel_empty():
     """Empty stages_complete + idle → shows '(no stages yet)'."""
-    status = {**tui._empty_status(), "current_operation": ""}
+    status = tui._empty_status()
     panel = tui._build_timings_panel(status)
     rendered = _render(panel)
     assert "(no stages yet)" in rendered
@@ -777,7 +777,6 @@ def test_timings_panel_completed_stages():
     """Completed stages render with ✓ icon, elapsed, and turns."""
     status = {
         **tui._empty_status(),
-        "current_operation": "",
         "stages_complete": [
             {"label": "intake", "model": "", "turns": "3/10",
              "time": "8s", "verdict": None},
@@ -798,7 +797,6 @@ def test_timings_panel_live_running_row():
     """Running stage appears as a live yellow row below completed stages."""
     status = {
         **tui._empty_status(),
-        "current_operation": "",
         "stages_complete": [
             {"label": "intake", "model": "", "turns": "3/10",
              "time": "8s", "verdict": None},
@@ -819,7 +817,6 @@ def test_timings_panel_fail_verdict():
     """Failed stage renders with ✗ icon."""
     status = {
         **tui._empty_status(),
-        "current_operation": "",
         "stages_complete": [
             {"label": "security", "model": "", "turns": "8/15",
              "time": "45s", "verdict": "BLOCKED"},
@@ -840,18 +837,25 @@ def test_layout_has_timings_column():
 
 
 def test_timings_panel_working_row():
-    """Working state: live label comes from current_operation, not stage_label."""
+    """Working state (M115): run_op registers as a substage, so the live row
+    renders ``parent » substage`` via the breadcrumb path — identical to the
+    ``running`` case — instead of the retired current_operation override.
+    """
     status = {
         **tui._empty_status(),
         "stage_label": "coder",
-        "current_operation": "running lint checks",
+        "current_substage_label": "running lint checks",
         "current_agent_status": "working",
         "stage_start_ts": int(_time.time()) - 5,
         "agent_turns_max": 40,
     }
     panel = tui._build_timings_panel(status)
     rendered = _render(panel)
-    # The shell-op label must appear as the live row label.
+    # The shell-op label appears as the substage half of the breadcrumb.
     assert "running lint checks" in rendered
-    # The prior agent stage label must NOT appear (current_operation takes over).
-    assert "coder" not in rendered
+    # Parent pipeline stage must remain visible (breadcrumb form).
+    assert "coder" in rendered
+    assert "»" in rendered
+    # Turns column is blanked during working state — there is no agent turn
+    # counter to report for a shell op.
+    assert "--/40" not in rendered
