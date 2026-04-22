@@ -66,6 +66,13 @@ load_plan_config() {
 # Load config if available, then apply defaults for anything not set.
 load_plan_config
 
+# M120: Re-apply artifact path defaults. pipeline.conf files generated before
+# M120 contain a literal `DESIGN_FILE=""` line that overwrites the in-memory
+# default installed by common.sh. Re-sourcing artifact_defaults.sh uses `:=`,
+# which self-heals empty or unset values without clobbering user overrides.
+# shellcheck source=artifact_defaults.sh disable=SC1091
+source "${TEKHTON_HOME}/lib/artifact_defaults.sh"
+
 # --- Planning config defaults ------------------------------------------------
 # Overridable via environment variables or pipeline.conf.
 
