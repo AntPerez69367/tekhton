@@ -132,7 +132,8 @@
 <!-- Parallelism: multi-threaded? Worker count configurable? -->
 <!-- Caching: does the tool cache anything? Where? Invalidation strategy? -->
 
-## Versioning & Compatibility
+## Versioning & Release Strategy
+<!-- REQUIRED -->
 <!-- PHASE:2 -->
 <!-- Versioning scheme: semver? -->
 <!-- CLI interface stability: when can flags/commands change? Deprecation policy? -->
@@ -150,6 +151,16 @@
 <!-- Cross-compilation targets: Linux, macOS, Windows? ARM? -->
 <!-- Update mechanism: self-update command, or manual only? -->
 <!-- Minimum system requirements: OS versions, dependencies -->
+
+## Documentation Strategy
+<!-- REQUIRED -->
+<!-- PHASE:2 -->
+<!-- What documentation does this project ship? (README only, README + docs/ site, man pages) -->
+<!-- Where is documentation hosted? (GitHub, GitHub Pages, ReadTheDocs, docs.rs, man page) -->
+<!-- What surfaces must be documented? (CLI flags, subcommands, config keys, exit codes) -->
+<!-- On every feature change, which docs must be updated in the same commit? -->
+<!-- Is doc freshness strict (block the merge) or warn-only? -->
+<!-- Any auto-generation tooling? (help2man, cobra-doc, argparse-generated docs) -->
 
 ## Testing Strategy
 <!-- PHASE:2 -->

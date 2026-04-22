@@ -5,6 +5,47 @@
 # Sourced by tekhton.sh — do not run directly.
 # =============================================================================
 
+set -euo pipefail
+
+# --- M84: Transient artifact file path defaults -------------------------------
+# config_defaults.sh provides authoritative defaults via load_config(); these
+# fallbacks protect tests and scripts that source common.sh directly.
+: "${TEKHTON_DIR:=.tekhton}"
+: "${DESIGN_FILE:=${TEKHTON_DIR}/DESIGN.md}"
+: "${CODER_SUMMARY_FILE:=${TEKHTON_DIR}/CODER_SUMMARY.md}"
+: "${REVIEWER_REPORT_FILE:=${TEKHTON_DIR}/REVIEWER_REPORT.md}"
+: "${TESTER_REPORT_FILE:=${TEKHTON_DIR}/TESTER_REPORT.md}"
+: "${JR_CODER_SUMMARY_FILE:=${TEKHTON_DIR}/JR_CODER_SUMMARY.md}"
+: "${BUILD_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_ERRORS.md}"
+: "${BUILD_RAW_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+: "${UI_TEST_ERRORS_FILE:=${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
+: "${PREFLIGHT_ERRORS_FILE:=${TEKHTON_DIR}/PREFLIGHT_ERRORS.md}"
+: "${DIAGNOSIS_FILE:=${TEKHTON_DIR}/DIAGNOSIS.md}"
+: "${CLARIFICATIONS_FILE:=${TEKHTON_DIR}/CLARIFICATIONS.md}"
+: "${HUMAN_NOTES_FILE:=${TEKHTON_DIR}/HUMAN_NOTES.md}"
+: "${SPECIALIST_REPORT_FILE:=${TEKHTON_DIR}/SPECIALIST_REPORT.md}"
+: "${UI_VALIDATION_REPORT_FILE:=${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
+: "${PREFLIGHT_REPORT_FILE:=${TEKHTON_DIR}/PREFLIGHT_REPORT.md}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+: "${ARCHITECTURE_LOG_FILE:=${TEKHTON_DIR}/ARCHITECTURE_LOG.md}"
+: "${DRIFT_LOG_FILE:=${TEKHTON_DIR}/DRIFT_LOG.md}"
+: "${HUMAN_ACTION_FILE:=${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md}"
+: "${NON_BLOCKING_LOG_FILE:=${TEKHTON_DIR}/NON_BLOCKING_LOG.md}"
+: "${MILESTONE_ARCHIVE_FILE:=${TEKHTON_DIR}/MILESTONE_ARCHIVE.md}"
+: "${SECURITY_NOTES_FILE:=${TEKHTON_DIR}/SECURITY_NOTES.md}"
+: "${SECURITY_REPORT_FILE:=${TEKHTON_DIR}/SECURITY_REPORT.md}"
+: "${INTAKE_REPORT_FILE:=${TEKHTON_DIR}/INTAKE_REPORT.md}"
+: "${TDD_PREFLIGHT_FILE:=${TEKHTON_DIR}/TESTER_PREFLIGHT.md}"
+: "${TEST_AUDIT_REPORT_FILE:=${TEKHTON_DIR}/TEST_AUDIT_REPORT.md}"
+: "${HEALTH_REPORT_FILE:=${TEKHTON_DIR}/HEALTH_REPORT.md}"
+: "${DOCS_AGENT_REPORT_FILE:=${TEKHTON_DIR}/DOCS_AGENT_REPORT.md}"
+
 # --- Terminal colors ---------------------------------------------------------
 
 RED='\033[0;31m'
@@ -14,13 +55,90 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+# NO_COLOR support (https://no-color.org/)
+# RED/GREEN/YELLOW look locally unused after M99 moved log/warn/error into
+# output.sh; shellcheck can't see across the source boundary.
+if [[ "${NO_COLOR:-}" == "1" ]]; then
+    # shellcheck disable=SC2034
+    RED="" GREEN="" YELLOW="" CYAN="" BOLD="" NC=""
+fi
+
 # --- Logging -----------------------------------------------------------------
 
-log()    { echo -e "${CYAN}[tekhton]${NC} $*"; }
-success(){ echo -e "${GREEN}[✓]${NC} $*"; }
-warn()   { echo -e "${YELLOW}[!]${NC} $*"; }
-error()  { echo -e "${RED}[✗]${NC} $*"; }
-header() { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"; echo -e "${BOLD}${CYAN}  $*${NC}"; echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"; }
+# M97: strip ANSI SGR sequences before forwarding to TUI event feed.
+# Handles both actual ESC bytes (0x1b) and the literal \033 octal notation
+# that bash produces when BOLD/NC variables use single-quoted '\033[...'.
+_tui_strip_ansi() {
+    local s="$*"
+    # shellcheck disable=SC2001
+    printf '%s' "$s" \
+        | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
+        | sed 's/\\033\[[0-9;]*[a-zA-Z]//g'
+}
+# M117: compute a TUI-only source attribution for Recent Events. Consults the
+# M113 substage label and the current pipeline stage label; returns the
+# breadcrumb form "stage » substage" when both are set, the stage label alone
+# when no substage is active, or an empty string before any stage is open.
+# Skipped when TUI_LIFECYCLE_V2=false so the opt-out flag suppresses the
+# whole attribution surface (matches M113's no-op substage behavior).
+_tui_compute_source() {
+    if [[ "${TUI_LIFECYCLE_V2:-true}" == "false" ]]; then
+        printf ''
+        return 0
+    fi
+    local stage="${_TUI_CURRENT_STAGE_LABEL:-}"
+    local sub="${_TUI_CURRENT_SUBSTAGE_LABEL:-}"
+    if [[ -n "$stage" && -n "$sub" ]]; then
+        printf '%s » %s' "$stage" "$sub"
+    elif [[ -n "$sub" ]]; then
+        printf '%s' "$sub"
+    elif [[ -n "$stage" ]]; then
+        printf '%s' "$stage"
+    fi
+}
+
+_tui_notify() {
+    local level="$1"; shift
+    if declare -f tui_append_event &>/dev/null; then
+        local _src
+        _src=$(_tui_compute_source)
+        tui_append_event "$level" "$(_tui_strip_ansi "$*")" "runtime" "$_src" 2>/dev/null || true
+    fi
+}
+
+# M99: Output Bus — context store (_OUT_CTX) + unified routing (_out_emit).
+# Must be sourced AFTER _tui_strip_ansi and _tui_notify are defined above.
+# shellcheck source=output.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/output.sh"
+
+# M101: Structured display formatters built on top of output.sh.
+# shellcheck source=output_format.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/output_format.sh"
+
+log()       { _out_emit info    "$*"; }
+success()   { _out_emit success "$*"; }
+warn()      { _out_emit warn    "$*"; }
+error()     { _out_emit error   "$*"; }
+mode_info() { _out_emit mode    "$*"; }
+header()    { _out_emit header  "$*"; }
+
+# run_op — passthrough stub. lib/tui_ops.sh redefines with the full TUI-aware
+# implementation when the sidecar is active. Keeps scripts that source only
+# common.sh (e.g. test harnesses) able to call run_op without guards.
+run_op() { local _l="$1"; shift; "$@"; }
+
+# log_verbose — write an informational diagnostic line that stays off stdout
+# unless VERBOSE_OUTPUT=true. The message is always appended to ${LOG_FILE}
+# when set, preserving post-mortem visibility. Use for internal diagnostics
+# (cache hits, keyword extraction, breakdown tables) that the human doesn't
+# need to see scrolling past in real time.
+log_verbose() {
+    if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
+        echo -e "${CYAN}[tekhton]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[tekhton] %s\n' "$*" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+}
 
 # --- Line counting (portable) ------------------------------------------------
 
@@ -275,6 +393,7 @@ report_orchestration_status() {
     local attempt="$1"
     local max="$2"
     local elapsed="$3"
+    # shellcheck disable=SC2034  # agent_calls kept in signature for orchestrate.sh caller
     local agent_calls="$4"
 
     local elapsed_min=$(( elapsed / 60 ))
@@ -284,10 +403,6 @@ report_orchestration_status() {
     echo -e "${BOLD}${CYAN}── Orchestration Loop ──────────────────${NC}"
     echo -e "  Attempt:     ${BOLD}${attempt}${NC} / ${max}"
     echo -e "  Elapsed:     ${elapsed_min}m ${elapsed_sec}s"
-    # MAX_AUTONOMOUS_AGENT_CALLS is read as a global here (set by config/orchestrate.sh)
-    # rather than passed as a parameter, since this function's signature matches the
-    # four values tracked by the orchestration loop itself (attempt, max, elapsed, calls).
-    echo -e "  Agent calls: ${agent_calls} / ${MAX_AUTONOMOUS_AGENT_CALLS:-20}"
     echo -e "${BOLD}${CYAN}────────────────────────────────────────${NC}"
     echo
 }
@@ -309,6 +424,7 @@ _ensure_gitignore_entries() {
         ".claude/dashboard/data/" ".claude/logs/" ".claude/indexer-venv/"
         ".claude/index/" ".claude/serena/" ".claude/dry_run_cache/"
         ".claude/migration-backups/" ".claude/watchtower_inbox/"
+        ".claude/tui_sidecar.pid"
     )
     [[ ! -f "$_gi_file" ]] && touch "$_gi_file"
     local _gi_added=0

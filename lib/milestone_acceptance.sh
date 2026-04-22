@@ -25,12 +25,69 @@ check_milestone_acceptance() {
 
     local all_pass=true
 
+    # --- Lint check: acceptance criteria quality warnings (M85) ---
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest \
+       && declare -f lint_acceptance_criteria &>/dev/null; then
+        local _lint_file=""
+        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+            load_manifest 2>/dev/null || true
+        fi
+        local _lint_id
+        _lint_id=$(dag_number_to_id "$milestone_num" 2>/dev/null) || true
+        if [[ -n "$_lint_id" ]]; then
+            local _lint_fname
+            _lint_fname=$(dag_get_file "$_lint_id" 2>/dev/null) || true
+            if [[ -n "$_lint_fname" ]]; then
+                local _lint_dir
+                _lint_dir=$(_dag_milestone_dir)
+                _lint_file="${_lint_dir}/${_lint_fname}"
+            fi
+        fi
+        if [[ -n "$_lint_file" ]] && [[ -f "$_lint_file" ]]; then
+            local _lint_warnings
+            _lint_warnings=$(lint_acceptance_criteria "$_lint_file")
+            if [[ -n "$_lint_warnings" ]]; then
+                warn "Acceptance criteria quality warnings:"
+                while IFS= read -r _lint_line; do
+                    [[ -n "$_lint_line" ]] && warn "  ${_lint_line}"
+                done <<< "$_lint_warnings"
+                # Append to non-blocking log
+                if [[ -n "${NON_BLOCKING_LOG_FILE:-}" ]]; then
+                    local _nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+                    if [[ -f "$_nb_file" ]]; then
+                        {
+                            echo ""
+                            echo "### Milestone ${milestone_num} — Acceptance Lint ($(date +%Y-%m-%d))"
+                            echo "$_lint_warnings"
+                        } >> "$_nb_file"
+                    fi
+                fi
+                echo
+            fi
+        fi
+    fi
+
     # --- Automatable check 1: Test command passes ---
     if [[ -n "${TEST_CMD:-}" ]]; then
         log "Running test command: ${TEST_CMD}"
         local test_output=""
         local test_exit=0
-        test_output=$(bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+        if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+            log "[dedup] Tests passed with no file changes since last run — skipping"
+            if command -v emit_event &>/dev/null; then
+                emit_event "test_dedup_skip" "${_CURRENT_STAGE:-milestone_acceptance}" \
+                    "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+            fi
+            test_output="[dedup] Cached pass — no files changed since last successful test run"
+            test_exit=0
+        else
+            test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+            if [[ "$test_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                test_dedup_record_pass
+            fi
+        fi
 
         if [[ "$test_exit" -eq 0 ]]; then
             success "Tests pass"
@@ -51,16 +108,17 @@ check_milestone_acceptance() {
 
             case "$_baseline_assessment" in
                 pre_existing)
-                    if [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-true}" = "true" ]]; then
+                    if [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-false}" = "true" ]]; then
                         warn "Tests FAILED (exit ${test_exit}) — ALL failures match pre-existing baseline"
-                        warn "Treating as PASS for acceptance (pre-existing failures)"
+                        warn "Treating as PASS for acceptance (PASS_ON_PREEXISTING=true opt-in)"
                         if command -v emit_event &>/dev/null; then
                             emit_event "acceptance_preexisting_pass" "acceptance" \
                                 "test_exit=${test_exit}, assessment=pre_existing" \
-                                "" "" "" 2>/dev/null || true
+                                "" "" "" >/dev/null 2>&1 || true
                         fi
                     else
-                        warn "Tests FAILED (exit ${test_exit}) — pre-existing, but PASS_ON_PREEXISTING=false"
+                        warn "Tests FAILED (exit ${test_exit}) — pre-existing failures no longer auto-pass (M92)"
+                        warn "All tests must pass. Set TEST_BASELINE_PASS_ON_PREEXISTING=true to opt out."
                         echo "$test_output" | tail -20
                         all_pass=false
                     fi
@@ -142,6 +200,21 @@ check_milestone_acceptance() {
 
         if [[ "$has_manual" = true ]]; then
             log "(Manual criteria require human verification)"
+        fi
+    fi
+
+    # --- Automatable check 4: Docs strict mode — block on unresolved doc findings ---
+    if [[ "${DOCS_STRICT_MODE:-false}" = "true" ]] \
+       && [[ -f "${REVIEWER_REPORT_FILE:-}" ]]; then
+        # Use -E (extended regex) for portable alternation (BRE | is GNU-only).
+        # Patterns are intentionally broad to catch varied reviewer phrasing:
+        #   "Docs Updated: missing", "documentation not updated", "docs absent", etc.
+        local docs_block
+        docs_block=$(grep -ciE 'docs? (updated?|change|section).*missing|doc(umentation)? (not |un)updated?|doc(umentation|s)? absent|missing doc(umentation|s)? update' \
+            "${REVIEWER_REPORT_FILE}" 2>/dev/null || true)
+        if [[ "$docs_block" -gt 0 ]]; then
+            warn "DOCS_STRICT_MODE: reviewer flagged missing doc updates (${docs_block} finding(s))"
+            all_pass=false
         fi
     fi
 

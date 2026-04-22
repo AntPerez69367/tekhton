@@ -15,6 +15,12 @@ trap 'rm -rf "$TEST_TMPDIR"' EXIT
 LOG_DIR="$TEST_TMPDIR/logs"
 PROJECT_DIR="$TEST_TMPDIR"
 mkdir -p "$LOG_DIR"
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
+CODER_SUMMARY_FILE="${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/REVIEWER_REPORT.md"
+TESTER_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/TESTER_REPORT.md"
+export CODER_SUMMARY_FILE REVIEWER_REPORT_FILE TESTER_REPORT_FILE
 
 # Required globals
 _CURRENT_MILESTONE="m43"
@@ -24,11 +30,12 @@ TASK="Make Scout identify affected test files"
 TIMESTAMP="20260331_143022"
 
 # Stub functions
-log()     { :; }
-warn()    { :; }
-error()   { :; }
-success() { :; }
-header()  { :; }
+log()         { :; }
+warn()        { :; }
+error()       { :; }
+success()     { :; }
+header()      { :; }
+log_verbose() { :; }
 
 # Mock git to return some changed files
 git() { printf 'prompts/scout.prompt.md\nstages/coder.sh\n'; }
@@ -45,7 +52,7 @@ _json_escape() {
 }
 
 # Create a CODER_SUMMARY.md with decisions
-cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -56,7 +63,7 @@ cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
 EOF
 
 # Create a REVIEWER_REPORT.md with blockers
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 # Reviewer Report
 ## Verdict: CHANGES_REQUIRED
 ## Blockers
@@ -211,7 +218,7 @@ fi
 # =============================================================================
 echo "=== Test 9: missing reports produce empty arrays ==="
 
-rm -f "${PROJECT_DIR}/CODER_SUMMARY.md" "${PROJECT_DIR}/REVIEWER_REPORT.md"
+rm -f "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"
 rm -f "$memory_file"
 _hook_emit_run_memory 0
 line=$(head -1 "$memory_file")

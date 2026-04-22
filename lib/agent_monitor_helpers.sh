@@ -60,6 +60,7 @@ _detect_file_changes() {
         -not -path '*/.git' \
         -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
         -not -path "${log_dir}/*" \
+        -not -path "${project_dir}/${DASHBOARD_DIR:-.claude/dashboard}/*" \
         -type f 2>/dev/null | head -1)
 
     if [ -n "$changed" ]; then
@@ -79,6 +80,7 @@ _count_changed_files_since() {
         -not -path '*/.git' \
         -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
         -not -path "${log_dir}/*" \
+        -not -path "${project_dir}/${DASHBOARD_DIR:-.claude/dashboard}/*" \
         -type f 2>/dev/null | count_lines)
     echo "${count:-0}"
 }

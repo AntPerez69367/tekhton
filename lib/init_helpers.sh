@@ -7,64 +7,14 @@ set -euo pipefail
 # Sourced by init.sh — do not run directly.
 # Depends on: common.sh (log, warn, success, header, BOLD, CYAN, GREEN, etc.)
 #             prompts_interactive.sh (prompt_confirm, prompt_choice)
-# Provides: _display_detection_results(), _offer_monorepo_choice(),
-#           _correct_project_type(), _count_tracked_files(),
-#           _install_agent_roles(), _append_addenda(), _seed_claude_md(),
-#           _ensure_init_gitignore()
+# Provides: _offer_monorepo_choice(), _correct_project_type(),
+#           _count_tracked_files(), _install_agent_roles(), _append_addenda(),
+#           _seed_claude_md(), _ensure_init_gitignore()
+# _display_detection_results() lives in init_helpers_display.sh.
 # =============================================================================
 
-# --- Display detection results -----------------------------------------------
-
-_display_detection_results() {
-    local languages="$1"
-    local frameworks="$2"
-    local commands="$3"
-    local entry_points="$4"
-    local project_type="$5"
-
-    echo >&2
-    echo -e "${BOLD}${CYAN}  Detection Results${NC}" >&2
-    echo -e "  ────────────────────────────────────" >&2
-    echo -e "  Project type: ${BOLD}${project_type}${NC}" >&2
-
-    if [[ -n "$languages" ]]; then
-        echo -e "  ${BOLD}Languages:${NC}" >&2
-        while IFS='|' read -r lang conf manifest; do
-            local icon="  "
-            [[ "$conf" == "high" ]] && icon="${GREEN}✓${NC}"
-            [[ "$conf" == "medium" ]] && icon="${YELLOW}~${NC}"
-            [[ "$conf" == "low" ]] && icon="${RED}?${NC}"
-            echo -e "    ${icon} ${lang} (${conf}) — ${manifest}" >&2
-        done <<< "$languages"
-    else
-        echo -e "  ${YELLOW}No languages detected${NC}" >&2
-    fi
-
-    if [[ -n "$frameworks" ]]; then
-        echo -e "  ${BOLD}Frameworks:${NC}" >&2
-        while IFS='|' read -r fw lang _evidence; do
-            echo -e "    ${GREEN}✓${NC} ${fw} (${lang})" >&2
-        done <<< "$frameworks"
-    fi
-
-    if [[ -n "$commands" ]]; then
-        echo -e "  ${BOLD}Commands:${NC}" >&2
-        while IFS='|' read -r cmd_type cmd _source conf; do
-            local icon="${GREEN}✓${NC}"
-            [[ "$conf" == "medium" ]] && icon="${YELLOW}~${NC}"
-            [[ "$conf" == "low" ]] && icon="${RED}?${NC}"
-            echo -e "    ${icon} ${cmd_type}: ${cmd}" >&2
-        done <<< "$commands"
-    fi
-
-    if [[ -n "$entry_points" ]]; then
-        echo -e "  ${BOLD}Entry points:${NC}" >&2
-        while IFS= read -r ep; do
-            echo -e "    ${ep}" >&2
-        done <<< "$entry_points"
-    fi
-    echo >&2
-}
+# shellcheck source=init_helpers_display.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/init_helpers_display.sh"
 
 # --- Monorepo routing (Milestone 12) ------------------------------------------
 
@@ -74,8 +24,8 @@ _offer_monorepo_choice() {
 
     # Count total subprojects across all workspace types
     local total_subs=0
-    local ws_type manifest subs
-    while IFS='|' read -r ws_type manifest subs; do
+    local ws_type _manifest subs
+    while IFS='|' read -r ws_type _manifest subs; do
         [[ -z "$ws_type" ]] && continue
         local count
         count=$(echo "$subs" | tr ',' '\n' | grep -cv '\.\.\.' || echo "0")
@@ -83,8 +33,8 @@ _offer_monorepo_choice() {
     done <<< "$workspaces"
 
     echo >&2
-    echo -e "${BOLD}${CYAN}  Monorepo Detected${NC}" >&2
-    echo -e "  This project has ${total_subs} subproject(s)." >&2
+    out_section "Monorepo Detected" >&2
+    echo "  This project has ${total_subs} subproject(s)." >&2
     echo >&2
     echo -e "  Options:" >&2
     echo -e "    1) Manage the root (all projects)" >&2
@@ -175,6 +125,7 @@ _install_agent_roles() {
             # Append tech-stack addenda if available
             _append_addenda "$target" "$tekhton_home" "$languages"
             success "Created agent role file: .claude/agents/${role}.md"
+            _INIT_FILES_WRITTEN+=(".claude/agents/${role}.md|${role} agent role")
         else
             log "Skipped .claude/agents/${role}.md (already exists)"
         fi
@@ -209,8 +160,7 @@ _append_addenda() {
 _seed_claude_md() {
     local project_dir="$1"
     local detection_report="$2"
-    local project_type="$3"
-    local merge_context="${4:-}"
+    local merge_context="${3:-}"
     local project_name
     project_name=$(basename "$project_dir")
 

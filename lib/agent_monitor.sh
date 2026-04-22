@@ -154,6 +154,7 @@ _invoke_and_monitor() {
                                     -not -path '*/.git' \
                                     -not -path "${_session_dir}/*" \
                                     -not -path "${LOG_DIR:-${PROJECT_DIR:-.}/.claude/logs}/*" \
+                                    -not -path "${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}/*" \
                                     -type f 2>/dev/null | head -1)
                                 if [ -n "$_changed_file" ]; then
                                     _files_changed=true

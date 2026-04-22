@@ -16,6 +16,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # --- Set up a minimal git repo so git commands inside coder.sh don't fail ----
 git init -q .
@@ -77,6 +78,10 @@ export AGENT_ERROR_MESSAGE=""
 export LAST_AGENT_TURNS=10
 export LAST_AGENT_EXIT_CODE=0
 export BUILD_GATE_RETRY=0
+
+# Disable M92 pre-coder sweep — this test targets scout tool reduction, not
+# baseline enforcement, and the run_agent mock only captures the Scout call.
+export PRE_RUN_CLEAN_ENABLED=false
 
 touch "$LOG_FILE"
 
@@ -151,6 +156,8 @@ emit_dashboard_run_state()       { :; }
 emit_event()                     { :; }
 log_decision()                   { :; }
 progress_status()                { :; }
+stage_header()                   { :; }
+log_verbose()                    { :; }
 _safe_read_file()                { echo ""; }
 _wrap_file_content()             { echo ""; }
 _phase_start()                   { :; }

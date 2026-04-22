@@ -36,26 +36,30 @@ _severity_for_count() {
 # human action items, non-blocking notes, and drift observations.
 # Uses progressive color: cyan (normal), yellow (warning), red (critical).
 _print_action_items() {
-    local action_items=()
+    # Parallel arrays: item_msgs[i] + item_sevs[i] (normal|warning|critical).
+    local item_msgs=() item_sevs=()
 
     # Check for tester bugs
-    if [[ -f "TESTER_REPORT.md" ]] && \
-       awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
+    if [[ -f "${TESTER_REPORT_FILE}" ]] && \
+       awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' "${TESTER_REPORT_FILE}" 2>/dev/null; then
         local bug_count
-        bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
-        action_items+=("$(echo -e "${YELLOW}  ⚠ TESTER_REPORT.md — ${bug_count} bug(s) found (see ## Bugs Found)${NC}")")
+        bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' "${TESTER_REPORT_FILE}")
+        item_msgs+=("${TESTER_REPORT_FILE} — ${bug_count} bug(s) found (see ## Bugs Found)")
+        item_sevs+=("warning")
     fi
 
     # Check for test failures from final checks
     if [[ "${FINAL_CHECK_RESULT:-0}" -ne 0 ]]; then
-        action_items+=("$(echo -e "${YELLOW}  ⚠ Test suite — final checks failed (see output above)${NC}")")
+        item_msgs+=("Test suite — final checks failed (see output above)")
+        item_sevs+=("warning")
     fi
 
     # Check for human action items
     if has_human_actions 2>/dev/null; then
         local ha_count
         ha_count=$(count_human_actions)
-        action_items+=("$(echo -e "${YELLOW}  ⚠ ${HUMAN_ACTION_FILE} — ${ha_count} item(s) needing manual work${NC}")")
+        item_msgs+=("${HUMAN_ACTION_FILE} — ${ha_count} item(s) needing manual work")
+        item_sevs+=("warning")
     fi
 
     # Check for non-blocking notes with progressive severity
@@ -69,14 +73,18 @@ _print_action_items() {
                 "${ACTION_ITEMS_CRITICAL_THRESHOLD:-10}")
             case "$nb_severity" in
                 critical)
-                    action_items+=("$(echo -e "${RED}  ✗ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s) [CRITICAL]${NC}")")
-                    action_items+=("$(echo -e "${RED}    → Suggested: tekhton --fix-nonblockers --complete${NC}")")
+                    item_msgs+=("${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)")
+                    item_sevs+=("critical")
+                    item_msgs+=("  → Suggested: tekhton --fix-nonblockers --complete")
+                    item_sevs+=("critical")
                     ;;
                 warning)
-                    action_items+=("$(echo -e "${YELLOW}  ⚠ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)${NC}")")
+                    item_msgs+=("${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)")
+                    item_sevs+=("warning")
                     ;;
                 *)
-                    action_items+=("$(echo -e "${CYAN}  ℹ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)${NC}")")
+                    item_msgs+=("${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)")
+                    item_sevs+=("normal")
                     ;;
             esac
         fi
@@ -87,12 +95,13 @@ _print_action_items() {
         local drift_count
         drift_count=$(count_drift_observations 2>/dev/null || echo 0)
         if [[ "$drift_count" -gt 0 ]]; then
-            action_items+=("$(echo -e "${CYAN}  ℹ ${DRIFT_LOG_FILE} — ${drift_count} unresolved drift observation(s)${NC}")")
+            item_msgs+=("${DRIFT_LOG_FILE} — ${drift_count} unresolved drift observation(s)")
+            item_sevs+=("normal")
         fi
     fi
 
     # Check for unchecked human notes (M25) with progressive severity
-    if command -v get_notes_summary &>/dev/null && [[ -f "HUMAN_NOTES.md" ]]; then
+    if command -v get_notes_summary &>/dev/null && [[ -f "${HUMAN_NOTES_FILE}" ]]; then
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         local notes_unchecked
@@ -106,20 +115,26 @@ _print_action_items() {
                 "${HUMAN_NOTES_CRITICAL_THRESHOLD:-20}")
             case "$notes_severity" in
                 critical)
-                    action_items+=("$(echo -e "${RED}  ✗ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining [CRITICAL]${NC}")")
-                    action_items+=("$(echo -e "${RED}    → Suggested: tekhton --human --complete${NC}")")
+                    item_msgs+=("${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining")
+                    item_sevs+=("critical")
+                    item_msgs+=("  → Suggested: tekhton --human --complete")
+                    item_sevs+=("critical")
                     ;;
                 warning)
-                    action_items+=("$(echo -e "${YELLOW}  ⚠ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
+                    item_msgs+=("${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining")
+                    item_sevs+=("warning")
                     ;;
                 *)
-                    action_items+=("$(echo -e "${CYAN}  ℹ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
+                    item_msgs+=("${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining")
+                    item_sevs+=("normal")
                     ;;
             esac
             # Shared tip for warning + normal severity (critical has its own)
             if [[ "$notes_severity" != "critical" ]]; then
-                action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
-                action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
+                item_msgs+=("  Tip: Run \`tekhton --human\` to process notes, or")
+                item_sevs+=("normal")
+                item_msgs+=("       \`tekhton note --list\` to see them")
+                item_sevs+=("normal")
             fi
         fi
     fi
@@ -130,13 +145,16 @@ _print_action_items() {
         ui_summary=$(get_ui_validation_summary 2>/dev/null || echo "")
         if [[ -n "$ui_summary" ]] && [[ "$ui_summary" != "not run" ]]; then
             if [[ "${UI_VALIDATION_FAIL_COUNT:-0}" -gt 0 ]]; then
-                action_items+=("$(echo -e "${YELLOW}  \u26a0 UI Validation: ${ui_summary}${NC}")")
+                item_msgs+=("UI Validation: ${ui_summary}")
+                item_sevs+=("warning")
             else
-                action_items+=("$(echo -e "${CYAN}  \u2139 UI Validation: ${ui_summary}${NC}")")
+                item_msgs+=("UI Validation: ${ui_summary}")
+                item_sevs+=("normal")
             fi
             local screenshot_dir="${PROJECT_DIR:-.}/.claude/ui-validation/screenshots"
             if [[ "${UI_VALIDATION_SCREENSHOTS:-true}" = "true" ]] && [[ -d "$screenshot_dir" ]]; then
-                action_items+=("$(echo -e "${CYAN}    Screenshots: ${screenshot_dir}/${NC}")")
+                item_msgs+=("  Screenshots: ${screenshot_dir}/")
+                item_sevs+=("normal")
             fi
         fi
     fi
@@ -146,27 +164,47 @@ _print_action_items() {
         local quota_summary
         quota_summary=$(format_quota_pause_summary)
         if [[ -n "$quota_summary" ]]; then
-            action_items+=("$(echo -e "${CYAN}  \u2139 ${quota_summary}${NC}")")
+            item_msgs+=("$quota_summary")
+            item_sevs+=("normal")
         fi
     fi
 
-    if [[ ${#action_items[@]} -gt 0 ]]; then
-        echo -e "${BOLD}══════════════════════════════════════${NC}"
-        echo -e "${BOLD}  Action Items${NC}"
-        echo -e "${BOLD}══════════════════════════════════════${NC}"
-        for item in "${action_items[@]}"; do
-            echo -e "$item"
+    if [[ ${#item_msgs[@]} -gt 0 ]]; then
+        out_banner "Action Items"
+        local i
+        for (( i = 0; i < ${#item_msgs[@]}; i++ )); do
+            out_action_item "${item_msgs[$i]}" "${item_sevs[$i]}"
         done
-        echo -e "${BOLD}══════════════════════════════════════${NC}"
-        echo
+        out_msg ""
     else
         success "No action items — clean run."
-        echo
+        out_msg ""
     fi
 
     # Diagnose hint for failed runs (M17)
     if [[ "${_PIPELINE_EXIT_CODE:-0}" -ne 0 ]] || [[ "${FINAL_CHECK_RESULT:-0}" -ne 0 ]]; then
-        echo -e "${CYAN}  Run 'tekhton --diagnose' for recovery suggestions.${NC}"
-        echo
+        local cyan nc
+        cyan=$(_out_color "${CYAN:-}")
+        nc=$(_out_color "${NC:-}")
+        out_msg "  ${cyan}Run 'tekhton --diagnose' for recovery suggestions.${nc}"
+        out_msg ""
+    fi
+}
+
+# _print_next_action
+# Prints the M82 "What's next" guidance line. M96 IA3: extracted from
+# _print_action_items so it can be emitted as the final line, after the
+# commit confirmation rather than buried before the commit prompt.
+_print_next_action() {
+    command -v _compute_next_action &>/dev/null || return 0
+    local next_action
+    next_action=$(_compute_next_action 2>/dev/null || echo "")
+    if [[ -n "$next_action" ]]; then
+        local bold nc
+        bold=$(_out_color "${BOLD:-}")
+        nc=$(_out_color "${NC:-}")
+        out_msg ""
+        out_msg "${bold}${next_action}${nc}"
+        out_msg ""
     fi
 }

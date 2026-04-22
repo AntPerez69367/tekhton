@@ -6,6 +6,7 @@
 # Expects: TOTAL_TURNS, TOTAL_TIME, STAGE_SUMMARY (set by caller)
 # Expects: log(), success(), warn(), error() from common.sh
 # =============================================================================
+set -euo pipefail
 
 # Source platform detection (Windows/WSL interop, timeout flags, _kill_agent_windows)
 # shellcheck source=lib/agent_monitor_platform.sh
@@ -27,6 +28,10 @@ source "${TEKHTON_HOME}/lib/agent_retry.sh"
 # shellcheck source=lib/agent_helpers.sh
 source "${TEKHTON_HOME}/lib/agent_helpers.sh"
 
+# Source spinner subshell management (non-TUI + TUI paths separated)
+# shellcheck source=lib/agent_spinner.sh
+source "${TEKHTON_HOME}/lib/agent_spinner.sh"
+
 # --- Metrics accumulators (initialize if not already set) --------------------
 
 : "${TOTAL_TURNS:=0}"
@@ -34,7 +39,7 @@ source "${TEKHTON_HOME}/lib/agent_helpers.sh"
 : "${STAGE_SUMMARY:=}"
 
 # --- Tool Profiles (--allowedTools per role, override with AGENT_SKIP_PERMISSIONS) ---
-# SCOUT: read-only + Write for SCOUT_REPORT.md (no path-scoped write restriction in CLI)
+# SCOUT: read-only + Write for scout report (no path-scoped write restriction in CLI)
 export AGENT_TOOLS_SCOUT="Read Glob Grep Bash(find:*) Bash(head:*) Bash(wc:*) Bash(cat:*) Bash(ls:*) Bash(tail:*) Bash(file:*) Write"
 export AGENT_TOOLS_CODER="Read Write Edit Glob Grep Bash"       # Full implementation
 export AGENT_TOOLS_JR_CODER="Read Write Edit Glob Grep Bash"    # Simpler tasks
@@ -142,61 +147,16 @@ run_agent() {
     fi
 
     _IM_PERM_FLAGS=("${_perm_flags[@]}")  # Pass to monitor
+    local _spinner_pid="" _tui_updater_pid=""
+    IFS=: read -r _spinner_pid _tui_updater_pid < <(_start_agent_spinner "$label" "$_turns_file" "$max_turns")
 
-    # --- CLI activity indicator (spinner) — shows which agent is working --------
-    # Enhanced for Milestone 13: shows turn count and triggers dashboard refresh.
-    local _spinner_pid=""
-    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
-        (
-            trap 'exit 0' INT TERM
-            chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-            start_ts=$(date +%s)
-            _last_refresh=0
-            _refresh_interval="${DASHBOARD_REFRESH_INTERVAL:-10}"
-            i=0
-            while true; do
-                now=$(date +%s)
-                elapsed=$(( now - start_ts ))
-                mins=$(( elapsed / 60 ))
-                secs=$(( elapsed % 60 ))
-                # Read turns from turns file if available
-                _cur_turns=0
-                if [[ -f "$_turns_file" ]]; then
-                    _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "0")
-                    [[ "$_cur_turns" =~ ^[0-9]+$ ]] || _cur_turns=0
-                fi
-                printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
-                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
-                    "$_cur_turns" "$max_turns" > /dev/tty
-                i=$(( i + 1 ))
-                # Dashboard heartbeat: refresh run_state.js periodically
-                if (( elapsed - _last_refresh >= _refresh_interval )); then
-                    if command -v emit_dashboard_run_state &>/dev/null; then
-                        emit_dashboard_run_state 2>/dev/null || true
-                    fi
-                    _last_refresh=$elapsed
-                fi
-                sleep 0.2
-            done
-        ) &
-        _spinner_pid=$!
-    fi
-
-    # --- Transient error retry envelope (13.2.1) --------------------------------
     # Delegates invocation + classification + retry to _run_with_retry() in
-    # agent_retry.sh. Stages do not know about retries — they see success or
-    # final failure. Results come back via globals: AGENT_ERROR_*, LAST_AGENT_RETRY_COUNT,
-    # _RWR_EXIT, _RWR_TURNS, _RWR_WAS_ACTIVITY_TIMEOUT.
+    # agent_retry.sh. Results come back via globals: AGENT_ERROR_*,
+    # LAST_AGENT_RETRY_COUNT, _RWR_EXIT, _RWR_TURNS, _RWR_WAS_ACTIVITY_TIMEOUT.
     _run_with_retry "$label" "$_invoke" "$model" "$max_turns" "$prompt" \
         "$log_file" "$_activity_timeout" "$_session_dir" "$_exit_file" "$_turns_file" \
         "$_prerun_marker" "$_timeout"
-
-    # Stop spinner
-    if [[ -n "${_spinner_pid:-}" ]]; then
-        kill "$_spinner_pid" 2>/dev/null || true
-        wait "$_spinner_pid" 2>/dev/null || true
-        printf '\r\033[K' > /dev/tty 2>/dev/null || true
-    fi
+    _stop_agent_spinner "$_spinner_pid" "$_tui_updater_pid"
 
     local agent_exit="$_RWR_EXIT"
     local _was_activity_timeout="$_RWR_WAS_ACTIVITY_TIMEOUT"
@@ -224,7 +184,14 @@ run_agent() {
         fi
         _retry_suffix=" (after ${LAST_AGENT_RETRY_COUNT} ${_retry_word})"
     fi
-    log "[$label] Turns: ${turns_display} | Time: ${mins}m${secs}s${_retry_suffix}"
+    # M96 (NR3): fold context total into completion line when available.
+    local _ctx_suffix=""
+    if [[ -n "${LAST_CONTEXT_TOKENS:-}" ]] && [[ "${LAST_CONTEXT_TOKENS}" -gt 0 ]] 2>/dev/null; then
+        local _ctx_k=$(( LAST_CONTEXT_TOKENS / 1000 ))
+        local _ctx_frac=$(( (LAST_CONTEXT_TOKENS % 1000) / 100 ))
+        _ctx_suffix=" | Context: ~${_ctx_k}.${_ctx_frac}k tokens (${LAST_CONTEXT_PCT:-0}%)"
+    fi
+    log "[$label] Turns: ${turns_display} | Time: ${mins}m${secs}s${_ctx_suffix}${_retry_suffix}"
 
     TOTAL_TURNS=$(( TOTAL_TURNS + turns_used ))
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))
@@ -261,9 +228,9 @@ run_agent() {
         _has_file_changes=true
     fi
 
-    # CODER_SUMMARY.md newer than pre-run marker = completion signal
+    # ${CODER_SUMMARY_FILE} newer than pre-run marker = completion signal
     local _has_summary=false
-    local _summary_path="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
+    local _summary_path="${PROJECT_DIR:-.}/${CODER_SUMMARY_FILE}"
     if [ -f "$_summary_path" ] && [ -f "$_prerun_marker" ]; then
         if [ "$_summary_path" -nt "$_prerun_marker" ]; then
             local _summary_lines

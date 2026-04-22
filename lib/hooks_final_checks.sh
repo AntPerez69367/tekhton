@@ -22,7 +22,7 @@ run_final_checks() {
 
     log "Running ${ANALYZE_CMD}..."
     set +e
-    ANALYZE_OUTPUT=$(bash -c "${ANALYZE_CMD}" 2>&1)
+    ANALYZE_OUTPUT=$(run_op "Running final static analysis" bash -c "${ANALYZE_CMD}" 2>&1)
     ANALYZE_EXIT=$?
     set -e
     echo "$ANALYZE_OUTPUT" >> "$log_file"
@@ -70,9 +70,13 @@ run_final_checks() {
             _STAGE_TURNS["analyze_cleanup"]="${LAST_AGENT_TURNS:-0}"
         fi
 
-        # Re-run analyze to confirm cleanup worked
+        # Re-run analyze to confirm cleanup worked. Capture first so run_op
+        # can wrap the long-running analyze command; then filter into the log.
         log "Re-running ${ANALYZE_CMD} after cleanup..."
-        if bash -c "${ANALYZE_CMD}" 2>&1 | tee -a "$log_file" | grep -qE "^  (error|warning)"; then
+        local _analyze_recheck
+        _analyze_recheck=$(run_op "Re-running static analysis" bash -c "${ANALYZE_CMD}" 2>&1)
+        printf '%s\n' "$_analyze_recheck" >> "$log_file"
+        if printf '%s\n' "$_analyze_recheck" | grep -qE "^  (error|warning)"; then
             print_run_summary
             error "${ANALYZE_CMD}: warnings or errors remain after cleanup. Review before merging."
             final_result=1
@@ -86,10 +90,23 @@ run_final_checks() {
     log "Running ${TEST_CMD}..."
     local test_output=""
     local test_exit=0
-    set +e
-    test_output=$(bash -c "${TEST_CMD}" 2>&1)
-    test_exit=$?
-    set -e
+    if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+        log "[dedup] Tests passed with no file changes since last run — skipping"
+        if command -v emit_event &>/dev/null; then
+            emit_event "test_dedup_skip" "${_CURRENT_STAGE:-final_checks}" \
+                "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+        fi
+        test_output="[dedup] Cached pass — no files changed since last successful test run"
+        test_exit=0
+    else
+        set +e
+        test_output=$(run_op "Running final test check" bash -c "${TEST_CMD}" 2>&1)
+        test_exit=$?
+        set -e
+        if [[ "$test_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+            test_dedup_record_pass
+        fi
+    fi
     printf '%s\n' "$test_output" | tee -a "$log_file"
 
     if [ $test_exit -eq 0 ]; then
@@ -124,7 +141,7 @@ run_final_checks() {
             # Re-run tests to check if fixes worked
             log "Re-running ${TEST_CMD} after test fix..."
             set +e
-            test_output=$(bash -c "${TEST_CMD}" 2>&1)
+            test_output=$(run_op "Re-running final test check" bash -c "${TEST_CMD}" 2>&1)
             test_exit=$?
             set -e
             printf '%s\n' "$test_output" | tee -a "$log_file"

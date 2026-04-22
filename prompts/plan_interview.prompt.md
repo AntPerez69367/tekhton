@@ -34,9 +34,9 @@ answer "(skipped — write a placeholder)" should have a brief TBD placeholder.
 
 ## Your Task
 
-Produce the complete DESIGN.md in markdown format. Follow these rules:
+Produce the complete {{DESIGN_FILE}} in markdown format. Follow these rules:
 
-1. **Output DESIGN.md content directly as text.** Do NOT use any tools to write
+1. **Output {{DESIGN_FILE}} content directly as text.** Do NOT use any tools to write
    files — the shell captures your text output and writes the file. No preamble,
    no explanation, no commentary. Your very first line must be the document title
    (e.g. `# Design Document`). Any lines before the first `# ` heading are
@@ -74,5 +74,22 @@ Produce the complete DESIGN.md in markdown format. Follow these rules:
 8. **Include config examples.** Wherever the developer mentions configurable
    values, include a fenced code block showing example config with actual keys,
    types, and default values.
+
+9. **Documentation Strategy (REQUIRED).** Every template includes a
+   `## Documentation Strategy` section. If the developer skips it, ask these
+   four questions to fill it in:
+   - Does this project ship user-facing documentation? (yes / no / just a
+     README / README + docs/ site)
+   - Where is documentation hosted? (GitHub README only, GitHub Pages,
+     ReadTheDocs, docs.rs, mkdocs Material, other)
+   - What must be updated on every feature change? (README + relevant
+     `docs/` page; README only; docs/ site only)
+   - Do you want Tekhton to enforce doc freshness during review?
+     (strict = block merge, warn = non-blocking finding, off)
+
+10. **Versioning & Release Strategy (REQUIRED).** Every template includes a
+    `## Versioning & Release Strategy` section. If the developer skips it or
+    says "unclear," default to semantic versioning (major.minor.patch).
+    Document the chosen strategy and what constitutes major/minor/patch bumps.
 
 Begin with the document title now.

@@ -49,6 +49,7 @@ export MAX_REVIEW_CYCLES
 mkdir -p "$LOG_DIR" "$TMPDIR/.claude"
 touch "$LOG_FILE"
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 git init -q .
 git add -A >/dev/null 2>&1
 git commit -q -m "init" --allow-empty 2>/dev/null
@@ -60,6 +61,9 @@ source "${TEKHTON_HOME}/lib/common.sh"
 suggest_recovery() { echo "Check run log."; }
 redact_sensitive() { cat; }
 count_lines() { wc -l | tr -d '[:space:]'; }
+
+BUILD_ERRORS_FILE="${TEKHTON_DIR}/BUILD_ERRORS.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 
 # Source the files under test
 source "${TEKHTON_HOME}/lib/orchestrate_recovery.sh"
@@ -151,10 +155,10 @@ assert_eq "1.9 REPLAN_REQUIRED → save_exit" "save_exit" "$result"
 
 # Build gate failure → retry_coder_build
 VERDICT=""
-echo "Build errors here" > BUILD_ERRORS.md
+echo "Build errors here" > "${BUILD_ERRORS_FILE}"
 result=$(_classify_failure)
 assert_eq "1.10 build errors → retry_coder_build" "retry_coder_build" "$result"
-rm -f BUILD_ERRORS.md
+rm -f "${BUILD_ERRORS_FILE}"
 
 # Unclassified → save_exit
 AGENT_ERROR_CATEGORY=""
@@ -219,9 +223,11 @@ assert_eq "3.2 same state → same hash" "$hash" "$hash2"
 echo "=== Test Suite 4: report_orchestration_status ==="
 
 output=$(report_orchestration_status 2 5 125 8 2>&1)
-assert "4.1 banner includes attempt count" "$(echo "$output" | grep -q "2" && echo 0 || echo 1)"
+# Strip ANSI escape codes before grepping (M96 wrapped attempt in ${BOLD}...${NC})
+output_plain=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g')
+assert "4.1 banner includes attempt count" "$(echo "$output_plain" | grep -q "2 / 5" && echo 0 || echo 1)"
 assert "4.2 banner includes elapsed time" "$(echo "$output" | grep -q "2m 5s" && echo 0 || echo 1)"
-assert "4.3 banner includes agent calls" "$(echo "$output" | grep -q "8" && echo 0 || echo 1)"
+assert "4.3 banner no longer shows agent calls counter (M96)" "$(echo "$output" | grep -q "Agent calls:" && echo 1 || echo 0)"
 
 # =============================================================================
 # Test Suite 5: record_pipeline_attempt builds log

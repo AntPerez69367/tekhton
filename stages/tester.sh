@@ -34,17 +34,19 @@ source "${TEKHTON_HOME}/stages/tester_fix.sh"
 #   3. Handle compilation errors, test failures, partial runs
 #   4. Save state for resume if incomplete
 #
-# On success, TESTER_REPORT.md exists with all items checked.
+# On success, ${TESTER_REPORT_FILE} exists with all items checked.
 # Saves state and warns (but does not exit 1) on partial completion.
 run_stage_tester() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-$_stage_count}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Tester${TESTER_MODE:+ (${TESTER_MODE})}"
+    local _tester_suffix=""
+    [[ -n "${TESTER_MODE:-}" ]] && _tester_suffix="(${TESTER_MODE})"
+    stage_header "${_stage_pos}" "${_stage_count}" "Tester" "${_tester_suffix}"
 
     # --- TDD write_failing mode (Milestone 27) --------------------------------
     # In test_first pipeline order, the first tester pass writes failing tests.
-    # Uses a dedicated prompt and outputs TESTER_PREFLIGHT.md instead of
-    # TESTER_REPORT.md. Skips the test pass gate (tests are expected to fail).
+    # Uses a dedicated prompt and outputs ${TDD_PREFLIGHT_FILE} instead of
+    # ${TESTER_REPORT_FILE}. Skips the test pass gate (tests are expected to fail).
     if [[ "${TESTER_MODE:-verify_passing}" == "write_failing" ]]; then
         _run_tester_write_failing
         return
@@ -65,7 +67,7 @@ run_stage_tester() {
         export REPO_MAP_CONTENT=""
         if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
             local _tester_files
-            _tester_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
+            _tester_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}")
             if [[ -n "$_tester_files" ]]; then
                 # Augment with inferred test file counterparts
                 _tester_files=$(infer_test_counterparts "$_tester_files")
@@ -146,13 +148,13 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     _tester_stage_start=$(date +%s)
     local _tester_prompt_chars=${#TESTER_PROMPT}
     local _tester_prompt_tokens=$(( (_tester_prompt_chars + 3) / 4 ))
-    local _tester_turn_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
-    log "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
-    log "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
+    local _tester_turn_budget="${EFFECTIVE_TESTER_MAX_TURNS:-${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}}"
+    log_verbose "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
+    log_verbose "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
     if [[ "$START_AT" = "tester" ]]; then
-        log "[tester-diag] Mode: RESUME (tester_resume prompt)"
+        log_verbose "[tester-diag] Mode: RESUME (tester_resume prompt)"
     else
-        log "[tester-diag] Mode: FRESH (full tester prompt)"
+        log_verbose "[tester-diag] Mode: FRESH (full tester prompt)"
     fi
 
     log "Invoking tester agent (max ${_tester_turn_budget} turns)..."
@@ -176,7 +178,7 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     log "[tester-diag] Primary invocation: ${LAST_AGENT_TURNS}/${_tester_turn_budget} turns, ${_tester_agent_mins}m${_tester_agent_secs}s, exit=${LAST_AGENT_EXIT_CODE}"
 
     # --- M62: Extract tester self-reported timing --------------------------------
-    _parse_tester_timing "TESTER_REPORT.md" "replace"
+    _parse_tester_timing "${TESTER_REPORT_FILE}" "replace"
     if [[ "$_TESTER_TIMING_EXEC_APPROX_S" -gt -1 ]]; then
         log "[tester-diag] Agent self-reported: ${_TESTER_TIMING_EXEC_COUNT} test executions, ~${_TESTER_TIMING_EXEC_APPROX_S}s execution time, ${_TESTER_TIMING_FILES_WRITTEN} files written"
     fi
@@ -227,8 +229,8 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     local _tester_total_mins=$(( _tester_total_elapsed / 60 ))
     local _tester_total_secs=$(( _tester_total_elapsed % 60 ))
     local _tester_test_count=0
-    if [[ -f "TESTER_REPORT.md" ]]; then
-        _tester_test_count=$(grep -c '^- \[' TESTER_REPORT.md || true)
+    if [[ -f "${TESTER_REPORT_FILE}" ]]; then
+        _tester_test_count=$(grep -c '^- \[' "${TESTER_REPORT_FILE}" || true)
     fi
     log "[tester-diag] === Stage Complete ==="
     log "[tester-diag] Total wall-clock: ${_tester_total_mins}m${_tester_total_secs}s"

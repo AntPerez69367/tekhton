@@ -1,194 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# init_report.sh — Post-init report generator (Milestone 22)
+# init_report.sh — Post-init report generator (Milestone 22, rewritten M81)
 #
 # Provides focused terminal summary and persistent INIT_REPORT.md after init.
+# Terminal banner uses three-part narrative: learned / wrote / next.
 #
 # Sourced by init.sh — do not run directly.
 # Depends on: common.sh (log, warn, success, header, colors)
 # =============================================================================
 
-# --- Terminal summary ---------------------------------------------------------
-
-# emit_init_summary — Prints focused, color-coded post-init summary to terminal.
-# Args: $1 = project_dir, $2 = languages, $3 = frameworks, $4 = commands,
-#        $5 = project_type, $6 = file_count
-# Globals read: WATCHTOWER_ENABLED, DASHBOARD_ENABLED
-emit_init_summary() {
-    local project_dir="$1"
-    local languages="$2"
-    local frameworks="$3"
-    local commands="$4"
-    local project_type="$5"
-    local file_count="${6:-0}"
-
-    local project_name
-    project_name=$(basename "$project_dir")
-
-    echo
-    echo -e "  ${GREEN}${BOLD}Tekhton initialized for: ${project_name}${NC}"
-    echo
-
-    # --- Detected section ---
-    echo -e "  ${BOLD}Detected:${NC}"
-
-    # Primary language
-    if [[ -n "$languages" ]]; then
-        local first_lang first_conf first_manifest
-        first_lang=$(echo "$languages" | head -1 | cut -d'|' -f1)
-        first_conf=$(echo "$languages" | head -1 | cut -d'|' -f2)
-        first_manifest=$(echo "$languages" | head -1 | cut -d'|' -f3)
-        echo -e "    Language:    ${BOLD}${first_lang}${NC} (${first_conf} confidence — from ${first_manifest})"
-        # Additional languages
-        local extra_count
-        extra_count=$(echo "$languages" | wc -l | tr -d '[:space:]')
-        if [[ "$extra_count" -gt 1 ]]; then
-            local others
-            others=$(echo "$languages" | tail -n +2 | cut -d'|' -f1 | tr '\n' ', ' | sed 's/,$//')
-            echo -e "                 also: ${others}"
-        fi
-    else
-        echo -e "    Language:    ${YELLOW}(not detected)${NC}"
-    fi
-
-    # Framework
-    if [[ -n "$frameworks" ]]; then
-        local first_fw first_fw_src
-        first_fw=$(echo "$frameworks" | head -1 | cut -d'|' -f1)
-        first_fw_src=$(echo "$frameworks" | head -1 | cut -d'|' -f3)
-        echo -e "    Framework:   ${BOLD}${first_fw}${NC} (from ${first_fw_src})"
-    fi
-
-    # Commands
-    _emit_summary_command "$commands" "build" "Build"
-    _emit_summary_command "$commands" "test" "Test"
-    _emit_summary_command "$commands" "analyze" "Lint"
-
-    echo -e "    Type:        ${project_type}"
-    echo
-
-    # --- Needs attention section ---
-    local attention_items=0
-    local attention_lines=""
-
-    # Code evidence: true when file-based language detection found something (not just
-    # the CLAUDE.md fallback). A project with only planning docs (post --plan, pre-code)
-    # has file_count > 0 but no actual source files, so brownfield checks should skip.
-    local _code_evidence=false
-    if [[ -z "$languages" ]] || echo "$languages" | grep -qvF '|CLAUDE.md'; then
-        _code_evidence=true
-    fi
-
-    # Check ARCHITECTURE_FILE — only warn if explicitly set to a path that doesn't exist
-    # (broken reference). Empty/unset is the normal default; agents create the file organically.
-    if [[ -f "${project_dir}/.claude/pipeline.conf" ]]; then
-        local _conf_arch=""
-        _conf_arch=$(grep '^ARCHITECTURE_FILE=' "${project_dir}/.claude/pipeline.conf" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
-        if [[ -n "$_conf_arch" ]] && [[ ! -f "${project_dir}/${_conf_arch}" ]]; then
-            attention_lines+="    ARCHITECTURE_FILE=\"${_conf_arch}\" not found — create it or set to \"\" in pipeline.conf\n"
-            attention_items=$((attention_items + 1))
-        fi
-    fi
-
-    # Check for pre-existing tests (skip on greenfield — no tests expected yet)
-    if [[ "$file_count" -gt 0 ]] && [[ "$_code_evidence" == "true" ]]; then
-        local test_cmd
-        test_cmd=$(_best_command "$commands" "test" 2>/dev/null || true)
-        if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
-            attention_lines+="    No test command detected — tester will generate from scratch\n"
-            attention_items=$((attention_items + 1))
-        fi
-    fi
-
-    # Check for low-confidence commands
-    local cmd_type cmd_val cmd_src cmd_conf
-    if [[ -n "$commands" ]]; then
-        while IFS='|' read -r cmd_type cmd_val cmd_src cmd_conf; do
-            [[ -z "$cmd_type" ]] && continue
-            if [[ "$cmd_conf" == "low" ]] || [[ "$cmd_conf" == "medium" ]]; then
-                attention_lines+="    ${cmd_type} command needs verification (${cmd_conf} confidence from ${cmd_src})\n"
-                attention_items=$((attention_items + 1))
-            fi
-        done <<< "$commands"
-    fi
-
-    if [[ "$attention_items" -gt 0 ]]; then
-        echo -e "  ${YELLOW}${BOLD}Needs attention:${NC}"
-        echo -e "$attention_lines"
-    fi
-
-    # --- Health score (M15 graceful skip) ---
-    if type -t compute_health_score &>/dev/null; then
-        local health_score
-        health_score=$(compute_health_score "$project_dir" 2>/dev/null || echo "")
-        if [[ -n "$health_score" ]]; then
-            echo -e "  Health score: ${BOLD}${health_score}/100${NC} (see INIT_REPORT.md for details)"
-            echo
-        fi
-    fi
-
-    # --- Next steps ---
-    echo -e "  ${BOLD}Next steps:${NC}"
-    echo "    1. Review essential config: .claude/pipeline.conf (lines 1-20)"
-
-    # Detect whether milestones already exist (from a prior --plan run).
-    # Strongest signal: MANIFEST.cfg with entries. Fallback: non-stub CLAUDE.md
-    # with milestone headers.
-    local _has_milestones=false
-    local _milestone_dir="${project_dir}/.claude/milestones"
-    local _claude_md="${project_dir}/CLAUDE.md"
-    if [[ -f "${_milestone_dir}/MANIFEST.cfg" ]] \
-        && grep -q '|' "${_milestone_dir}/MANIFEST.cfg" 2>/dev/null; then
-        _has_milestones=true
-    elif [[ -f "$_claude_md" ]] \
-        && ! grep -q '<!-- TODO:.*--plan' "$_claude_md" 2>/dev/null \
-        && grep -q '^#### Milestone' "$_claude_md" 2>/dev/null; then
-        _has_milestones=true
-    fi
-
-    if [[ "$_has_milestones" == "true" ]]; then
-        echo "    2. Run: tekhton \"Implement Milestone 1: <title>\""
-    elif [[ "$file_count" -gt 50 ]]; then
-        echo "    2. Start planning:  tekhton --plan-from-index"
-        echo "       (uses PROJECT_INDEX.md to synthesize DESIGN.md + CLAUDE.md)"
-    else
-        echo "    2. Start planning:  tekhton --plan \"Describe your project goals\""
-    fi
-
-    # Watchtower-aware report pointer
-    if _is_watchtower_enabled; then
-        echo "    3. Open dashboard:  open .claude/dashboard/index.html"
-        echo
-        echo -e "  Full report: ${CYAN}.claude/dashboard/index.html${NC}"
-    else
-        echo
-        echo -e "  Full report: ${CYAN}INIT_REPORT.md${NC}"
-    fi
-    echo
-}
-
-# _emit_summary_command — Prints a single detected command in the summary.
-# Args: $1 = commands output, $2 = type (test/build/analyze), $3 = label
-_emit_summary_command() {
-    local commands="$1"
-    local cmd_type="$2"
-    local label="$3"
-    [[ -z "$commands" ]] && return 0
-
-    local cmd conf source
-    cmd=$(echo "$commands" | grep "^${cmd_type}|" | head -1 | cut -d'|' -f2 || true)
-    conf=$(echo "$commands" | grep "^${cmd_type}|" | head -1 | cut -d'|' -f4 || true)
-    source=$(echo "$commands" | grep "^${cmd_type}|" | head -1 | cut -d'|' -f3 || true)
-
-    if [[ -n "$cmd" ]]; then
-        local marker=""
-        [[ "$conf" == "medium" ]] && marker=" ${YELLOW}[VERIFY]${NC}"
-        [[ "$conf" == "low" ]] && marker=" ${RED}[VERIFY]${NC}"
-        # Pad label to 12 chars
-        printf "    %-12s %s%b\n" "${label}:" "${cmd}" "$marker"
-    fi
-}
+# Source the banner renderer (split to stay under 300 lines)
+_INIT_REPORT_DIR="${BASH_SOURCE[0]%/*}"
+# shellcheck source=lib/init_report_banner.sh
+source "${_INIT_REPORT_DIR}/init_report_banner.sh"
 
 # _is_watchtower_enabled — Checks if Watchtower/dashboard is enabled.
 _is_watchtower_enabled() {
@@ -383,8 +208,8 @@ _report_attention_items() {
     fi
 
     if [[ -n "$commands" ]]; then
-        local cmd_type cmd_val cmd_src cmd_conf
-        while IFS='|' read -r cmd_type cmd_val cmd_src cmd_conf; do
+        local cmd_type cmd_val _cmd_src cmd_conf
+        while IFS='|' read -r cmd_type cmd_val _cmd_src cmd_conf; do
             [[ -z "$cmd_type" ]] && continue
             if [[ "$cmd_conf" == "low" ]] || [[ "$cmd_conf" == "medium" ]]; then
                 echo "- ${cmd_type} command (\`${cmd_val}\`) detected with ${cmd_conf} confidence — verify before first run"

@@ -112,10 +112,11 @@ _milestone_in_archive() {
     fi
 
     local num_pattern="${num//./\\.}"
+    local heading_re="^#{1,5}[[:space:]]*(\\[DONE\\][[:space:]]*)?((M|m)ilestone[[:space:]]+${num_pattern}|(M|m)0*${num_pattern})([^[:alnum:]]|$)"
 
     # If no initiative specified, fall back to global match (backward compat)
     if [[ -z "$initiative" ]]; then
-        grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[^[:alnum:]]" "$archive_file" 2>/dev/null
+        grep -qE "$heading_re" "$archive_file" 2>/dev/null
         return $?
     fi
 
@@ -133,8 +134,8 @@ _milestone_in_archive() {
             fi
             continue
         fi
-        if [[ "$in_initiative" = true ]] \
-           && [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[^[:alnum:]] ]]; then
+          if [[ "$in_initiative" = true ]] \
+              && [[ "$line" =~ $heading_re ]]; then
             return 0
         fi
     done < "$archive_file"
@@ -143,12 +144,12 @@ _milestone_in_archive() {
 }
 
 # _insert_archive_pointer CLAUDE_MD_PATH INITIATIVE_NAME
-# Inserts '<!-- See MILESTONE_ARCHIVE.md for completed milestones -->' after the
+# Inserts '<!-- See ${MILESTONE_ARCHIVE_FILE} for completed milestones -->' after the
 # '### Milestone Plan' heading within the initiative section, if not already present.
 _insert_archive_pointer() {
     local claude_md="$1"
     local initiative="$2"
-    local pointer="<!-- See MILESTONE_ARCHIVE.md for completed milestones -->"
+    local pointer="<!-- See ${MILESTONE_ARCHIVE_FILE} for completed milestones -->"
 
     # Find the ### Milestone Plan heading within the initiative section and insert
     # the pointer comment on the line immediately after it — but only if the pointer

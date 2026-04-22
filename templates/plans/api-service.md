@@ -188,6 +188,29 @@
 <!-- What is the config override hierarchy? -->
 <!-- What config changes require a restart vs are hot-reloaded? -->
 
+## Documentation Strategy
+<!-- REQUIRED -->
+<!-- PHASE:2 -->
+<!-- What documentation does this project ship? (README only, README + docs/ site, API reference) -->
+<!-- Where is documentation hosted? (GitHub, GitHub Pages, ReadTheDocs, Swagger UI) -->
+<!-- What surfaces must be documented? (REST/gRPC endpoints, auth flows, error codes, config keys) -->
+<!-- On every feature change, which docs must be updated in the same commit? -->
+<!-- Is doc freshness strict (block the merge) or warn-only? -->
+<!-- Any auto-generation tooling? (OpenAPI/Swagger, protoc-gen-doc, Redoc) -->
+
+## Versioning & Release Strategy
+<!-- REQUIRED -->
+<!-- PHASE:2 -->
+<!-- How should this project be versioned? Options: -->
+<!-- 1) Semantic versioning (major.minor.patch) — default -->
+<!-- 2) CalVer (YYYY.MM.patch) -->
+<!-- 3) Date-stamped (YYYY-MM-DD) -->
+<!-- 4) None / manual (Tekhton won't bump) -->
+<!-- What constitutes a major, minor, or patch version change? -->
+<!-- Release process: automated or manual? Who can publish? -->
+<!-- Changelog: auto-generated from commits? Conventional commits? -->
+<!-- Pre-release naming convention: alpha, beta, rc? -->
+
 ## Testing Strategy
 <!-- PHASE:3 -->
 <!-- Unit tests: business logic, validators, utility functions -->

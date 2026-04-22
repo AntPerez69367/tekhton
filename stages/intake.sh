@@ -29,7 +29,7 @@ set -euo pipefail
 
 # run_stage_intake
 # Pre-stage gate that evaluates task/milestone clarity.
-# Produces INTAKE_REPORT.md with verdict and confidence score.
+# Produces ${INTAKE_REPORT_FILE} with verdict and confidence score.
 run_stage_intake() {
     # Skip if disabled
     if [[ "${INTAKE_AGENT_ENABLED:-true}" != "true" ]]; then
@@ -49,7 +49,7 @@ run_stage_intake() {
     fi
 
     # Use cached intake results from dry-run if available (Milestone 23)
-    if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
+    if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-}" ]]; then
         header "Pre-stage 1 — Task Intake (cached)"
         log "Intake: using cached results from dry-run."
         local _cached_verdict
@@ -93,9 +93,9 @@ run_stage_intake() {
     # Load project index summary via structured reader (M68). The reader produces
     # a bounded summary within 8KB — intake only needs the overview, not full
     # file listings. Uses structured .claude/index/ data when available, falls
-    # back to legacy PROJECT_INDEX.md for pre-M67 projects.
+    # back to legacy $PROJECT_INDEX_FILE for pre-M67 projects.
     export INTAKE_PROJECT_INDEX=""
-    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE}" ]]; then
         INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 
@@ -131,7 +131,7 @@ run_stage_intake() {
 
     # Inject related human notes context (M25)
     export NOTES_CONTEXT_BLOCK=""
-    if [[ -f "HUMAN_NOTES.md" ]] && command -v extract_human_notes &>/dev/null; then
+    if [[ -f "${HUMAN_NOTES_FILE}" ]] && command -v extract_human_notes &>/dev/null; then
         local all_notes
         all_notes=$(NOTES_FILTER="" extract_human_notes 2>/dev/null || true)
         if [[ -n "$all_notes" ]]; then
@@ -195,7 +195,14 @@ run_stage_intake() {
     # Handle verdict
     case "$verdict" in
         PASS)
-            success "Intake: task is clear. Proceeding."
+            # M118: PASS success line is deferred to the caller in tekhton.sh
+            # so the TUI pill flips green BEFORE the success line lands in
+            # Recent Events. The caller emits after tui_stage_end. We use a
+            # dedicated flag (not INTAKE_VERDICT) because the early-exit paths
+            # at the top of this function also set INTAKE_VERDICT="PASS"
+            # without running intake (HUMAN_MODE, disabled, no content) and
+            # those must remain silent.
+            export _INTAKE_PASS_EMIT="true"
             ;;
 
         TWEAKED)
@@ -236,7 +243,7 @@ run_intake_create() {
     export INTAKE_ROLE_CONTENT=""
     export INTAKE_CREATE_MODE="true"
 
-    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE}" ]]; then
         INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 

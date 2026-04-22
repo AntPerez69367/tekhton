@@ -47,7 +47,7 @@ _wrap_file_content() {
 
 # _safe_read_file — Reads a file with size validation. Returns empty string and
 # warns if the file exceeds the maximum size (default: 1MB / 1048576 bytes).
-# NOTE: Do not use _safe_read_file for PROJECT_INDEX.md.
+# NOTE: Do not use _safe_read_file for $PROJECT_INDEX_FILE.
 # Use read_index_summary() or read_index_*() from lib/index_reader.sh
 # which provide bounded, structured access to project index data (M68).
 # Usage: content=$(_safe_read_file "/path/to/file" "label")
@@ -84,8 +84,8 @@ load_intake_template_vars() {
     export INTAKE_TWEAKS_BLOCK="${INTAKE_TWEAKS_BLOCK:-}"
     export INTAKE_HISTORY_BLOCK="${INTAKE_HISTORY_BLOCK:-}"
 
-    if [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
-        INTAKE_REPORT_CONTENT=$(_safe_read_file "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" "INTAKE_REPORT")
+    if [[ -f "${INTAKE_REPORT_FILE:-}" ]]; then
+        INTAKE_REPORT_CONTENT=$(_safe_read_file "${INTAKE_REPORT_FILE:-}" "INTAKE_REPORT")
     fi
 }
 
@@ -105,6 +105,9 @@ render_prompt() {
     # Process {{IF:VAR}} ... {{ENDIF:VAR}} blocks
     # If $VAR is non-empty, include the block contents; otherwise remove it.
     # Uses a loop to handle all conditional blocks.
+    # Nesting is supported: {{IF:A}}...{{IF:B}}...{{ENDIF:B}}...{{ENDIF:A}}
+    # works because each pair uses a distinct variable name and the loop
+    # processes one variable at a time (innermost-first via grep order).
     local max_iterations=50
     local i=0
     while echo "$content" | grep -q '{{IF:'; do

@@ -5,13 +5,18 @@ set -euo pipefail
 #
 # Replaces the bare scaffold --init with an intelligent, interactive
 # initialization flow that uses tech stack detection and the project crawler
-# to auto-populate pipeline.conf, generate PROJECT_INDEX.md, and guide the
+# to auto-populate pipeline.conf, generate $PROJECT_INDEX_FILE, and guide the
 # user to the appropriate next step (--plan or --replan).
 #
 # Sourced by tekhton.sh — do not run directly.
 # Depends on: common.sh, detect.sh, detect_commands.sh, detect_report.sh,
 #             crawler.sh, init_config.sh, init_helpers.sh
 # =============================================================================
+
+# --- File-written tracking (Milestone 81) ---
+# Global array: each entry is "path|description". Populated during init,
+# consumed by emit_init_summary to render "What Tekhton wrote" section.
+_INIT_FILES_WRITTEN=()
 
 # Source companion files
 _INIT_DIR="${BASH_SOURCE[0]%/*}"
@@ -25,6 +30,8 @@ source "${_INIT_DIR}/init_report.sh"
 source "${_INIT_DIR}/init_config_sections.sh"
 # shellcheck source=lib/prompts_interactive.sh
 source "${_INIT_DIR}/prompts_interactive.sh"
+# shellcheck source=lib/init_wizard.sh
+source "${_INIT_DIR}/init_wizard.sh"
 # shellcheck source=lib/detect_ai_artifacts.sh
 source "${_INIT_DIR}/detect_ai_artifacts.sh"
 # shellcheck source=lib/artifact_handler.sh
@@ -66,6 +73,7 @@ run_smart_init() {
     # Create directories
     mkdir -p "${conf_dir}/agents"
     mkdir -p "${conf_dir}/logs/archive"
+    mkdir -p "${project_dir}/${TEKHTON_DIR:-.tekhton}"
 
     # Phase 1.5: AI artifact detection
     if [[ "${ARTIFACT_DETECTION_ENABLED:-true}" == "true" ]]; then
@@ -119,6 +127,12 @@ run_smart_init() {
     tracked_file_count=$(_count_tracked_files "$project_dir")
     log "Crawling project (${tracked_file_count} files)..."
     crawl_project "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
+    _INIT_FILES_WRITTEN+=("$(basename "${PROJECT_INDEX_FILE}")|structured project index")
+
+    # Phase 3.5: Feature wizard (M109) — runs after detection so guidance is
+    # informed by tech stack, before config generation so answers flow into
+    # _emit_section_features() via env vars.
+    run_feature_wizard "${reinit_mode:-}"
 
     # Phase 4: Config generation
     log "Generating pipeline.conf..."
@@ -138,28 +152,62 @@ run_smart_init() {
     else
         success "Created ${conf_file}"
     fi
+    _INIT_FILES_WRITTEN+=(".claude/pipeline.conf|primary config — edit this first")
+
+    # Phase 4.5: Python venv setup (M109) — runs only when wizard enabled a
+    # Python feature interactively. Failure is non-fatal: features degrade
+    # gracefully at runtime and the user can retry with --setup-indexer.
+    _run_wizard_venv_setup "$project_dir" "$tekhton_home" "$conf_dir"
+    if [[ "${_WIZARD_VENV_CREATED:-}" == "true" ]]; then
+        _INIT_FILES_WRITTEN+=(".claude/indexer-venv/|Python environment for enhanced features")
+    fi
 
     # Phase 5: Agent role customization
     _install_agent_roles "$project_dir" "$tekhton_home" "$languages"
     _ensure_init_gitignore "$project_dir" "$languages"
+    _INIT_FILES_WRITTEN+=(".gitignore|tech-stack and sensitive-file patterns")
 
     # Phase 6: Stub CLAUDE.md
     if [[ ! -f "${project_dir}/CLAUDE.md" ]]; then
         local detection_report
         detection_report=$(format_detection_report "$project_dir")
         local merge_context=""
-        if [[ -f "${project_dir}/MERGE_CONTEXT.md" ]]; then
-            merge_context=$(cat "${project_dir}/MERGE_CONTEXT.md")
+        local _mcf="${project_dir}/${MERGE_CONTEXT_FILE}"
+        if [[ -f "${_mcf}" ]]; then
+            merge_context=$(cat "${_mcf}")
         fi
-        _seed_claude_md "$project_dir" "$detection_report" "$project_type" "$merge_context"
+        _seed_claude_md "$project_dir" "$detection_report" "$merge_context"
         success "Created CLAUDE.md (seeded with detection results)"
+        _INIT_FILES_WRITTEN+=("CLAUDE.md|project rules — seeded with detection results")
     else
         log "CLAUDE.md already exists — skipping stub generation"
+    fi
+
+    # Phase 6b: CHANGELOG.md stub (Milestone 77)
+    if [[ "${CHANGELOG_ENABLED:-true}" == "true" ]] && [[ ! -f "${project_dir}/${CHANGELOG_FILE:-CHANGELOG.md}" ]]; then
+        if command -v changelog_init_if_missing &>/dev/null; then
+            changelog_init_if_missing "$project_dir"
+        else
+            # Inline fallback when changelog.sh is not sourced (init early-exit path)
+            cat > "${project_dir}/${CHANGELOG_FILE:-CHANGELOG.md}" <<'CHANGELOG_EOF'
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+CHANGELOG_EOF
+            success "Created ${CHANGELOG_FILE:-CHANGELOG.md}"
+        fi
+        _INIT_FILES_WRITTEN+=("${CHANGELOG_FILE:-CHANGELOG.md}|changelog stub")
     fi
 
     # Phase 7: Report and next-step routing (Milestone 22)
     emit_init_report_file "$project_dir" "$languages" "$frameworks" \
         "$commands" "$entry_points" "$project_type" "$tracked_file_count"
+    _INIT_FILES_WRITTEN+=("INIT_REPORT.md|full detection report")
 
     # Emit dashboard init data if available
     if type -t emit_dashboard_init &>/dev/null; then

@@ -17,7 +17,11 @@ ANALYZE_CMD="echo 'No analyze command configured — set ANALYZE_CMD in pipeline
 BUILD_CHECK_CMD=""
 ARCHITECTURE_FILE="ARCHITECTURE.md"
 PROJECT_RULES_FILE="CLAUDE.md"
-DESIGN_FILE=""
+# DESIGN_FILE=".tekhton/DESIGN.md"
+
+# Tekhton artifact directory — all pipeline-managed files live here.
+# CLAUDE.md stays at the project root (Claude Code requires it there).
+# TEKHTON_DIR=".tekhton"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Section 2: Models & Turns
@@ -90,12 +94,12 @@ BUILD_ERROR_PATTERN="ERROR"
 NOTES_FILTER_CATEGORIES="BUG|FEAT|POLISH"
 
 # Drift detection
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+# DRIFT_LOG_FILE=".tekhton/DRIFT_LOG.md"
+# ARCHITECTURE_LOG_FILE=".tekhton/ARCHITECTURE_LOG.md"
+# HUMAN_ACTION_FILE=".tekhton/HUMAN_ACTION_REQUIRED.md"
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+# NON_BLOCKING_LOG_FILE=".tekhton/NON_BLOCKING_LOG.md"
 NON_BLOCKING_INJECTION_THRESHOLD=8
 
 # Architect agent
@@ -133,6 +137,12 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 # SPECIALIST_API_MAX_TURNS=8
 
 # AGENT_SKIP_PERMISSIONS=false
+
+# Docs agent stage — optional post-coder/pre-security stage
+# Uses Haiku to update README/docs/ based on the coder's diff
+# DOCS_AGENT_ENABLED=false
+# DOCS_AGENT_MODEL="claude-haiku-4-5-20251001"
+# DOCS_AGENT_MAX_TURNS=10
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Section 5: Features
@@ -210,6 +220,17 @@ SEED_CONTRACTS_ENABLED=false
 # TESTER_FIX_OUTPUT_LIMIT=4000      # Max chars of test output in fix task string
 
 # TEST_BASELINE_ENABLED=true
+# TEST_BASELINE_PASS_ON_PREEXISTING=false   # M92: default — pre-existing failures no longer auto-pass.
+                                            # Set to true only if you genuinely cannot fix some tests (masks failures).
+
+# --- Pre-coder clean sweep (M92) ---
+# Before the coder runs, check if tests pass. If not, spawn a restricted fix
+# agent to restore a clean baseline. The fix is non-fatal — if it cannot
+# clean the suite, the coder proceeds and the stricter post-run gates surface
+# the breakage. Disable for projects with intentionally failing tests.
+# PRE_RUN_CLEAN_ENABLED=true
+# PRE_RUN_FIX_MAX_TURNS=20
+# PRE_RUN_FIX_MAX_ATTEMPTS=1
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Section 6: Quotas & Autonomy

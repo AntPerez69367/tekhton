@@ -33,9 +33,15 @@ _CURRENT_MILESTONE=""
 TEKHTON_SESSION_DIR="$TMPDIR"
 START_AT="N/A"
 VERDICT="APPROVED"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
-DRIFT_LOG_FILE="DRIFT_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR:-.tekhton}/NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR:-.tekhton}/DRIFT_LOG.md"
+HUMAN_NOTES_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/REVIEWER_REPORT.md"
+TESTER_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/TESTER_REPORT.md"
+SECURITY_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/SECURITY_REPORT.md"
+SECURITY_NOTES_FILE="${TEKHTON_DIR:-.tekhton}/SECURITY_NOTES.md"
 _TEKHTON_LOCK_FILE=""
 WITH_NOTES=false
 HUMAN_MODE=false
@@ -72,6 +78,7 @@ export WITH_NOTES HUMAN_MODE NOTES_FILTER
 mkdir -p "$LOG_DIR"
 touch "$LOG_FILE"
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # --- Source common.sh for log/warn/success/header ----------------------------
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -197,6 +204,10 @@ persist_express_roles() {
     _mock_called[persist_express_roles]=1
     return 0
 }
+out_complete() {
+    _mock_called[out_complete]=1
+    return 0
+}
 has_human_actions() {
     return 1
 }
@@ -252,7 +263,7 @@ restore_hooks() {
 # =============================================================================
 echo "=== Test Suite 1: Hook registration order ==="
 
-assert_eq "1.1 exactly 21 hooks registered" "21" "${#FINALIZE_HOOKS[@]}"
+assert_eq "1.1 exactly 25 hooks registered" "25" "${#FINALIZE_HOOKS[@]}"
 assert_eq "1.0c zeroth hook is _hook_baseline_cleanup" "_hook_baseline_cleanup" "${FINALIZE_HOOKS[0]}"
 assert_eq "1.1b first hook is _hook_note_acceptance"  "_hook_note_acceptance" "${FINALIZE_HOOKS[1]}"
 assert_eq "1.2 second hook is _hook_final_checks"    "_hook_final_checks"    "${FINALIZE_HOOKS[2]}"
@@ -271,9 +282,13 @@ assert_eq "1.11c fourteenth hook is _hook_emit_run_memory" "_hook_emit_run_memor
 assert_eq "1.11b fifteenth hook is _hook_emit_timing_report" "_hook_emit_timing_report" "${FINALIZE_HOOKS[15]}"
 assert_eq "1.12 sixteenth hook is _hook_failure_context" "_hook_failure_context" "${FINALIZE_HOOKS[16]}"
 assert_eq "1.12b seventeenth hook is _hook_express_persist" "_hook_express_persist" "${FINALIZE_HOOKS[17]}"
-assert_eq "1.13 eighteenth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[18]}"
-assert_eq "1.14 nineteenth hook is _hook_update_check" "_hook_update_check"  "${FINALIZE_HOOKS[19]}"
-assert_eq "1.15 twentieth hook is _hook_final_dashboard_status" "_hook_final_dashboard_status" "${FINALIZE_HOOKS[20]}"
+assert_eq "1.13 eighteenth hook is _hook_project_version_bump" "_hook_project_version_bump" "${FINALIZE_HOOKS[18]}"
+assert_eq "1.13b nineteenth hook is _hook_changelog_append" "_hook_changelog_append" "${FINALIZE_HOOKS[19]}"
+assert_eq "1.14 twentieth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[20]}"
+assert_eq "1.15 twenty-first hook is _hook_project_version_tag" "_hook_project_version_tag" "${FINALIZE_HOOKS[21]}"
+assert_eq "1.16 twenty-second hook is _hook_update_check" "_hook_update_check" "${FINALIZE_HOOKS[22]}"
+assert_eq "1.17 twenty-third hook is _hook_final_dashboard_status" "_hook_final_dashboard_status" "${FINALIZE_HOOKS[23]}"
+assert_eq "1.18 twenty-fourth hook is _hook_tui_complete" "_hook_tui_complete" "${FINALIZE_HOOKS[24]}"
 
 # =============================================================================
 # Test Suite 2: register_finalize_hook appends in order
@@ -282,14 +297,14 @@ echo "=== Test Suite 2: register_finalize_hook ==="
 
 _test_new_hook() { return 0; }
 register_finalize_hook "_test_new_hook"
-assert_eq "2.1 hook count increases by 1" "22" "${#FINALIZE_HOOKS[@]}"
-assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[21]}"
+assert_eq "2.1 hook count increases by 1" "26" "${#FINALIZE_HOOKS[@]}"
+assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[25]}"
 
 # Register a second additional hook — ensure ordering is preserved
 _test_new_hook_2() { return 0; }
 register_finalize_hook "_test_new_hook_2"
-assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[22]}"
-assert_eq "2.4 first new hook still at 21" "_test_new_hook" "${FINALIZE_HOOKS[21]}"
+assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[26]}"
+assert_eq "2.4 first new hook still at 25" "_test_new_hook" "${FINALIZE_HOOKS[25]}"
 
 restore_hooks
 
@@ -416,44 +431,44 @@ echo "=== Test Suite 8: _hook_resolve_notes exit-code guard ==="
 _reset_mocks
 
 # On failure with [~] items: orphan safety net resets [~] → [ ]
-cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [~] Fix the thing
 EOF
 _hook_resolve_notes 1
 assert "8.1 orphaned [~] reset to [ ] on failure" \
-    "$(grep -qc '^\- \[ \]' "${TMPDIR}/HUMAN_NOTES.md" && echo 0 || echo 1)"
+    "$(grep -qc '^\- \[ \]' "${TMPDIR}/${HUMAN_NOTES_FILE}" && echo 0 || echo 1)"
 
 # On success with no HUMAN_NOTES.md: early return without error
 _reset_mocks
-rm -f "${TMPDIR}/HUMAN_NOTES.md"
+rm -f "${TMPDIR}/${HUMAN_NOTES_FILE}"
 set +e; _hook_resolve_notes 0; _rc=$?; set -e
 assert "8.2 resolve_notes returns cleanly when no HUMAN_NOTES.md" \
     "$([[ $_rc -eq 0 ]] && echo 0 || echo 1)"
 
 # On success with HUMAN_NOTES.md containing [~] items: orphan safety net resolves [~] → [x]
 _reset_mocks
-cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [~] Fix the thing
 EOF
 _hook_resolve_notes 0
 assert "8.3 orphaned [~] resolved to [x] on success" \
-    "$(grep -qc '^\- \[x\]' "${TMPDIR}/HUMAN_NOTES.md" && echo 0 || echo 1)"
+    "$(grep -qc '^\- \[x\]' "${TMPDIR}/${HUMAN_NOTES_FILE}" && echo 0 || echo 1)"
 
 # On success with HUMAN_NOTES.md but no [~] items: file unchanged
 _reset_mocks
-cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [ ] Fix the thing
 - [x] Done item
 EOF
-_before_84=$(cat "${TMPDIR}/HUMAN_NOTES.md")
+_before_84=$(cat "${TMPDIR}/${HUMAN_NOTES_FILE}")
 _hook_resolve_notes 0
-_after_84=$(cat "${TMPDIR}/HUMAN_NOTES.md")
+_after_84=$(cat "${TMPDIR}/${HUMAN_NOTES_FILE}")
 assert_eq "8.4 no [~] items leaves file unchanged" "$_before_84" "$_after_84"
 
-rm -f "${TMPDIR}/HUMAN_NOTES.md"
+rm -f "${TMPDIR}/${HUMAN_NOTES_FILE}"
 
 # =============================================================================
 # Test Suite 8b: _hook_resolve_notes — unified path (HUMAN_MODE branch removed)
@@ -484,7 +499,7 @@ CURRENT_NOTE_ID="n01"
 CURRENT_NOTE_LINE=""
 CLAIMED_NOTE_IDS="n01"
 export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
-cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix the thing <!-- note:n01 created:2026-03-28 priority:medium source:cli -->
 EOF
@@ -503,7 +518,7 @@ CURRENT_NOTE_ID=""
 CURRENT_NOTE_LINE=""
 CLAIMED_NOTE_IDS=""
 export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
-cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix the thing
 EOF
@@ -512,7 +527,7 @@ assert "8b.4 resolve_notes_batch NOT called when CLAIMED_NOTE_IDS empty" \
     "$([ -z "${_mock_called[resolve_notes_batch]:-}" ] && echo 0 || echo 1)"
 # M42: resolve_human_notes fallback removed — orphan safety net resolves directly
 assert "8b.5 orphaned [~] note resolved to [x] by safety net" \
-    "$(grep -qc '^\- \[x\]' "${TMPDIR}/HUMAN_NOTES.md" && echo 0 || echo 1)"
+    "$(grep -qc '^\- \[x\]' "${TMPDIR}/${HUMAN_NOTES_FILE}" && echo 0 || echo 1)"
 
 # HUMAN_MODE=false + CLAIMED_NOTE_IDS: same unified path
 _reset_mocks
@@ -521,7 +536,7 @@ CURRENT_NOTE_ID="n01"
 CURRENT_NOTE_LINE=""
 CLAIMED_NOTE_IDS="n01"
 export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
-cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix the thing
 EOF
@@ -536,7 +551,7 @@ CURRENT_NOTE_ID="n01"
 CURRENT_NOTE_LINE=""
 CLAIMED_NOTE_IDS="n01"
 export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
-cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix the thing <!-- note:n01 created:2026-03-28 priority:medium source:cli -->
 EOF
@@ -552,7 +567,7 @@ CURRENT_NOTE_ID=""
 CURRENT_NOTE_LINE=""
 CLAIMED_NOTE_IDS=""
 export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
-rm -f "${TMPDIR}/HUMAN_NOTES.md"
+rm -f "${TMPDIR}/${HUMAN_NOTES_FILE}"
 
 # =============================================================================
 # Test Suite 9: _hook_mark_done — success-only, milestone-mode guard
@@ -822,6 +837,7 @@ assert "14.6 check_for_updates called on success (finalize_run 0)" \
 # Test _hook_final_checks directly with SKIP_FINAL_CHECKS=false
 _reset_mocks
 SKIP_FINAL_CHECKS=false
+_PREFLIGHT_TESTS_PASSED=false  # isolate from pipeline env
 _hook_final_checks 0
 assert "14.5 run_final_checks called when SKIP_FINAL_CHECKS=false" \
     "$([ -n "${_mock_called[run_final_checks]:-}" ] && echo 0 || echo 1)"
@@ -832,6 +848,7 @@ echo "=== Test Suite 15: finalize_run 1 skips success-only hooks ==="
 
 _reset_mocks
 SKIP_FINAL_CHECKS=false
+_PREFLIGHT_TESTS_PASSED=false  # isolate from pipeline env
 finalize_run 1
 
 # Hooks a, b, c, f always run

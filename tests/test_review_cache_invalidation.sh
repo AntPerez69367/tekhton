@@ -8,6 +8,7 @@ TMPDIR_BASE="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_BASE"' EXIT
 
 cd "$TMPDIR_BASE"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # Minimal git repo so any git calls don't fail
 git init -q .
@@ -37,6 +38,9 @@ assert() {
 export TEKHTON_HOME PROJECT_DIR="$TMPDIR_BASE"
 mkdir -p "${TMPDIR_BASE}/.claude/logs"
 
+REVIEWER_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/REVIEWER_REPORT.md"
+export REVIEWER_REPORT_FILE
+
 export LOG_FILE="${TMPDIR_BASE}/.claude/logs/test.log"
 export LOG_DIR="${TMPDIR_BASE}/.claude/logs"
 export TIMESTAMP="20260406_120000"
@@ -65,6 +69,10 @@ export INDEXER_AVAILABLE=true
 export REPO_MAP_ENABLED=true
 export REPO_MAP_CONTENT=""
 
+export CODER_SUMMARY_FILE="${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md"
+export JR_CODER_SUMMARY_FILE="${TEKHTON_DIR:-.tekhton}/JR_CODER_SUMMARY.md"
+export BUILD_ERRORS_FILE="${TEKHTON_DIR:-.tekhton}/BUILD_ERRORS.md"
+export SPECIALIST_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/SPECIALIST_REPORT.md"
 export CODER_MAX_TURNS=50
 export JR_CODER_MAX_TURNS=20
 export CLAUDE_CODER_MODEL="claude-test"
@@ -93,6 +101,8 @@ _phase_end()   { :; }
 # General pipeline stubs
 log_decision()                  { :; }
 progress_status()               { :; }
+stage_header()                  { :; }
+log_verbose()                   { :; }
 estimate_post_coder_turns()     { :; }
 _get_cached_architecture_content() { echo ""; }
 build_context_packet()          { :; }
@@ -134,8 +144,7 @@ invalidate_repo_map_run_cache() {
 
 make_reviewer_report() {
     local verdict="$1"
-    # CWD is TMPDIR_BASE — write directly to cwd so pipeline can find it
-    cat > REVIEWER_REPORT.md <<EOF
+    cat > "${REVIEWER_REPORT_FILE}" <<EOF
 ## Verdict
 ${verdict}
 
@@ -163,7 +172,7 @@ reset_test_state() {
     rm -f "${TMPDIR_BASE}/agent_calls.log" \
           "${TMPDIR_BASE}/state_calls.log" \
           "${TMPDIR_BASE}/invalidate_calls.log" \
-          REVIEWER_REPORT.md
+          "${REVIEWER_REPORT_FILE}"
 
     AGENT_CALL_COUNT=0
     INDEXER_AVAILABLE=true

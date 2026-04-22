@@ -10,10 +10,7 @@ set -euo pipefail
 # Depends on: common.sh (log, warn)
 # =============================================================================
 
-# --- Section header helper ----------------------------------------------------
-
 # _emit_section_header — Prints a section header with separator.
-# Args: $1 = section number, $2 = title, $3 = description
 _emit_section_header() {
     local num="$1"
     local title="$2"
@@ -28,17 +25,17 @@ _emit_section_header() {
 EOF
 }
 
-# --- Sectioned config emitters ------------------------------------------------
-
 # _emit_section_essential — Section 1: Essential config (first ~20 lines).
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,
-#        $5=analyze_conf, $6=build_cmd, $7=build_conf, $8=design_file
+#        $5=analyze_conf, $6=build_cmd, $7=build_conf, $8=design_file,
+#        $9=test_source, $10=analyze_source, $11=build_source
 _emit_section_essential() {
     local project_name="$1"
     local test_cmd="$2" test_conf="$3"
     local analyze_cmd="$4" analyze_conf="$5"
     local build_cmd="$6" build_conf="$7"
     local design_file="${8:-}"
+    local test_source="${9:-}" analyze_source="${10:-}" build_source="${11:-}"
 
     local config_version="${TEKHTON_VERSION%.*}"
     config_version="${config_version:-3.0}"
@@ -48,26 +45,29 @@ _emit_section_essential() {
 # Review these — auto-detected values may need adjustment
 TEKHTON_CONFIG_VERSION="${config_version}"
 PROJECT_NAME="${project_name}"
+# Not auto-detected — fill in manually
+# PROJECT_DESCRIPTION="(fill in a one-line description)"
 EOF
 
     # TEST_CMD
     if [[ -n "$test_cmd" ]]; then
-        _emit_verified_line "TEST_CMD" "$test_cmd" "$test_conf"
+        _emit_verified_line "TEST_CMD" "$test_cmd" "$test_conf" "$test_source"
     else
-        echo '# No test command detected — set manually:'
+        echo '# Not auto-detected — fill in manually'
         echo 'TEST_CMD="true"'
     fi
 
     # ANALYZE_CMD
     if [[ -n "$analyze_cmd" ]]; then
-        _emit_verified_line "ANALYZE_CMD" "$analyze_cmd" "$analyze_conf"
+        _emit_verified_line "ANALYZE_CMD" "$analyze_cmd" "$analyze_conf" "$analyze_source"
     else
+        echo '# Not auto-detected — fill in manually'
         echo "ANALYZE_CMD=\"echo 'No analyze command configured'\""
     fi
 
     # BUILD_CHECK_CMD
     if [[ -n "$build_cmd" ]]; then
-        _emit_verified_line "BUILD_CHECK_CMD" "$build_cmd" "$build_conf"
+        _emit_verified_line "BUILD_CHECK_CMD" "$build_cmd" "$build_conf" "$build_source"
     else
         echo 'BUILD_CHECK_CMD=""'
     fi
@@ -81,16 +81,22 @@ EOF
     fi
 }
 
-# _emit_verified_line — Emits a config key with VERIFY marker if needed.
-# Args: $1=key, $2=value, $3=confidence
+# _emit_verified_line — Emits a config key with source annotation and VERIFY marker.
+# Args: $1=key, $2=value, $3=confidence, $4=source (optional)
 _emit_verified_line() {
-    local key="$1" val="$2" conf="$3"
+    local key="$1" val="$2" conf="$3" source="${4:-}"
+
+    # Emit source annotation if available
+    if [[ -n "$source" ]]; then
+        echo "# Detected from: ${source} (confidence: ${conf})"
+    fi
+
     case "$conf" in
         high)
             echo "${key}=\"${val}\""
             ;;
         medium)
-            echo "# VERIFY: detected with medium confidence"
+            [[ -z "$source" ]] && echo "# VERIFY: detected with medium confidence"
             echo "${key}=\"${val}\""
             ;;
         low)
@@ -167,14 +173,36 @@ EOF
 }
 
 # _emit_section_features — Section 5: Features.
+# When the M109 wizard set _WIZARD_*_ENABLED env vars, those features are
+# emitted as uncommented active lines; otherwise they remain commented out
+# (today's behavior). DASHBOARD_ENABLED is always emitted active.
 _emit_section_features() {
     _emit_section_header "5" "Features" \
         "Optional features — enable as needed"
 
+    if [[ "${_WIZARD_TUI_ENABLED:-}" == "true" ]]; then
+        echo "TUI_ENABLED=true"
+    elif [[ "${_WIZARD_TUI_ENABLED:-}" == "auto" ]]; then
+        echo "TUI_ENABLED=auto"
+    else
+        echo "# TUI_ENABLED=auto"
+    fi
+
+    if [[ "${_WIZARD_REPO_MAP_ENABLED:-}" == "true" ]]; then
+        echo "REPO_MAP_ENABLED=true"
+    else
+        echo "# REPO_MAP_ENABLED=false"
+    fi
+
+    if [[ "${_WIZARD_SERENA_ENABLED:-}" == "true" ]]; then
+        echo "SERENA_ENABLED=true"
+    else
+        echo "# SERENA_ENABLED=false"
+    fi
+
+    echo "DASHBOARD_ENABLED=true"
+
     cat << EOF
-# REPO_MAP_ENABLED=false
-# SERENA_ENABLED=false
-# DASHBOARD_ENABLED=true
 # CLEANUP_ENABLED=false
 # SEED_CONTRACTS_ENABLED=false
 # INTAKE_AGENT_ENABLED=true
@@ -206,6 +234,7 @@ _emit_section_paths() {
         "File paths — rarely need changing"
 
     cat << EOF
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
 PIPELINE_STATE_FILE=".claude/PIPELINE_STATE.md"
 LOG_DIR=".claude/logs"
 CODER_ROLE_FILE=".claude/agents/coder.md"
@@ -213,64 +242,23 @@ REVIEWER_ROLE_FILE=".claude/agents/reviewer.md"
 TESTER_ROLE_FILE=".claude/agents/tester.md"
 JR_CODER_ROLE_FILE=".claude/agents/jr-coder.md"
 ARCHITECT_ROLE_FILE=".claude/agents/architect.md"
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${DRIFT_LOG_FILE:-${TEKHTON_DIR:-.tekhton}/DRIFT_LOG.md}"
+ARCHITECTURE_LOG_FILE="${ARCHITECTURE_LOG_FILE:-${TEKHTON_DIR:-.tekhton}/ARCHITECTURE_LOG.md}"
+HUMAN_ACTION_FILE="${HUMAN_ACTION_FILE:-${TEKHTON_DIR:-.tekhton}/HUMAN_ACTION_REQUIRED.md}"
+NON_BLOCKING_LOG_FILE="${NON_BLOCKING_LOG_FILE:-${TEKHTON_DIR:-.tekhton}/NON_BLOCKING_LOG.md}"
 EOF
 }
 
-# --- Workspace/structure section (conditional) --------------------------------
-
-# _emit_section_workspace — Emits project structure config if monorepo detected.
-_emit_section_workspace() {
-    local workspaces="${_INIT_WORKSPACES:-}"
-    local services="${_INIT_SERVICES:-}"
-    local workspace_scope="${_INIT_WORKSPACE_SCOPE:-}"
-
-    local project_structure="single"
-    if [[ -n "$workspaces" ]]; then
-        project_structure="monorepo"
-    elif [[ -n "$services" ]]; then
-        local svc_count
-        svc_count=$(echo "$services" | grep -c '.' || echo "0")
-        [[ "$svc_count" -gt 1 ]] && project_structure="multi-service"
-    fi
-
-    # Only emit if non-trivial structure detected
-    if [[ "$project_structure" != "single" ]]; then
-        echo ""
-        echo "# --- Project structure -------------------------------------------------------"
-        echo "PROJECT_STRUCTURE=\"${project_structure}\""
-
-        if [[ -n "$workspaces" ]]; then
-            local ws_type
-            ws_type=$(echo "$workspaces" | head -1 | cut -d'|' -f1)
-            echo "WORKSPACE_TYPE=\"${ws_type}\""
-            if [[ -n "$workspace_scope" ]] && [[ "$workspace_scope" != "root" ]]; then
-                echo "# WORKSPACE_SCOPE=\"${workspace_scope}\""
-            fi
-        fi
-
-        if [[ -n "$services" ]]; then
-            echo "# Detected services:"
-            local name dir tech source
-            while IFS='|' read -r name dir tech source; do
-                [[ -z "$name" ]] && continue
-                echo "# SERVICE: ${name} -> ${dir} (${tech}, detected from ${source})"
-            done <<< "$services"
-        fi
-    fi
-}
-
-# --- Main sectioned config generator -----------------------------------------
+# shellcheck source=init_config_workspace.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/init_config_workspace.sh"
 
 # generate_sectioned_config — Produces the complete pipeline.conf with sections.
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,
 #        $5=analyze_conf, $6=build_cmd, $7=build_conf,
 #        $8=coder_model, $9=coder_turns, $10=jr_turns,
 #        $11=reviewer_turns, $12=tester_turns, $13=scout_turns,
-#        $14=required_tools, $15=design_file
+#        $14=required_tools, $15=design_file,
+#        $16=test_source, $17=analyze_source, $18=build_source
 # Output: complete config file content to stdout
 generate_sectioned_config() {
     local project_name="$1"
@@ -282,10 +270,12 @@ generate_sectioned_config() {
     local tester_turns="${12}" scout_turns="${13}"
     local required_tools="${14}"
     local design_file="${15:-}"
+    local test_source="${16:-}" analyze_source="${17:-}" build_source="${18:-}"
 
     _emit_section_essential "$project_name" \
         "$test_cmd" "$test_conf" "$analyze_cmd" "$analyze_conf" \
-        "$build_cmd" "$build_conf" "$design_file"
+        "$build_cmd" "$build_conf" "$design_file" \
+        "$test_source" "$analyze_source" "$build_source"
 
     _emit_section_models_turns "$coder_model" \
         "$coder_turns" "$jr_turns" "$reviewer_turns" "$tester_turns" "$scout_turns"

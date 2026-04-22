@@ -27,8 +27,13 @@ tekhton/
 │   ├── gates.sh            # Build gate + completion gate
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── finalize.sh         # Hook-based finalization sequence
+│   ├── finalize_commit.sh  # Commit hook + _do_git_commit helpers
+│   ├── finalize_dashboard_hooks.sh # Dashboard/causal-log/TUI finalize hooks
 │   ├── finalize_display.sh # Completion banner + action items
 │   ├── finalize_summary.sh # RUN_SUMMARY.json emitter
+│   ├── finalize_version.sh # Project version bump finalize hooks
+│   ├── project_version.sh  # Target-project version file detection
+│   ├── project_version_bump.sh # Version bump logic + file writes
 │   ├── notes.sh            # Human notes management
 │   ├── prompts.sh          # Template engine for .prompt.md files
 │   ├── state.sh            # Pipeline state persistence + resume
@@ -36,6 +41,7 @@ tekhton/
 │   ├── drift.sh            # Drift log, ADL, human action management
 │   ├── drift_artifacts.sh  # Drift artifact processing
 │   ├── drift_cleanup.sh    # Non-blocking log cleanup
+│   ├── docs_agent.sh       # Docs agent skip-path detection + public-surface parsing
 │   ├── detect.sh           # Tech stack detection engine
 │   ├── detect_commands.sh  # Build/test/lint command detection
 │   ├── detect_report.sh    # Detection report formatter
@@ -51,9 +57,12 @@ tekhton/
 │   ├── milestones.sh       # Milestone state machine + acceptance checking
 │   ├── milestone_ops.sh    # Milestone marking + disposition
 │   ├── milestone_acceptance.sh # Milestone acceptance criteria checking
+│   ├── milestone_acceptance_lint.sh # Acceptance criteria quality linter
 │   ├── milestone_archival.sh   # Milestone archival to MILESTONE_ARCHIVE.md
 │   ├── milestone_metadata.sh   # Milestone metadata HTML comments
 │   ├── milestone_split.sh  # Pre-flight milestone splitting
+│   ├── milestone_split_dag.sh     # DAG-mode splitting: file read + array splice
+│   ├── milestone_split_nullrun.sh # Null-run auto-split handler
 │   ├── orchestrate.sh      # Outer orchestration loop (--complete)
 │   ├── orchestrate_helpers.sh  # Orchestration support functions
 │   ├── orchestrate_recovery.sh # Failure classification + recovery
@@ -66,12 +75,22 @@ tekhton/
 │   ├── milestone_dag.sh    # Milestone DAG infrastructure + manifest parser
 │   ├── milestone_dag_migrate.sh # Inline→file milestone migration
 │   ├── milestone_window.sh # Character-budgeted milestone sliding window
+│   ├── draft_milestones.sh # Interactive milestone authoring flow (--draft-milestones)
+│   ├── draft_milestones_write.sh # Validation and manifest writing for draft milestones
+│   ├── milestone_progress.sh # Milestone progress CLI + next-action guidance
+│   ├── milestone_progress_helpers.sh # Rendering helpers for milestone progress
 │   ├── indexer.sh          # Repo map orchestration + Python tool invocation
 │   ├── indexer_helpers.sh  # Language detection, config validation, file extraction
 │   ├── indexer_history.sh  # Task→file association tracking (JSONL)
 │   ├── causality.sh        # Causal event log infrastructure + query layer
 │   ├── causality_query.sh  # Causal log query helpers
+│   ├── test_audit.sh       # Test integrity audit orchestration
+│   ├── test_audit_helpers.sh # Pre-audit file collection + context assembly
+│   ├── test_audit_detection.sh # Shell-based orphan + weakening detection
+│   ├── test_audit_verdict.sh # Audit verdict parsing + routing
+│   ├── test_audit_symbols.sh # Symbol-level stale reference detection (M88)
 │   ├── test_baseline.sh    # Test baseline capture + pre-existing failure detection
+│   ├── test_dedup.sh       # Test run deduplication via working-tree fingerprint (M105)
 │   ├── mcp.sh              # MCP server lifecycle management (Serena)
 │   ├── health.sh           # Project health scoring orchestration
 │   ├── health_checks.sh    # Health check implementations
@@ -91,8 +110,10 @@ tekhton/
 │   ├── init_config.sh      # Init config generation
 │   ├── init_config_emitters.sh # Init config section emitters
 │   ├── init_config_sections.sh # Init config section builders
+│   ├── init_config_workspace.sh # Init config workspace/service section emitter
 │   ├── init_helpers.sh     # Init helper functions
 │   ├── init_report.sh      # Init report generation
+│   ├── init_wizard.sh      # Init feature wizard (M109: Python feature prompts)
 │   ├── init_synthesize_helpers.sh # Init synthesis helpers
 │   ├── init_synthesize_ui.sh # Init synthesis UI
 │   ├── intake_helpers.sh   # Intake agent helpers
@@ -100,6 +121,9 @@ tekhton/
 │   ├── migrate.sh          # Version migration framework
 │   ├── migrate_cli.sh      # Migration CLI interface
 │   ├── notes_core.sh       # Notes core rewrite
+│   ├── notes_core_normalize.sh # Markdown blank-line normalization helper
+│   ├── pipeline_order.sh    # Configurable pipeline stage ordering (PIPELINE_ORDER config key)
+│   ├── pipeline_order_policy.sh # M110 policy, metrics key resolution, and stage plan helpers — sourced by pipeline_order.sh
 │   ├── notes_cli.sh        # Notes CLI subcommand
 │   ├── notes_cli_write.sh  # Notes CLI write operations
 │   ├── notes_cleanup.sh    # Notes cleanup operations
@@ -140,11 +164,16 @@ tekhton/
 │   ├── drift_prune.sh      # Drift log pruning
 │   ├── quota.sh            # API quota management
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
-│   └── preflight.sh        # Pre-flight environment validation
+│   ├── preflight.sh        # Pre-flight environment validation
+│   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
+│   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
+│   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)
+│   └── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate
 │   ├── coder.sh            # Scout + Coder + build gate
+│   ├── docs.sh             # Docs agent stage (optional, Haiku-powered)
 │   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing
 │   ├── tester.sh           # Test writing + validation
@@ -179,11 +208,13 @@ tekhton/
 │   ├── plan_interview_followup.prompt.md # Planning follow-up interview prompt
 │   ├── plan_generate.prompt.md           # CLAUDE.md generation prompt
 │   ├── cleanup.prompt.md                 # Debt sweep agent prompt
+│   ├── docs_agent.prompt.md             # Docs agent prompt (M75)
 │   ├── replan.prompt.md                  # Brownfield replan prompt
 │   ├── clarification.prompt.md           # Clarification integration prompt
 │   ├── specialist_security.prompt.md     # Security review prompt
 │   ├── specialist_performance.prompt.md  # Performance review prompt
-│   └── specialist_api.prompt.md          # API contract review prompt
+│   ├── specialist_api.prompt.md          # API contract review prompt
+│   └── draft_milestones.prompt.md       # Interactive milestone authoring prompt
 ├── templates/              # Templates copied into target projects by --init
 │   ├── pipeline.conf.example
 │   ├── coder.md
@@ -207,13 +238,17 @@ tekhton/
 │   ├── setup_indexer.sh    # Indexer virtualenv setup script
 │   ├── setup_serena.sh     # Serena MCP server setup script
 │   ├── serena_config_template.json  # MCP config template
+│   ├── tui.py              # TUI sidecar main — rich.live loop + layout assembly
+│   ├── tui_render.py       # TUI render helpers — logo, header bar, stage pills, events
+│   ├── tui_hold.py         # TUI hold-on-complete — final event log dump + Enter wait
 │   └── tests/              # Python unit tests
 │       ├── conftest.py
 │       ├── test_repo_map.py
 │       ├── test_tag_cache.py
 │       ├── test_history.py
 │       ├── test_tree_sitter_languages.py
-│       └── test_extract_tags_integration.py
+│       ├── test_extract_tags_integration.py
+│       └── test_tui.py     # TUI sidecar renderer tests
 ├── platforms/              # Platform-specific UI knowledge (M57–M60)
 │   ├── _base.sh            # Platform resolution + universal helpers
 │   ├── _universal/         # Cross-platform UI guidance (always included)
@@ -259,14 +294,14 @@ agent roles.
 
 ## Versioning
 
-`TEKHTON_VERSION` in `tekhton.sh` uses **MAJOR.MINOR.PATCH**:
+Tekhton's runtime version, stored in `VERSION`, uses **MAJOR.MINOR.PATCH**:
 - **MAJOR** = initiative version (2 for V2, 3 for V3, etc.)
 - **MINOR** = last completed milestone number within this initiative (resets to 0 each major)
 - **PATCH** = hotfixes between milestones
 
-Milestone numbering restarts with each major version. When a milestone is completed,
-update the `TEKHTON_VERSION` line in `tekhton.sh` to bump MINOR to the milestone
-number. Example: completing V3 Milestone 4 → `3.4.0`.
+Milestone numbering restarts with each major version. Self-hosted milestone runs
+update `VERSION` to `MAJOR.<milestone>.0`. Successful non-milestone runs increment
+PATCH. Example: completing V3 Milestone 4 → `3.4.0`.
 
 ## Template Variables (Prompt Engine)
 
@@ -395,9 +430,13 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `CAUSAL_LOG_MAX_EVENTS` | Max events per run before eviction (default: 2000) |
 | `INTAKE_HISTORY_BLOCK` | Historical verdict/rework data from causal log (injected by lib/prompts.sh) |
 | `TEST_BASELINE_ENABLED` | Enable pre-existing test failure detection (default: true) |
-| `TEST_BASELINE_PASS_ON_PREEXISTING` | Auto-pass acceptance when all failures are pre-existing (default: true) |
+| `TEST_BASELINE_PASS_ON_PREEXISTING` | Auto-pass acceptance when all failures are pre-existing (default: false — M92 flipped from true) |
 | `TEST_BASELINE_STUCK_THRESHOLD` | Consecutive identical acceptance failures before stuck detection (default: 2) |
 | `TEST_BASELINE_PASS_ON_STUCK` | Auto-pass on stuck detection vs exit with diagnosis (default: false) |
+| `TEST_DEDUP_ENABLED` | Skip redundant TEST_CMD runs via working-tree fingerprint (default: true) |
+| `PRE_RUN_CLEAN_ENABLED` | Spawn pre-coder fix agent when tests fail before coder runs (default: true) |
+| `PRE_RUN_FIX_MAX_TURNS` | Turn budget for pre-coder fix agent (default: 20) |
+| `PRE_RUN_FIX_MAX_ATTEMPTS` | Max pre-coder fix attempts before proceeding (default: 1) |
 | `FINAL_FIX_ENABLED` | Spawn fix agent when TEST_CMD fails in final checks (default: true) |
 | `FINAL_FIX_MAX_ATTEMPTS` | Max fix attempts in final checks before giving up (default: 2) |
 | `FINAL_FIX_MAX_TURNS` | Turn budget per fix attempt in final checks (default: CODER_MAX_TURNS/3) |
@@ -419,6 +458,31 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PREFLIGHT_ENABLED` | Toggle pre-flight environment checks (default: true) |
 | `PREFLIGHT_AUTO_FIX` | Allow auto-remediation of safe issues in pre-flight (default: true) |
 | `PREFLIGHT_FAIL_ON_WARN` | Treat pre-flight warnings as failures (default: false) |
+| `DOCS_AGENT_ENABLED` | Toggle optional docs agent stage (default: false) |
+| `DOCS_AGENT_MODEL` | Model for docs agent (default: claude-haiku-4-5-20251001) |
+| `DOCS_AGENT_MAX_TURNS` | Turn budget for docs agent (default: 10) |
+| `DOCS_AGENT_REPORT_FILE` | Docs agent output report path (default: ${TEKHTON_DIR}/DOCS_AGENT_REPORT.md) |
+| `DOCS_README_FILE` | Primary README path (default: README.md) |
+| `DOCS_DIRS` | Documentation directories (default: docs/) |
+| `PROJECT_VERSION_ENABLED` | Toggle project version bumping (default: true) |
+| `PROJECT_VERSION_STRATEGY` | Version strategy: semver, calver, datestamp, none (default: semver) |
+| `PROJECT_VERSION_CONFIG` | Path to version config cache (default: .claude/project_version.cfg) |
+| `PROJECT_VERSION_DEFAULT_BUMP` | Fallback bump type when no rule matches (default: patch) |
+| `PROJECT_VERSION_TAG_ON_BUMP` | Create git tag vX.Y.Z on bump (default: false) |
+| `PROJECT_VERSION_AUTO_DETECT` | Auto-detect version files on first run (default: true) |
+| `DRAFT_MILESTONES_MODEL` | Model for draft milestones agent (default: CLAUDE_STANDARD_MODEL) |
+| `DRAFT_MILESTONES_MAX_TURNS` | Turn budget for draft milestones agent (default: 40) |
+| `DRAFT_MILESTONES_AUTO_WRITE` | Skip confirmation prompt before writing (default: false) |
+| `DRAFT_MILESTONES_SEED_EXEMPLARS` | Number of recent milestones shown as format examples (default: 3) |
+| `TUI_ENABLED` | TUI sidecar: auto (on interactive TTY + venv), true, or false (default: auto) |
+| `TUI_TICK_MS` | Sidecar status-file poll interval in ms (default: 500) |
+| `TUI_EVENT_LINES` | Ring-buffer depth of recent events retained for the events panel (default: 60) |
+| `TUI_VENV_DIR` | Python venv for sidecar (default: shares `REPO_MAP_VENV_DIR`) |
+| `TUI_COMPLETE_HOLD_TIMEOUT` | Max seconds to hold sidecar at completion waiting for Enter before SIGKILL (default: 120) |
+| `TUI_SIMPLE_LOGO` | Use 5-line ASCII fallback logo instead of Unicode block-char arch (default: false) |
+| `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
+
+**TUI lifecycle model.** See [`docs/tui-lifecycle-model.md`](docs/tui-lifecycle-model.md) for the authoritative description of stage classes, pill / timings / events ownership, the substage API, the auto-close-and-warn rule, and checklists for adding new stages, sub-stages, or `run_op` call sites. Invariants are enforced by `tests/test_tui_lifecycle_invariants.sh`.
 
 ## Testing
 

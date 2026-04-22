@@ -10,8 +10,46 @@ set -euo pipefail
 
 export TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTS_DIR="${TEKHTON_HOME}/tests"
+
+# Export _FILE config variables for test subprocesses — matching production
+# defaults from config_defaults.sh (all under TEKHTON_DIR).
+export TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+export CODER_SUMMARY_FILE="${CODER_SUMMARY_FILE:-${TEKHTON_DIR}/CODER_SUMMARY.md}"
+export REVIEWER_REPORT_FILE="${REVIEWER_REPORT_FILE:-${TEKHTON_DIR}/REVIEWER_REPORT.md}"
+export TESTER_REPORT_FILE="${TESTER_REPORT_FILE:-${TEKHTON_DIR}/TESTER_REPORT.md}"
+export JR_CODER_SUMMARY_FILE="${JR_CODER_SUMMARY_FILE:-${TEKHTON_DIR}/JR_CODER_SUMMARY.md}"
+export BUILD_ERRORS_FILE="${BUILD_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_ERRORS.md}"
+export BUILD_RAW_ERRORS_FILE="${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+export UI_TEST_ERRORS_FILE="${UI_TEST_ERRORS_FILE:-${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
+export PREFLIGHT_ERRORS_FILE="${PREFLIGHT_ERRORS_FILE:-${TEKHTON_DIR}/PREFLIGHT_ERRORS.md}"
+export DIAGNOSIS_FILE="${DIAGNOSIS_FILE:-${TEKHTON_DIR}/DIAGNOSIS.md}"
+export CLARIFICATIONS_FILE="${CLARIFICATIONS_FILE:-${TEKHTON_DIR}/CLARIFICATIONS.md}"
+export HUMAN_NOTES_FILE="${HUMAN_NOTES_FILE:-${TEKHTON_DIR}/HUMAN_NOTES.md}"
+export SPECIALIST_REPORT_FILE="${SPECIALIST_REPORT_FILE:-${TEKHTON_DIR}/SPECIALIST_REPORT.md}"
+export UI_VALIDATION_REPORT_FILE="${UI_VALIDATION_REPORT_FILE:-${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
+export INTAKE_REPORT_FILE="${INTAKE_REPORT_FILE:-${TEKHTON_DIR}/INTAKE_REPORT.md}"
+export TEST_AUDIT_REPORT_FILE="${TEST_AUDIT_REPORT_FILE:-${TEKHTON_DIR}/TEST_AUDIT_REPORT.md}"
+export HEALTH_REPORT_FILE="${HEALTH_REPORT_FILE:-${TEKHTON_DIR}/HEALTH_REPORT.md}"
+export SECURITY_NOTES_FILE="${SECURITY_NOTES_FILE:-${TEKHTON_DIR}/SECURITY_NOTES.md}"
+export SECURITY_REPORT_FILE="${SECURITY_REPORT_FILE:-${TEKHTON_DIR}/SECURITY_REPORT.md}"
+export DOCS_AGENT_REPORT_FILE="${DOCS_AGENT_REPORT_FILE:-${TEKHTON_DIR}/DOCS_AGENT_REPORT.md}"
+export DESIGN_FILE="${DESIGN_FILE:-${TEKHTON_DIR}/DESIGN.md}"
+export ARCHITECTURE_LOG_FILE="${ARCHITECTURE_LOG_FILE:-${TEKHTON_DIR}/ARCHITECTURE_LOG.md}"
+export DRIFT_LOG_FILE="${DRIFT_LOG_FILE:-${TEKHTON_DIR}/DRIFT_LOG.md}"
+export HUMAN_ACTION_FILE="${HUMAN_ACTION_FILE:-${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md}"
+export NON_BLOCKING_LOG_FILE="${NON_BLOCKING_LOG_FILE:-${TEKHTON_DIR}/NON_BLOCKING_LOG.md}"
+export MILESTONE_ARCHIVE_FILE="${MILESTONE_ARCHIVE_FILE:-${TEKHTON_DIR}/MILESTONE_ARCHIVE.md}"
+export TDD_PREFLIGHT_FILE="${TDD_PREFLIGHT_FILE:-${TEKHTON_DIR}/TESTER_PREFLIGHT.md}"
+export SCOUT_REPORT_FILE="${SCOUT_REPORT_FILE:-${TEKHTON_DIR}/SCOUT_REPORT.md}"
+export ARCHITECT_PLAN_FILE="${ARCHITECT_PLAN_FILE:-${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+export CLEANUP_REPORT_FILE="${CLEANUP_REPORT_FILE:-${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+export DRIFT_ARCHIVE_FILE="${DRIFT_ARCHIVE_FILE:-${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+export PROJECT_INDEX_FILE="${PROJECT_INDEX_FILE:-${TEKHTON_DIR}/PROJECT_INDEX.md}"
+export REPLAN_DELTA_FILE="${REPLAN_DELTA_FILE:-${TEKHTON_DIR}/REPLAN_DELTA.md}"
+export MERGE_CONTEXT_FILE="${MERGE_CONTEXT_FILE:-${TEKHTON_DIR}/MERGE_CONTEXT.md}"
 PASS=0
 FAIL=0
+FAILED_TESTS=()
 
 # Disable commit signing for all test subprocesses — tests create temporary
 # git repos that inherit the global signing config, causing failures in
@@ -19,6 +57,11 @@ FAIL=0
 export GIT_CONFIG_COUNT=1
 export GIT_CONFIG_KEY_0="commit.gpgsign"
 export GIT_CONFIG_VALUE_0="false"
+
+# Force TUI off — if a parent shell has `_TUI_ACTIVE=true` exported (e.g. a
+# previous pipeline run that didn't clean up), `log()` silently redirects to
+# LOG_FILE and tests that capture stdout get empty output.
+export _TUI_ACTIVE=false
 
 # Colors
 RED='\033[0;31m'
@@ -29,6 +72,7 @@ NC='\033[0m'
 run_test() {
     local test_name="$1"
     local test_file="${TESTS_DIR}/${test_name}"
+    local output rc=0
 
     if [ ! -f "$test_file" ]; then
         echo -e "${RED}MISSING${NC} ${test_name}"
@@ -36,14 +80,21 @@ run_test() {
         return
     fi
 
-    if bash "$test_file" < /dev/null > /dev/null 2>&1; then
+    # Single invocation — capture output and exit code together so the FAIL
+    # branch reports the same run that produced the non-zero exit code.
+    # Re-running the test for debug output can yield divergent results when
+    # `set -euo pipefail` aborts the first run early (SIGPIPE inside `$()`,
+    # bare grep with no match, etc.) but the second run starts clean.
+    output=$(bash "$test_file" < /dev/null 2>&1) || rc=$?
+
+    if [ "$rc" -eq 0 ]; then
         echo -e "${GREEN}PASS${NC} ${test_name}"
         PASS=$((PASS + 1))
     else
         echo -e "${RED}FAIL${NC} ${test_name}"
-        # Re-run with output for debugging
+        FAILED_TESTS+=("$test_name")
         echo "  --- output ---"
-        bash "$test_file" < /dev/null 2>&1 | sed 's/^/  /' || true
+        printf '%s\n' "$output" | sed 's/^/  /'
         echo "  --- end ---"
         FAIL=$((FAIL + 1))
     fi
@@ -84,7 +135,6 @@ if [ -d "$PYTHON_TESTS_DIR" ]; then
         else
             echo -e "  ${RED}Python tests failed${NC}"
             PYTHON_FAIL=1
-            FAIL=$((FAIL + 1))
         fi
     elif command -v python3 &>/dev/null; then
         echo
@@ -103,6 +153,12 @@ echo "════════════════════════�
 echo "  Final Summary"
 echo "════════════════════════════════════════"
 echo -e "  Shell:  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}"
+if [ "${#FAILED_TESTS[@]}" -gt 0 ]; then
+    echo "  Failed shell tests:"
+    for t in "${FAILED_TESTS[@]}"; do
+        echo -e "    ${RED}-${NC} ${t}"
+    done
+fi
 if [ "$PYTHON_PASS" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
     if [ "$PYTHON_FAIL" -gt 0 ]; then
         echo -e "  Python: ${RED}FAILED${NC}"
@@ -111,6 +167,6 @@ if [ "$PYTHON_PASS" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
     fi
 fi
 
-if [ "$FAIL" -gt 0 ]; then
+if [ "$FAIL" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
     exit 1
 fi

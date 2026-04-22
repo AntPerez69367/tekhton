@@ -12,6 +12,7 @@
 # Expects: classify_error(), report_retry(), _reset_monitoring_state(),
 #          _invoke_and_monitor(), and common.sh functions (log, warn)
 # =============================================================================
+set -euo pipefail
 
 # _run_with_retry LABEL INVOKE_CMD MODEL MAX_TURNS PROMPT LOG_FILE ACTIVITY_TIMEOUT SESSION_DIR EXIT_FILE TURNS_FILE PRERUN_MARKER WALL_TIMEOUT
 # Main retry envelope. Invokes agent and retries on transient errors with exponential backoff.
@@ -148,9 +149,9 @@ _classify_agent_exit() {
                 echo "API error detected in stream: ${_API_ERROR_TYPE}" > "$_stderr_file"
             fi
 
-            # Check for CODER_SUMMARY.md presence
+            # Check for ${CODER_SUMMARY_FILE} presence
             local _has_summary_flag=0
-            local _summary_check_path="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
+            local _summary_check_path="${PROJECT_DIR:-.}/${CODER_SUMMARY_FILE}"
             if [[ -f "$_summary_check_path" ]] && [[ -f "$prerun_marker" ]] \
                 && [[ "$_summary_check_path" -nt "$prerun_marker" ]]; then
                 _has_summary_flag=1

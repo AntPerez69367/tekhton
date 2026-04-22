@@ -140,12 +140,12 @@ MANIFEST
     local output
     output=$(emit_init_summary "$PROJECT_DIR" "" "" "" "custom" "10" 2>&1 || true)
 
-    # Should NOT recommend --plan when MANIFEST.cfg has entries
-    if ! echo "$output" | grep -q "tekhton --plan"; then
-        # Should still recommend implementing milestone 1
-        if echo "$output" | grep -q "Implement Milestone 1"; then
-            return 0
-        fi
+    # Should NOT recommend --plan as the primary command
+    # (M81: primary recommendation is "tekhton" to run next pending milestone;
+    #  --plan may appear as an alternate)
+    # Primary recommendation should be just "tekhton" (run next pending)
+    if echo "$output" | grep -qE "(run next pending|tekhton[[:space:]]+\(|tekhton[[:space:]]+run)"; then
+        return 0
     fi
     return 1
 }
@@ -202,12 +202,10 @@ EOF
     local output
     output=$(emit_init_summary "$PROJECT_DIR" "" "" "" "custom" "10" 2>&1 || true)
 
-    # Should NOT recommend --plan when CLAUDE.md has milestones
-    if ! echo "$output" | grep -q "tekhton --plan"; then
-        # Should still recommend implementing milestone 1
-        if echo "$output" | grep -q "Implement Milestone 1"; then
-            return 0
-        fi
+    # M81: When CLAUDE.md has milestones, primary recommendation is "tekhton"
+    # (run next pending milestone), not "--plan"
+    if echo "$output" | grep -qE "(run next pending|tekhton[[:space:]]+\(|tekhton[[:space:]]+run)"; then
+        return 0
     fi
     return 1
 }

@@ -9,7 +9,7 @@ set -euo pipefail
 run_stage_review() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-3}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Reviewer"
+    stage_header "${_stage_pos}" "${_stage_count}" "Reviewer"
 
     # Polish reviewer skip heuristic (M42): if all changed files are non-logic,
     # skip the review cycle entirely. Tests still run in the tester stage.
@@ -56,7 +56,7 @@ run_stage_review() {
         REPO_MAP_CONTENT=""
         if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
             local _review_files
-            _review_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
+            _review_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}")
             if [[ -n "$_review_files" ]]; then
                 # On cycle 2+, check if new files appeared since cycle 1
                 if [[ "$REVIEW_CYCLE" -gt 1 ]] && [[ -n "${_REVIEW_MAP_FILES:-}" ]]; then
@@ -167,21 +167,21 @@ run_stage_review() {
             continue
         fi
 
-        if [ ! -f "REVIEWER_REPORT.md" ]; then
-            warn "Reviewer did not produce REVIEWER_REPORT.md."
+        if [ ! -f "${REVIEWER_REPORT_FILE}" ]; then
+            warn "Reviewer did not produce ${REVIEWER_REPORT_FILE}."
             if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
                 warn "Will retry on next review cycle."
                 VERDICT="CHANGES_REQUIRED"
                 continue
             fi
             # Last cycle — synthesize a minimal report so pipeline can proceed
-            warn "Synthesizing minimal REVIEWER_REPORT.md — tester will validate."
-            cat > REVIEWER_REPORT.md <<REVIEW_EOF
+            warn "Synthesizing minimal ${REVIEWER_REPORT_FILE} — tester will validate."
+            cat > "${REVIEWER_REPORT_FILE}" <<REVIEW_EOF
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Summary
-REVIEWER_REPORT.md was synthesized by the pipeline after the reviewer agent
+${REVIEWER_REPORT_FILE} was synthesized by the pipeline after the reviewer agent
 failed to produce it. The reviewer may have encountered issues reading or
 writing the report file. The tester should validate all changes thoroughly.
 
@@ -195,13 +195,13 @@ writing the report file. The tester should validate all changes thoroughly.
 - Reviewer agent did not produce a report — extra tester scrutiny recommended.
 REVIEW_EOF
             VERDICT="APPROVED_WITH_NOTES"
-            log "Synthesized REVIEWER_REPORT.md with APPROVED_WITH_NOTES verdict."
+            log "Synthesized ${REVIEWER_REPORT_FILE} with APPROVED_WITH_NOTES verdict."
         fi
 
-        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+        VERDICT=$(grep -m1 "^## Verdict" -A1 "${REVIEWER_REPORT_FILE}" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         # Also catch inline verdict formats like "Verdict: APPROVED" or "**Verdict: CHANGES_REQUIRED**"
         if [ -z "$VERDICT" ] || [ "$VERDICT" = "##Verdict" ]; then
-            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
+            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" "${REVIEWER_REPORT_FILE}" 2>/dev/null | head -1 || true)
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 
@@ -210,9 +210,9 @@ REVIEW_EOF
             log_decision "Reviewer approved" "verdict ${VERDICT}" ""
         fi
 
-        if detect_replan_required "REVIEWER_REPORT.md"; then
+        if detect_replan_required "${REVIEWER_REPORT_FILE}"; then
             warn "Reviewer recommends REPLAN_REQUIRED."
-            if ! trigger_replan "REVIEWER_REPORT.md"; then
+            if ! trigger_replan "${REVIEWER_REPORT_FILE}"; then
                 # User aborted or chose split — exit saved by trigger_replan
                 exit 1
             fi
@@ -222,9 +222,9 @@ REVIEW_EOF
         fi
 
         ACCEPTED_ACPS=""
-        if grep -q "^## ACP Verdicts" REVIEWER_REPORT.md 2>/dev/null; then
+        if grep -q "^## ACP Verdicts" "${REVIEWER_REPORT_FILE}" 2>/dev/null; then
             ACCEPTED_ACPS=$(awk '/^## ACP Verdicts/{found=1; next} found && /^##/{exit} found && /ACCEPT/{print}' \
-                REVIEWER_REPORT.md 2>/dev/null || true)
+                "${REVIEWER_REPORT_FILE}" 2>/dev/null || true)
             if [ -n "$ACCEPTED_ACPS" ]; then
                 log "Accepted ACPs found:"
                 # shellcheck disable=SC2001
@@ -235,9 +235,9 @@ REVIEW_EOF
         if [ "$VERDICT" = "CHANGES_REQUIRED" ]; then
             TMPDIR_BLOCKS=$(mktemp -d "${TEKHTON_SESSION_DIR:-/tmp}/blocks_XXXXXXXX")
             awk '/^## Complex Blockers/{found=1; next} found && /^##/{exit} found{print}' \
-                REVIEWER_REPORT.md > "${TMPDIR_BLOCKS}/complex.txt" 2>/dev/null || true
+                "${REVIEWER_REPORT_FILE}" > "${TMPDIR_BLOCKS}/complex.txt" 2>/dev/null || true
             awk '/^## Simple Blockers/{found=1; next} found && /^##/{exit} found{print}' \
-                REVIEWER_REPORT.md > "${TMPDIR_BLOCKS}/simple.txt" 2>/dev/null || true
+                "${REVIEWER_REPORT_FILE}" > "${TMPDIR_BLOCKS}/simple.txt" 2>/dev/null || true
 
             HAS_COMPLEX=0
             HAS_SIMPLE=0
@@ -260,15 +260,25 @@ REVIEW_EOF
                     REWORK_PROMPT=$(render_prompt "coder_rework")
 
                     _phase_start "rework_agent"
+                    # M116: rework is a substage of review — it records as a
+                    # breadcrumb without opening a new pipeline-stage pill.
+                    if declare -f tui_substage_begin &>/dev/null; then
+                        tui_substage_begin "rework" "${CLAUDE_CODER_MODEL:-}"
+                    fi
                     run_agent \
                         "Coder (rework cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_CODER_MODEL" \
-                        "$CODER_MAX_TURNS" \
+                        "${EFFECTIVE_CODER_MAX_TURNS:-$CODER_MAX_TURNS}" \
                         "$REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_CODER"
+                    if declare -f tui_substage_end &>/dev/null; then
+                        tui_substage_end "rework" ""
+                    fi
                     _phase_end "rework_agent"
-                    print_run_summary
+                    # M96 (IA1): suppress print_run_summary after sub-agent
+                    # completions; the next Reviewer pass will print the
+                    # summary for the cycle that covers this rework.
                     success "Senior coder rework finished."
                     if [ "$HAS_SIMPLE" -gt 0 ]; then
                         log "Simple blockers remain. Invoking jr coder..."
@@ -280,11 +290,13 @@ REVIEW_EOF
                         run_agent \
                             "Jr Coder (cycle ${REVIEW_CYCLE})" \
                             "$CLAUDE_JR_CODER_MODEL" \
-                            "$JR_CODER_MAX_TURNS" \
+                            "${EFFECTIVE_JR_CODER_MAX_TURNS:-$JR_CODER_MAX_TURNS}" \
                             "$JR_REWORK_PROMPT" \
                             "$LOG_FILE" \
                             "$AGENT_TOOLS_JR_CODER"
-                        print_run_summary
+                        # M96 (IA1): suppress print_run_summary after sub-agent
+                        # completions (jr coder after senior); next Reviewer
+                        # pass covers the combined cycle.
                         success "Jr coder cleanup finished."
                     fi
 
@@ -294,14 +306,23 @@ REVIEW_EOF
                     export JR_AFTER_SENIOR=""
                     JR_REWORK_PROMPT=$(render_prompt "jr_coder")
 
+                    # M116: rework is a substage of review — it records as a
+                    # breadcrumb without opening a new pipeline-stage pill.
+                    if declare -f tui_substage_begin &>/dev/null; then
+                        tui_substage_begin "rework" "${CLAUDE_JR_CODER_MODEL:-}"
+                    fi
                     run_agent \
                         "Jr Coder (cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_JR_CODER_MODEL" \
-                        "$JR_CODER_MAX_TURNS" \
+                        "${EFFECTIVE_JR_CODER_MAX_TURNS:-$JR_CODER_MAX_TURNS}" \
                         "$JR_REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_JR_CODER"
-                    print_run_summary
+                    if declare -f tui_substage_end &>/dev/null; then
+                        tui_substage_end "rework" ""
+                    fi
+                    # M96 (IA1): suppress print_run_summary after sub-agent
+                    # completions (jr coder); next Reviewer pass covers it.
                     success "Jr coder cleanup finished."
                 fi
                 if ! run_build_gate "post-fix-pass"; then
@@ -315,10 +336,10 @@ REVIEW_EOF
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_BUILD_FIX"
                     if ! run_build_gate "post-fix-pass-retry"; then
-                        error "Build gate failed again. See BUILD_ERRORS.md."
+                        error "Build gate failed again. See ${BUILD_ERRORS_FILE}."
                         write_pipeline_state "review" "build_failure" \
                             "$(_build_resume_flag review)" \
-                            "$TASK" "Build broken after fix pass. See BUILD_ERRORS.md."
+                            "$TASK" "Build broken after fix pass. See ${BUILD_ERRORS_FILE}."
                         exit 1
                     fi
                 fi
@@ -326,7 +347,7 @@ REVIEW_EOF
             else
                 error "Max review cycles (${MAX_REVIEW_CYCLES}) reached with unresolved blockers."
 
-                BLOCKER_SUMMARY="Complex: ${HAS_COMPLEX}, Simple: ${HAS_SIMPLE} — see REVIEWER_REPORT.md"
+                BLOCKER_SUMMARY="Complex: ${HAS_COMPLEX}, Simple: ${HAS_SIMPLE} — see ${REVIEWER_REPORT_FILE}"
                 RESUME_FLAG="$(_build_resume_flag review)"
 
                 write_pipeline_state \
@@ -348,7 +369,9 @@ REVIEW_EOF
         fi
     fi
 
-    print_run_summary
+    # M96 (IA1): the cycle-end print_run_summary at line 117 already ran for
+    # the reviewer pass that produced this verdict; the final Pipeline
+    # Complete banner also prints a summary. Don't print a third time.
     success "Review passed (verdict: ${VERDICT})."
 }
 

@@ -11,15 +11,21 @@ set -euo pipefail
 # Expects: _call_planning_batch() from plan.sh (lazy-sourced if needed)
 # Expects: render_prompt() from prompts.sh
 # Expects: log(), warn(), error(), success() from common.sh
+# Expects: _split_read_dag_milestone(), _split_apply_dag() from
+#          milestone_split_dag.sh (sourced below)
 #
 # Provides:
 #   check_milestone_size      — pre-flight sizing gate
-#   split_milestone           — invoke splitting agent and update CLAUDE.md
+#   split_milestone           — invoke splitting agent and update manifest/CLAUDE.md
 #   record_milestone_attempt  — log an attempt for the splitter to reference
 #   get_milestone_attempts    — read prior attempts for a milestone
 #   get_split_depth           — determine recursive split depth from milestone number
-#   handle_null_run_split     — auto-split after null-run detection
+#   handle_null_run_split     — auto-split after null-run detection (from
+#                              milestone_split_nullrun.sh)
 # =============================================================================
+
+# shellcheck source=milestone_split_dag.sh disable=SC1091
+source "${TEKHTON_HOME}/lib/milestone_split_dag.sh"
 
 # --- Pre-flight sizing gate ---------------------------------------------------
 
@@ -113,12 +119,27 @@ split_milestone() {
         return 1
     fi
 
-    # Extract the full milestone definition
+    # Detect DAG mode once — controls both extraction source and apply path.
+    local in_dag=false
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest; then
+        in_dag=true
+        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+            load_manifest 2>/dev/null || true
+        fi
+    fi
+
+    # Extract the full milestone definition (DAG file or CLAUDE.md).
     local milestone_def
-    milestone_def=$(_extract_milestone_block "$milestone_num" "$claude_md") || {
-        error "Could not extract milestone ${milestone_num} from ${claude_md}"
-        return 1
-    }
+    if [[ "$in_dag" == "true" ]]; then
+        milestone_def=$(_split_read_dag_milestone "$milestone_num") || return 1
+    else
+        milestone_def=$(_extract_milestone_block "$milestone_num" "$claude_md") || {
+            error "Could not extract milestone ${milestone_num} from ${claude_md}"
+            return 1
+        }
+    fi
 
     # Get prior attempts for context
     local prior_history
@@ -193,212 +214,34 @@ split_milestone() {
 
     log "Split produced ${sub_count} sub-milestones for milestone ${milestone_num}"
 
-    # DAG path: write sub-milestone files + update manifest
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest; then
-        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
-            load_manifest 2>/dev/null || true
+    # Apply split — DAG path writes sub-files + splices manifest; inline path
+    # replaces the milestone block in CLAUDE.md.
+    if [[ "$in_dag" == "true" ]]; then
+        if ! _split_apply_dag "$milestone_num" "$split_output"; then
+            error "Failed to apply DAG split for milestone ${milestone_num}."
+            return 1
         fi
-
-        local milestone_dir
-        milestone_dir=$(_dag_milestone_dir)
-
-        # Parse sub-milestones from split output and create files + manifest rows
-        local sub_num=""
-        local sub_title=""
-        local sub_block=""
-        local sub_nums=()
-
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^#{1,5}[[:space:]]*[Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*)[[:space:]]*[:.\—\-][[:space:]]*(.*) ]]; then
-                # Flush previous sub-milestone
-                if [[ -n "$sub_num" ]]; then
-                    local sub_main="${sub_num%%.*}"
-                    local sub_suffix="${sub_num#"$sub_main"}"
-                    local sub_id
-                    sub_id=$(printf "m%02d%s" "$sub_main" "$sub_suffix")
-                    local sub_slug
-                    sub_slug=$(_slugify "$sub_title")
-                    local sub_file="${sub_id}-${sub_slug}.md"
-                    echo "$sub_block" > "${milestone_dir}/${sub_file}"
-
-                    # Determine deps: first sub depends on parent's deps, rest depend on previous sub
-                    local sub_deps=""
-                    if [[ ${#sub_nums[@]} -eq 0 ]]; then
-                        local parent_id
-                        parent_id=$(dag_number_to_id "$milestone_num")
-                        sub_deps="${_DAG_DEPS[${_DAG_IDX[$parent_id]}]:-}"
-                    else
-                        local prev_num="${sub_nums[-1]}"
-                        local prev_main="${prev_num%%.*}"
-                        local prev_suf="${prev_num#"$prev_main"}"
-                        sub_deps=$(printf "m%02d%s" "$prev_main" "$prev_suf")
-                    fi
-
-                    # Insert into manifest arrays
-                    _DAG_IDS+=("$sub_id")
-                    _DAG_TITLES+=("$sub_title")
-                    _DAG_STATUSES+=("pending")
-                    _DAG_DEPS+=("$sub_deps")
-                    _DAG_FILES+=("$sub_file")
-                    _DAG_GROUPS+=("")
-                    _DAG_IDX["$sub_id"]=$(( ${#_DAG_IDS[@]} - 1 ))
-
-                    sub_nums+=("$sub_num")
-                fi
-                sub_num="${BASH_REMATCH[1]}"
-                sub_title="${BASH_REMATCH[3]}"
-                sub_title="${sub_title%"${sub_title##*[![:space:]]}"}"
-                sub_block="$line"
-                continue
-            fi
-            if [[ -n "$sub_num" ]]; then
-                sub_block="${sub_block}"$'\n'"${line}"
-            fi
-        done <<< "$split_output"
-
-        # Flush last sub-milestone
-        if [[ -n "$sub_num" ]]; then
-            local sub_main="${sub_num%%.*}"
-            local sub_suffix="${sub_num#"$sub_main"}"
-            local sub_id
-            sub_id=$(printf "m%02d%s" "$sub_main" "$sub_suffix")
-            local sub_slug
-            sub_slug=$(_slugify "$sub_title")
-            local sub_file="${sub_id}-${sub_slug}.md"
-            echo "$sub_block" > "${milestone_dir}/${sub_file}"
-
-            local sub_deps=""
-            if [[ ${#sub_nums[@]} -eq 0 ]]; then
-                local parent_id
-                parent_id=$(dag_number_to_id "$milestone_num")
-                sub_deps="${_DAG_DEPS[${_DAG_IDX[$parent_id]}]:-}"
-            else
-                local prev_num="${sub_nums[-1]}"
-                local prev_main="${prev_num%%.*}"
-                local prev_suf="${prev_num#"$prev_main"}"
-                sub_deps=$(printf "m%02d%s" "$prev_main" "$prev_suf")
-            fi
-
-            _DAG_IDS+=("$sub_id")
-            _DAG_TITLES+=("$sub_title")
-            _DAG_STATUSES+=("pending")
-            _DAG_DEPS+=("$sub_deps")
-            _DAG_FILES+=("$sub_file")
-            _DAG_GROUPS+=("")
-            _DAG_IDX["$sub_id"]=$(( ${#_DAG_IDS[@]} - 1 ))
-
-            sub_nums+=("$sub_num")
-        fi
-
-        # Mark original milestone as "split" in manifest
-        local parent_id
-        parent_id=$(dag_number_to_id "$milestone_num")
-        dag_set_status "$parent_id" "split"
-        save_manifest
-
         success "Milestone ${milestone_num} split into ${sub_count} sub-milestones (DAG mode)"
-        # Emit milestone_split event (Milestone 13)
-        if command -v emit_event &>/dev/null; then
-            emit_event "milestone_split" "pipeline" "Split milestone ${milestone_num} into ${sub_count} subs" \
-                "${_LAST_STAGE_EVT:-}" "" \
-                "{\"milestone\":\"$(_json_escape "$milestone_num")\",\"sub_count\":${sub_count}}" 2>/dev/null || true
+    else
+        if ! _replace_milestone_block "$milestone_num" "$claude_md" "$split_output"; then
+            error "Failed to update ${claude_md} with sub-milestones."
+            return 1
         fi
-        if command -v emit_dashboard_milestones &>/dev/null; then
-            emit_dashboard_milestones 2>/dev/null || true
-        fi
-        return 0
+        success "Milestone ${milestone_num} split into ${sub_count} sub-milestones in ${claude_md}"
     fi
 
-    # Inline path: replace the original milestone block in CLAUDE.md
-    _replace_milestone_block "$milestone_num" "$claude_md" "$split_output"
-    local replace_exit=$?
-
-    if [[ "$replace_exit" -ne 0 ]]; then
-        error "Failed to update ${claude_md} with sub-milestones."
-        return 1
-    fi
-
-    success "Milestone ${milestone_num} split into ${sub_count} sub-milestones in ${claude_md}"
     # Emit milestone_split event (Milestone 13)
     if command -v emit_event &>/dev/null; then
         emit_event "milestone_split" "pipeline" "Split milestone ${milestone_num} into ${sub_count} subs" \
             "${_LAST_STAGE_EVT:-}" "" \
-            "{\"milestone\":\"$(_json_escape "$milestone_num")\",\"sub_count\":${sub_count}}" 2>/dev/null || true
+            "{\"milestone\":\"$(_json_escape "$milestone_num")\",\"sub_count\":${sub_count}}" >/dev/null 2>&1 || true
+    fi
+    if [[ "$in_dag" == "true" ]] && command -v emit_dashboard_milestones &>/dev/null; then
+        emit_dashboard_milestones 2>/dev/null || true
     fi
     return 0
 }
 
-# --- Null-run auto-split handler ----------------------------------------------
-
-# handle_null_run_split MILESTONE_NUM CLAUDE_MD_PATH
-# Called when the coder produces a null-run or minimal output on a milestone.
-# Checks for substantive partial work before splitting.
-# Returns 0 if split succeeded and pipeline should retry, 1 otherwise.
-handle_null_run_split() {
-    local milestone_num="$1"
-    local claude_md="${2:-CLAUDE.md}"
-
-    if [[ "${MILESTONE_AUTO_RETRY:-true}" != "true" ]]; then
-        log "MILESTONE_AUTO_RETRY is disabled — skipping auto-split."
-        return 1
-    fi
-
-    if [[ "${MILESTONE_SPLIT_ENABLED:-true}" != "true" ]]; then
-        log "MILESTONE_SPLIT_ENABLED is disabled — skipping auto-split."
-        return 1
-    fi
-
-    # Check split depth
-    local depth
-    depth=$(get_split_depth "$milestone_num")
-    local max_depth="${MILESTONE_MAX_SPLIT_DEPTH:-3}"
-
-    if [[ "$depth" -ge "$max_depth" ]]; then
-        error "Milestone ${milestone_num} at max split depth (${depth}/${max_depth}) — cannot split further."
-        return 1
-    fi
-
-    # Check for substantive partial work.
-    # We use `git diff --quiet` (unstaged) and `git diff --cached --quiet` (staged)
-    # as the activation condition. Then `git diff --stat HEAD` measures scope —
-    # `git diff HEAD` (not bare `git diff`) is intentional because it captures
-    # both staged and unstaged changes in a single pass.
-    local has_substantive_work=false
-    local diff_stat=""
-    local summary_lines=0
-
-    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-        diff_stat=$(git diff --stat HEAD 2>/dev/null | tail -1 || true)
-    fi
-
-    if [[ -f "CODER_SUMMARY.md" ]]; then
-        summary_lines=$(wc -l < "CODER_SUMMARY.md" 2>/dev/null || echo "0")
-        summary_lines=$(echo "$summary_lines" | tr -d '[:space:]')
-    fi
-
-    # If there's substantial work (files changed AND summary > 20 lines),
-    # this is partial progress — don't split, let it resume
-    if [[ -n "$diff_stat" ]] && [[ "$summary_lines" -gt 20 ]]; then
-        has_substantive_work=true
-    fi
-
-    if [[ "$has_substantive_work" = true ]]; then
-        log "Coder produced substantive partial work — preserving for resume (not splitting)."
-        return 1
-    fi
-
-    # Record the failed attempt
-    record_milestone_attempt "$milestone_num" "null_run" "${LAST_AGENT_TURNS:-0}"
-
-    # Perform the split
-    warn "Null-run detected on milestone ${milestone_num} — attempting auto-split..."
-
-    if ! split_milestone "$milestone_num" "$claude_md"; then
-        error "Auto-split failed for milestone ${milestone_num}."
-        return 1
-    fi
-
-    return 0
-}
+# --- Null-run auto-split handler (handle_null_run_split) ---------------------
+# shellcheck source=milestone_split_nullrun.sh disable=SC1091
+source "${TEKHTON_HOME}/lib/milestone_split_nullrun.sh"

@@ -17,9 +17,9 @@ archive_reports() {
 
     # Note: .claude/dashboard/data/ files are NOT archived — they are regenerated
     # each run from the causal log. CAUSAL_LOG.jsonl IS archived via archive_causal_log().
-    for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md SECURITY_REPORT.md SECURITY_NOTES.md INTAKE_REPORT.md PREFLIGHT_ERRORS.md TEST_AUDIT_REPORT.md UI_VALIDATION_REPORT.md; do
+    for f in "${CODER_SUMMARY_FILE}" "${REVIEWER_REPORT_FILE}" "${TESTER_REPORT_FILE}" "${JR_CODER_SUMMARY_FILE}" "${SECURITY_REPORT_FILE}" "${SECURITY_NOTES_FILE}" "${INTAKE_REPORT_FILE}" "${PREFLIGHT_ERRORS_FILE}" "${TEST_AUDIT_REPORT_FILE}" "${UI_VALIDATION_REPORT_FILE}"; do
         if [ -f "$f" ]; then
-            cp "$f" "${log_dir}/${timestamp}_${f}"
+            cp "$f" "${log_dir}/${timestamp}_$(basename "$f")"
         fi
     done
 }
@@ -57,10 +57,31 @@ _sanitize_for_commit() {
     printf '%s' "$input" | tr -d '\000-\010\013\014\016-\037\177' | tr '\n\r' '  '
 }
 
+# --- Commit type inference ----------------------------------------------------
+#
+# _infer_commit_type TASK_STRING
+# Returns the conventional-commit prefix (feat, fix, refactor, test, chore, docs)
+# based on the task string. Shared by generate_commit_message and changelog.
+_infer_commit_type() {
+    local task="$1"
+    local prefix="feat"
+    if echo "$task" | grep -qi "^fix"; then prefix="fix"
+    elif echo "$task" | grep -qi "^refactor"; then prefix="refactor"
+    elif echo "$task" | grep -qi "^test"; then prefix="test"
+    elif echo "$task" | grep -qi "^chore"; then prefix="chore"
+    elif echo "$task" | grep -qi "^docs"; then prefix="docs"
+    elif echo "$task" | grep -qi "^security"; then prefix="security"
+    elif echo "$task" | grep -qi "^deprecat"; then prefix="deprecate"
+    elif echo "$task" | grep -qi "^remov"; then prefix="remove"
+    elif echo "$task" | grep -qi "^perf"; then prefix="perf"
+    fi
+    echo "$prefix"
+}
+
 # --- Commit message generation -----------------------------------------------
 #
 # Usage:  generate_commit_message "task description" [milestone_num] [disposition]
-# Reads CODER_SUMMARY.md and produces a conventional-commit-style message on stdout.
+# Reads "${CODER_SUMMARY_FILE}" and produces a conventional-commit-style message on stdout.
 # When milestone_num is provided, the commit message is prefixed with a milestone
 # signature and a status line is appended to the body.
 generate_commit_message() {
@@ -74,23 +95,18 @@ generate_commit_message() {
     # All commands in this function must be guarded against pipefail — awk | head
     # can cause SIGPIPE, and grep -q returns non-zero on no match.
     local what=""
-    if [ -f "CODER_SUMMARY.md" ]; then
-        what=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found && NF{print; exit}' CODER_SUMMARY.md 2>/dev/null || true)
+    if [ -f "${CODER_SUMMARY_FILE}" ]; then
+        what=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found && NF{print; exit}' "${CODER_SUMMARY_FILE}" 2>/dev/null || true)
         what=$(echo "$what" | head -c 120)
     fi
 
     local file_count=0
-    if [ -f "CODER_SUMMARY.md" ]; then
-        file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' CODER_SUMMARY.md 2>/dev/null || echo "0")
+    if [ -f "${CODER_SUMMARY_FILE}" ]; then
+        file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
     fi
 
-    local prefix="feat"
-    if echo "$task" | grep -qi "^fix"; then prefix="fix"
-    elif echo "$task" | grep -qi "^refactor"; then prefix="refactor"
-    elif echo "$task" | grep -qi "^test"; then prefix="test"
-    elif echo "$task" | grep -qi "^chore"; then prefix="chore"
-    elif echo "$task" | grep -qi "^docs"; then prefix="docs"
-    fi
+    local prefix
+    prefix=$(_infer_commit_type "$task")
 
     local subject
     subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"
@@ -106,13 +122,13 @@ generate_commit_message() {
 
     local body=""
     if [ -n "$what" ]; then
-        body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -15 | sed 's/^[-*] /- /' || true)
+        body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' "${CODER_SUMMARY_FILE}" 2>/dev/null | sed '/^$/d' | head -15 | sed 's/^[-*] /- /' || true)
     fi
 
     # Include root cause for bug fixes
-    if [ -f "CODER_SUMMARY.md" ] && echo "$task" | grep -Eqi "fix|bug"; then
+    if [ -f "${CODER_SUMMARY_FILE}" ] && echo "$task" | grep -Eqi "fix|bug"; then
         local root_cause
-        root_cause=$(awk '/^## Root [Cc]ause/{found=1; next} found && /^##/{exit} found && NF{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 || true)
+        root_cause=$(awk '/^## Root [Cc]ause/{found=1; next} found && /^##/{exit} found && NF{print}' "${CODER_SUMMARY_FILE}" 2>/dev/null | sed '/^$/d' | head -5 || true)
         if [ -n "$root_cause" ] && ! echo "$root_cause" | grep -Eqi "^n/a|^none|^\(fill"; then
             body="${body:+${body}
 }
@@ -136,9 +152,21 @@ ${root_cause}"
         # Last line of diff --stat is the summary (e.g., "7 files changed, 73 insertions(+), 54 deletions(-)")
         local diff_summary
         diff_summary=$(echo "$diff_stat" | tail -1 | sed 's/^ *//')
-        # File lines are everything except the summary
+        # File lines are everything except the summary.
+        # M96 IA5: show only the top 5 by lines changed + a "... N more files" tail.
         local diff_files
-        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//' | head -20)
+        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//')
+        local total_files
+        total_files=$(printf '%s\n' "$diff_files" | grep -c '|' || true)
+        if [ "$total_files" -gt 5 ]; then
+            local top_files omitted
+            top_files=$(printf '%s\n' "$diff_files" | awk -F'|' '
+                { raw=$2; sub(/^ +/,"",raw); n=raw+0; printf "%d\t%s\n", n, $0 }' \
+                | sort -rn -k1,1 | head -5 | cut -f2-)
+            omitted=$(( total_files - 5 ))
+            diff_files="${top_files}
+... ${omitted} more files"
+        fi
         if [ -n "$diff_summary" ]; then
             body="${body:+${body}
 }

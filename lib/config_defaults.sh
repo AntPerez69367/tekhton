@@ -7,10 +7,16 @@
 # =============================================================================
 set -euo pipefail
 
+# --- Tekhton artifact directory (must precede all _FILE defaults) ---
+: "${TEKHTON_DIR:=.tekhton}"
+
 # --- Express mode defaults ---
 : "${TEKHTON_EXPRESS_ENABLED:=true}"     # Auto-detect config when no pipeline.conf
 : "${EXPRESS_PERSIST_CONFIG:=true}"      # Write pipeline.conf on successful completion
 : "${EXPRESS_PERSIST_ROLES:=false}"      # Copy role templates to project on completion
+
+# --- CLI output hygiene (M96) ---
+: "${VERBOSE_OUTPUT:=false}"             # Restore log_verbose() diagnostics to stdout
 
 # --- Context budget defaults (set early — used by planning + execution) ---
 : "${CONTEXT_BUDGET_PCT:=50}"            # Max % of context window for prompt
@@ -55,7 +61,32 @@ set -euo pipefail
 : "${INLINE_CONTRACT_PATTERN:=}"
 : "${INLINE_CONTRACT_SEARCH_CMD:=}"
 : "${SEED_CONTRACTS_ENABLED:=false}"
-: "${DESIGN_FILE:=}"
+: "${DESIGN_FILE:=${TEKHTON_DIR}/DESIGN.md}"
+
+# --- Tekhton-managed file paths (reports, state, errors) ---
+: "${CODER_SUMMARY_FILE:=${TEKHTON_DIR}/CODER_SUMMARY.md}"
+: "${REVIEWER_REPORT_FILE:=${TEKHTON_DIR}/REVIEWER_REPORT.md}"
+: "${TESTER_REPORT_FILE:=${TEKHTON_DIR}/TESTER_REPORT.md}"
+: "${JR_CODER_SUMMARY_FILE:=${TEKHTON_DIR}/JR_CODER_SUMMARY.md}"
+: "${BUILD_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_ERRORS.md}"
+: "${BUILD_RAW_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+: "${UI_TEST_ERRORS_FILE:=${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
+: "${PREFLIGHT_ERRORS_FILE:=${TEKHTON_DIR}/PREFLIGHT_ERRORS.md}"
+: "${DIAGNOSIS_FILE:=${TEKHTON_DIR}/DIAGNOSIS.md}"
+: "${CLARIFICATIONS_FILE:=${TEKHTON_DIR}/CLARIFICATIONS.md}"
+: "${HUMAN_NOTES_FILE:=${TEKHTON_DIR}/HUMAN_NOTES.md}"
+: "${SPECIALIST_REPORT_FILE:=${TEKHTON_DIR}/SPECIALIST_REPORT.md}"
+: "${UI_VALIDATION_REPORT_FILE:=${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
+: "${PREFLIGHT_REPORT_FILE:=${TEKHTON_DIR}/PREFLIGHT_REPORT.md}"
+
+# --- Transient artifact file paths (M84: complete TEKHTON_DIR migration) ---
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
 
 # --- Final check fix defaults (auto-fix on final check test failures) ---
 # Note: FINAL_FIX_* controls the inline fix agent in hooks.sh (final checks).
@@ -66,13 +97,13 @@ set -euo pipefail
 : "${FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
 
 # --- Drift detection defaults ---
-: "${ARCHITECTURE_LOG_FILE:=ARCHITECTURE_LOG.md}"
-: "${DRIFT_LOG_FILE:=DRIFT_LOG.md}"
-: "${HUMAN_ACTION_FILE:=HUMAN_ACTION_REQUIRED.md}"
+: "${ARCHITECTURE_LOG_FILE:=${TEKHTON_DIR}/ARCHITECTURE_LOG.md}"
+: "${DRIFT_LOG_FILE:=${TEKHTON_DIR}/DRIFT_LOG.md}"
+: "${HUMAN_ACTION_FILE:=${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md}"
 : "${DRIFT_OBSERVATION_THRESHOLD:=8}"
 : "${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD:=5}"
 : "${DRIFT_RESOLVED_KEEP_COUNT:=20}"      # Max resolved entries to retain in DRIFT_LOG.md
-: "${NON_BLOCKING_LOG_FILE:=NON_BLOCKING_LOG.md}"
+: "${NON_BLOCKING_LOG_FILE:=${TEKHTON_DIR}/NON_BLOCKING_LOG.md}"
 : "${NON_BLOCKING_INJECTION_THRESHOLD:=8}"
 
 # --- Architect agent defaults ---
@@ -90,12 +121,12 @@ set -euo pipefail
 
 # --- Dynamic turn limit defaults ---
 : "${DYNAMIC_TURNS_ENABLED:=true}"
-: "${CODER_MIN_TURNS:=40}"
+: "${CODER_MIN_TURNS:=60}"
 : "${CODER_MAX_TURNS_CAP:=200}"
-: "${REVIEWER_MIN_TURNS:=15}"
-: "${REVIEWER_MAX_TURNS_CAP:=50}"
-: "${TESTER_MIN_TURNS:=20}"
-: "${TESTER_MAX_TURNS_CAP:=100}"
+: "${REVIEWER_MIN_TURNS:=20}"
+: "${REVIEWER_MAX_TURNS_CAP:=60}"
+: "${TESTER_MIN_TURNS:=30}"
+: "${TESTER_MAX_TURNS_CAP:=120}"
 
 # --- Clarification and replan defaults ---
 : "${CLARIFICATION_ENABLED:=true}"
@@ -112,7 +143,7 @@ set -euo pipefail
 
 # --- Milestone commit signatures ---
 : "${MILESTONE_TAG_ON_COMPLETE:=false}"
-: "${MILESTONE_ARCHIVE_FILE:=MILESTONE_ARCHIVE.md}"
+: "${MILESTONE_ARCHIVE_FILE:=${TEKHTON_DIR}/MILESTONE_ARCHIVE.md}"
 
 # --- Milestone DAG (file-based milestones with dependency tracking) ---
 : "${MILESTONE_DAG_ENABLED:=true}"
@@ -131,6 +162,16 @@ set -euo pipefail
 : "${REPO_MAP_HISTORY_ENABLED:=true}"
 : "${REPO_MAP_HISTORY_MAX_RECORDS:=200}"
 : "${SCOUT_REPO_MAP_TOOLS_ONLY:=true}"    # Reduce scout tools when repo map available
+
+# --- TUI mode (M97: rich.live sidecar display; M98: layout redesign) ---
+: "${TUI_ENABLED:=auto}"                  # auto | true | false
+: "${TUI_TICK_MS:=500}"                   # status file poll interval
+: "${TUI_EVENT_LINES:=60}"                # ring-buffer depth; display height is terminal-driven
+: "${TUI_VENV_DIR:=${REPO_MAP_VENV_DIR}}" # share indexer venv by default
+: "${TUI_COMPLETE_HOLD_TIMEOUT:=120}"     # max secs to hold sidecar after complete before SIGKILL
+: "${TUI_SIMPLE_LOGO:=false}"             # use ASCII fallback instead of block-char arch logo
+: "${TUI_WATCHDOG_TIMEOUT:=300}"          # secs of status-file inactivity before self-terminating when idle (0=disabled)
+: "${TUI_LIFECYCLE_V2:=true}"             # M110 lifecycle semantics (policy-driven pills, lifecycle-ids, summary/runtime split). false falls back to pre-M110 behavior.
 
 # --- Serena LSP / MCP defaults (optional, future Milestone 6) ---
 : "${SERENA_ENABLED:=false}"
@@ -187,6 +228,14 @@ set -euo pipefail
 : "${TRANSIENT_RETRY_BASE_DELAY:=30}"
 : "${TRANSIENT_RETRY_MAX_DELAY:=120}"
 
+# --- Adaptive rework turn escalation (Milestone 91) ---
+# Each consecutive AGENT_SCOPE/max_turns failure on the same stage within a
+# --complete run multiplies the effective turn budget by (1 + FACTOR * COUNT),
+# capped at REWORK_TURN_MAX_CAP. Successful runs reset the counter.
+: "${REWORK_TURN_ESCALATION_ENABLED:=true}"
+: "${REWORK_TURN_ESCALATION_FACTOR:=1.5}"
+: "${REWORK_TURN_MAX_CAP:=${CODER_MAX_TURNS_CAP}}"
+
 # --- Usage threshold defaults ---
 : "${USAGE_THRESHOLD_PCT:=0}"              # 0 = disabled; set to e.g. 90 to pause at 90% of session usage
 # AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
@@ -229,8 +278,8 @@ set -euo pipefail
 : "${SECURITY_OFFLINE_MODE:=auto}"
 : "${SECURITY_ONLINE_SOURCES:=}"
 : "${SECURITY_ROLE_FILE:=.claude/agents/security.md}"
-: "${SECURITY_NOTES_FILE:=SECURITY_NOTES.md}"
-: "${SECURITY_REPORT_FILE:=SECURITY_REPORT.md}"
+: "${SECURITY_NOTES_FILE:=${TEKHTON_DIR}/SECURITY_NOTES.md}"
+: "${SECURITY_REPORT_FILE:=${TEKHTON_DIR}/SECURITY_REPORT.md}"
 : "${SECURITY_WAIVER_FILE:=}"
 
 # --- Intake agent defaults (PM pre-stage gate) ---
@@ -242,7 +291,7 @@ set -euo pipefail
 : "${INTAKE_CONFIRM_TWEAKS:=false}"
 : "${INTAKE_AUTO_SPLIT:=false}"
 : "${INTAKE_ROLE_FILE:=.claude/agents/intake.md}"
-: "${INTAKE_REPORT_FILE:=INTAKE_REPORT.md}"
+: "${INTAKE_REPORT_FILE:=${TEKHTON_DIR}/INTAKE_REPORT.md}"
 
 # --- Project index budget (Milestone 67: structured index data layer) ---
 : "${PROJECT_INDEX_BUDGET:=120000}"        # Char budget for markdown view; structured data is unbounded
@@ -291,7 +340,7 @@ set -euo pipefail
 
 # --- Pipeline order defaults (Milestone 27: TDD support) ---
 : "${PIPELINE_ORDER:=standard}"                    # standard|test_first|auto (auto reserved for V4)
-: "${TDD_PREFLIGHT_FILE:=TESTER_PREFLIGHT.md}"    # Output file for TDD write-failing tester
+: "${TDD_PREFLIGHT_FILE:=${TEKHTON_DIR}/TESTER_PREFLIGHT.md}"    # Output file for TDD write-failing tester
 : "${TESTER_WRITE_FAILING_MAX_TURNS:=15}"          # Turn limit for write-failing tester (less than full tester)
 : "${CODER_TDD_TURN_MULTIPLIER:=1.2}"             # Multiplier for coder turns in test_first mode
 
@@ -330,10 +379,25 @@ set -euo pipefail
 : "${TESTER_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
 
 # --- Test baseline defaults (pre-existing failure detection) ---
+# Pristine test state (M92): PASS_ON_PREEXISTING defaults to false so broken
+# tests cannot accumulate silently. Projects that genuinely cannot fix some
+# tests can opt back in via pipeline.conf.
 : "${TEST_BASELINE_ENABLED:=true}"
-: "${TEST_BASELINE_PASS_ON_PREEXISTING:=true}"
+: "${TEST_BASELINE_PASS_ON_PREEXISTING:=false}"
 : "${TEST_BASELINE_STUCK_THRESHOLD:=2}"
 : "${TEST_BASELINE_PASS_ON_STUCK:=false}"
+
+# --- Test run deduplication (M105) ---
+# Skip redundant TEST_CMD executions when the working tree is byte-identical
+# to the state captured at the last successful test pass. Provably safe — only
+# skips when git status --porcelain + TEST_CMD hash match. Set to "false" for
+# non-deterministic test suites that must always re-run.
+: "${TEST_DEDUP_ENABLED:=true}"
+
+# --- Pre-coder clean sweep (M92): restore a clean test baseline before coder ---
+: "${PRE_RUN_CLEAN_ENABLED:=true}"
+: "${PRE_RUN_FIX_MAX_TURNS:=20}"
+: "${PRE_RUN_FIX_MAX_ATTEMPTS:=1}"
 
 # --- Completion gate test enforcement (Milestone 63) ---
 : "${COMPLETION_GATE_TEST_ENABLED:=true}"
@@ -344,7 +408,13 @@ set -euo pipefail
 : "${TEST_AUDIT_MAX_REWORK_CYCLES:=1}"
 : "${TEST_AUDIT_ORPHAN_DETECTION:=true}"
 : "${TEST_AUDIT_WEAKENING_DETECTION:=true}"
-: "${TEST_AUDIT_REPORT_FILE:=TEST_AUDIT_REPORT.md}"
+: "${TEST_AUDIT_REPORT_FILE:=${TEKHTON_DIR}/TEST_AUDIT_REPORT.md}"
+: "${TEST_AUDIT_SYMBOL_MAP_ENABLED:=true}"
+
+# --- Rolling test audit sampler (Milestone 89) ---
+: "${TEST_AUDIT_ROLLING_ENABLED:=true}"
+: "${TEST_AUDIT_ROLLING_SAMPLE_K:=3}"
+: "${TEST_AUDIT_HISTORY_MAX_RECORDS:=500}"
 
 # --- Health scoring defaults (Milestone 15) ---
 : "${HEALTH_ENABLED:=true}"
@@ -358,7 +428,7 @@ set -euo pipefail
 : "${HEALTH_WEIGHT_HYGIENE:=15}"
 : "${HEALTH_SHOW_BELT:=true}"
 : "${HEALTH_BASELINE_FILE:=.claude/HEALTH_BASELINE.json}"
-: "${HEALTH_REPORT_FILE:=HEALTH_REPORT.md}"
+: "${HEALTH_REPORT_FILE:=${TEKHTON_DIR}/HEALTH_REPORT.md}"
 
 # --- Dashboard / Watchtower defaults (Milestone 13) ---
 : "${DASHBOARD_ENABLED:=true}"
@@ -389,6 +459,41 @@ set -euo pipefail
 : "${SPECIALIST_API_ENABLED:=false}"
 : "${SPECIALIST_API_MODEL:=${CLAUDE_STANDARD_MODEL}}"
 : "${SPECIALIST_API_MAX_TURNS:=8}"
+
+# --- Documentation enforcement defaults (Milestone 74) ---
+: "${DOCS_ENFORCEMENT_ENABLED:=true}"    # Master toggle for doc-freshness behavior
+: "${DOCS_STRICT_MODE:=false}"           # Reviewer blocks on missing doc update (vs warn)
+: "${DOCS_DIRS:=docs/}"                  # Colon-separated list of doc directories
+: "${DOCS_README_FILE:=README.md}"       # Path to primary README (brownfield override)
+
+# --- Docs agent stage defaults (Milestone 75) ---
+: "${DOCS_AGENT_ENABLED:=false}"                           # Optional post-coder/pre-security stage
+: "${DOCS_AGENT_MODEL:=claude-haiku-4-5-20251001}"         # Haiku by default — narrow, bounded task
+: "${DOCS_AGENT_MAX_TURNS:=10}"                            # Turn budget for docs agent
+: "${DOCS_AGENT_REPORT_FILE:=${TEKHTON_DIR}/DOCS_AGENT_REPORT.md}"  # Stage output report
+
+# --- Project version management defaults (Milestone 76) ---
+: "${PROJECT_VERSION_ENABLED:=true}"
+: "${PROJECT_VERSION_STRATEGY:=semver}"          # semver | calver | datestamp | milestone | none
+: "${PROJECT_VERSION_CONFIG:=.claude/project_version.cfg}"
+: "${PROJECT_VERSION_DEFAULT_BUMP:=patch}"       # fallback when no rule matches
+: "${PROJECT_VERSION_TAG_ON_BUMP:=false}"        # git tag vX.Y.Z on bump
+: "${PROJECT_VERSION_AUTO_DETECT:=true}"         # run detection on first pipeline run
+
+# --- Changelog generation defaults (Milestone 77) ---
+: "${CHANGELOG_ENABLED:=true}"
+: "${CHANGELOG_FILE:=CHANGELOG.md}"              # project root, not .tekhton/
+: "${CHANGELOG_FORMAT:=keep-a-changelog}"        # future: conventional-commits
+: "${CHANGELOG_INIT_IF_MISSING:=true}"
+
+# --- Draft milestones defaults (Milestone 80) ---
+: "${DRAFT_MILESTONES_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+: "${DRAFT_MILESTONES_MAX_TURNS:=40}"
+: "${DRAFT_MILESTONES_AUTO_WRITE:=false}"
+: "${DRAFT_MILESTONES_SEED_EXEMPLARS:=3}"
+
+# --- Init auto-prompt defaults (Milestone 81) ---
+: "${INIT_AUTO_PROMPT:=false}"
 
 # --- UI platform adapter defaults (Milestone 57) ---
 : "${UI_PLATFORM:=auto}"
@@ -448,6 +553,9 @@ _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 _clamp_config_value SPECIALIST_UI_MAX_TURNS 50
+_clamp_config_value DOCS_AGENT_MAX_TURNS 50
+_clamp_config_value DRAFT_MILESTONES_MAX_TURNS 100
+_clamp_config_value DRAFT_MILESTONES_SEED_EXEMPLARS 10
 _clamp_config_value MAX_PIPELINE_ATTEMPTS 20
 _clamp_config_value FIX_NONBLOCKERS_MAX_PASSES 20
 _clamp_config_value FIX_DRIFT_MAX_PASSES 20
@@ -458,6 +566,8 @@ _clamp_config_value MAX_CONTINUATION_ATTEMPTS 10
 _clamp_config_value MAX_TRANSIENT_RETRIES 10
 _clamp_config_value TRANSIENT_RETRY_BASE_DELAY 300
 _clamp_config_value TRANSIENT_RETRY_MAX_DELAY 600
+_clamp_config_value REWORK_TURN_MAX_CAP 500
+_clamp_config_float REWORK_TURN_ESCALATION_FACTOR 0.1 10.0
 _clamp_config_value MILESTONE_WINDOW_PCT 80
 _clamp_config_value MILESTONE_WINDOW_MAX_CHARS 100000
 _clamp_config_value REPO_MAP_TOKEN_BUDGET 16384
@@ -469,6 +579,8 @@ _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
 _clamp_config_value RUN_MEMORY_MAX_ENTRIES 500
 _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
+_clamp_config_value TEST_AUDIT_ROLLING_SAMPLE_K 20
+_clamp_config_value TEST_AUDIT_HISTORY_MAX_RECORDS 2000
 _clamp_config_value AUTO_FIX_MAX_DEPTH 5
 _clamp_config_value AUTO_FIX_OUTPUT_LIMIT 16000
 _clamp_config_value PREFLIGHT_FIX_MAX_ATTEMPTS 10

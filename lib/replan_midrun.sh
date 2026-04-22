@@ -117,8 +117,8 @@ _run_midrun_replan() {
     fi
 
     local design_content=""
-    if [[ -f "${PROJECT_DIR}/DESIGN.md" ]]; then
-        design_content=$(_safe_read_file "${PROJECT_DIR}/DESIGN.md" "DESIGN")
+    if [[ -f "${PROJECT_DIR}/${DESIGN_FILE}" ]]; then
+        design_content=$(_safe_read_file "${PROJECT_DIR}/${DESIGN_FILE}" "DESIGN")
     fi
 
     local claude_content=""
@@ -127,7 +127,7 @@ _run_midrun_replan() {
     fi
 
     if [[ -z "$design_content" ]] && [[ -z "$claude_content" ]]; then
-        error "Cannot replan: neither DESIGN.md nor CLAUDE.md found."
+        error "Cannot replan: neither ${DESIGN_FILE} nor CLAUDE.md found."
         return 1
     fi
 
@@ -138,12 +138,12 @@ _run_midrun_replan() {
 
     # Use ${PROJECT_DIR}/ prefix for consistency with lib/drift.sh and brownfield path
     export DRIFT_LOG_CONTENT=""
-    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-DRIFT_LOG.md}"
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-}"
     if [[ -f "$drift_file" ]]; then
         DRIFT_LOG_CONTENT=$(_safe_read_file "$drift_file" "DRIFT_LOG")
     fi
     export ARCHITECTURE_LOG_CONTENT=""
-    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-ARCHITECTURE_LOG.md}"
+    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-}"
     if [[ -f "$adl_file" ]]; then
         ARCHITECTURE_LOG_CONTENT=$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")
     fi
@@ -161,7 +161,7 @@ needing a replan. Here is the context:
 Task: ${TASK}
 Rationale for replan: ${rationale}
 
-Current DESIGN.md:
+Current ${DESIGN_FILE}:
 ${design_content}
 
 Current CLAUDE.md:
@@ -187,13 +187,13 @@ Output the result as a markdown document showing what should change."
         return 1
     fi
 
-    local delta_file="${PROJECT_DIR}/REPLAN_DELTA.md"
+    local delta_file="${PROJECT_DIR}/${REPLAN_DELTA_FILE}"
     echo "$replan_output" > "$delta_file"
-    success "Replan delta written to REPLAN_DELTA.md"
+    success "Replan delta written to ${REPLAN_DELTA_FILE}"
 
     echo
     header "Replan Delta Review"
-    echo "  Review the proposed changes in REPLAN_DELTA.md"
+    echo "  Review the proposed changes in ${REPLAN_DELTA_FILE}"
     echo
     echo "  Options:"
     echo "    [a] Apply  — merge changes into CLAUDE.md"
@@ -256,5 +256,5 @@ _apply_midrun_delta() {
 
     local archive_dir="${LOG_DIR:-${PROJECT_DIR}/.claude/logs}/archive"
     mkdir -p "$archive_dir" 2>/dev/null || true
-    mv "$delta_file" "${archive_dir}/$(date +%Y%m%d_%H%M%S)_REPLAN_DELTA.md" 2>/dev/null || true
+    mv "$delta_file" "${archive_dir}/$(date +%Y%m%d_%H%M%S)_$(basename "${REPLAN_DELTA_FILE}")" 2>/dev/null || true
 }

@@ -25,11 +25,21 @@ CAUSAL_LOG_FILE="$TMPDIR/.claude/logs/CAUSAL_LOG.jsonl"
 DASHBOARD_DIR=".claude/dashboard"
 DASHBOARD_ENABLED=false
 TEKHTON_SESSION_DIR="$TMPDIR"
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+
+# Set default file paths
+BUILD_ERRORS_FILE="${BUILD_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_ERRORS.md}"
+REVIEWER_REPORT_FILE="${REVIEWER_REPORT_FILE:-${TEKHTON_DIR}/REVIEWER_REPORT.md}"
+SECURITY_REPORT_FILE="${SECURITY_REPORT_FILE:-${TEKHTON_DIR}/SECURITY_REPORT.md}"
+CLARIFICATIONS_FILE="${CLARIFICATIONS_FILE:-${TEKHTON_DIR}/CLARIFICATIONS.md}"
+DIAGNOSIS_FILE="${DIAGNOSIS_FILE:-${TEKHTON_DIR}/DIAGNOSIS.md}"
 
 export PROJECT_DIR LOG_DIR PIPELINE_STATE_FILE CAUSAL_LOG_FILE
 export DASHBOARD_DIR DASHBOARD_ENABLED TEKHTON_HOME TEKHTON_SESSION_DIR
+export TEKHTON_DIR BUILD_ERRORS_FILE REVIEWER_REPORT_FILE SECURITY_REPORT_FILE
+export CLARIFICATIONS_FILE DIAGNOSIS_FILE
 
-mkdir -p "$LOG_DIR/runs" "$TMPDIR/.claude/dashboard/data" "$TMPDIR/.claude/milestones"
+mkdir -p "$LOG_DIR/runs" "$TMPDIR/.claude/dashboard/data" "$TMPDIR/.claude/milestones" "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
 
 # --- Source dependencies -----------------------------------------------------
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -80,20 +90,23 @@ assert() {
 _reset_fixture() {
     rm -f "$PIPELINE_STATE_FILE"
     rm -f "$CAUSAL_LOG_FILE"
-    rm -f "$TMPDIR/BUILD_ERRORS.md"
-    rm -f "$TMPDIR/REVIEWER_REPORT.md"
-    rm -f "$TMPDIR/SECURITY_REPORT.md"
-    rm -f "$TMPDIR/CLARIFICATIONS.md"
+    rm -f "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
+    rm -f "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"
+    rm -f "${PROJECT_DIR}/${SECURITY_REPORT_FILE}"
+    rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}"
     rm -f "$TMPDIR/.claude/QUOTA_PAUSED"
     rm -f "$TMPDIR/.claude/logs/RUN_SUMMARY.json"
     rm -f "$TMPDIR/.claude/LAST_FAILURE_CONTEXT.json"
-    rm -f "$TMPDIR/DIAGNOSIS.md"
+    rm -f "${PROJECT_DIR}/${DIAGNOSIS_FILE}"
     DIAG_CLASSIFICATION=""
     DIAG_CONFIDENCE=""
     DIAG_SUGGESTIONS=()
     _DIAG_PIPELINE_OUTCOME=""
     _DIAG_PIPELINE_STAGE=""
+    _DIAG_PIPELINE_TASK=""
     _DIAG_CAUSAL_EVENTS=""
+    _DIAG_LAST_CLASSIFICATION=""
+    _DIAG_EXIT_REASON=""
 }
 
 _create_pipeline_state() {
@@ -157,10 +170,11 @@ EOF
 # =============================================================================
 echo "=== Test Suite 1: Rule priority ordering ==="
 
-assert_eq "1.1 DIAGNOSE_RULES has 13 entries" "13" "${#DIAGNOSE_RULES[@]}"
+assert_eq "1.1 DIAGNOSE_RULES has 14 entries" "14" "${#DIAGNOSE_RULES[@]}"
 assert_eq "1.2 first rule is _rule_build_failure" "_rule_build_failure" "${DIAGNOSE_RULES[0]}"
-assert_eq "1.3 second rule is _rule_review_loop" "_rule_review_loop" "${DIAGNOSE_RULES[1]}"
-assert_eq "1.4 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[12]}"
+assert_eq "1.3 second rule is _rule_max_turns" "_rule_max_turns" "${DIAGNOSE_RULES[1]}"
+assert_eq "1.4 third rule is _rule_review_loop" "_rule_review_loop" "${DIAGNOSE_RULES[2]}"
+assert_eq "1.5 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[13]}"
 
 # =============================================================================
 # Test Suite 2: _rule_build_failure
@@ -174,16 +188,68 @@ _rule_build_failure 2>/dev/null && r=0 || r=1
 assert_eq "2.1 no match without BUILD_ERRORS.md" "1" "$r"
 
 # Empty BUILD_ERRORS.md — should not match
-touch "$TMPDIR/BUILD_ERRORS.md"
+touch "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 _rule_build_failure 2>/dev/null && r=0 || r=1
 assert_eq "2.2 no match with empty BUILD_ERRORS.md" "1" "$r"
 
 # Non-empty BUILD_ERRORS.md — should match
-echo "error: compilation failed" > "$TMPDIR/BUILD_ERRORS.md"
+echo "error: compilation failed" > "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 _rule_build_failure 2>/dev/null && r=0 || r=1
 assert_eq "2.3 matches with non-empty BUILD_ERRORS.md" "0" "$r"
 assert_eq "2.4 classification is BUILD_FAILURE" "BUILD_FAILURE" "$DIAG_CLASSIFICATION"
 assert_eq "2.5 confidence is high" "high" "$DIAG_CONFIDENCE"
+
+# =============================================================================
+# Test Suite 2b: _rule_max_turns
+# =============================================================================
+echo "=== Test Suite 2b: _rule_max_turns ==="
+
+_reset_fixture
+
+# No state, no failure_ctx — should not match
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.1 no match without state or failure_ctx" "1" "$r"
+
+# Fires from LAST_FAILURE_CONTEXT.json with AGENT_SCOPE/max_turns
+cat > "$TMPDIR/.claude/LAST_FAILURE_CONTEXT.json" << 'EOF'
+{
+  "classification": "MAX_TURNS_EXHAUSTED",
+  "category": "AGENT_SCOPE",
+  "subcategory": "max_turns",
+  "stage": "coder",
+  "outcome": "failure",
+  "consecutive_count": 1
+}
+EOF
+_DIAG_PIPELINE_TASK="M88"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.2 matches from LAST_FAILURE_CONTEXT.json AGENT_SCOPE/max_turns" "0" "$r"
+assert_eq "2b.3 classification is MAX_TURNS_EXHAUSTED" "MAX_TURNS_EXHAUSTED" "$DIAG_CLASSIFICATION"
+assert_eq "2b.4 confidence is high" "high" "$DIAG_CONFIDENCE"
+assert "2b.5 suggestions include task in runnable command" \
+    "$(printf '%s\n' "${DIAG_SUGGESTIONS[@]}" | grep -q 'tekhton .* "M88"' && echo 0 || echo 1)"
+
+# Fires from PIPELINE_STATE.md Notes containing 'max_turns'
+_reset_fixture
+_create_pipeline_state "coder" "Pipeline halted"
+sed -i 's/## Notes/## Notes\nHit max_turns in coder/' "$PIPELINE_STATE_FILE"
+_DIAG_PIPELINE_TASK="M88"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.6 matches from PIPELINE_STATE.md Notes max_turns" "0" "$r"
+assert_eq "2b.7 classification is MAX_TURNS_EXHAUSTED" "MAX_TURNS_EXHAUSTED" "$DIAG_CLASSIFICATION"
+
+# Fires from Exit Reason containing complete_loop_max_attempts
+_reset_fixture
+_create_pipeline_state "coder" "complete_loop_max_attempts: 5 attempts hit turn limit"
+_DIAG_PIPELINE_TASK="M88"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.8 matches from Exit Reason complete_loop_max_attempts" "0" "$r"
+
+# Non-matching fixture — should not match
+_reset_fixture
+_create_pipeline_state "coder" "Normal exit"
+_rule_max_turns 2>/dev/null && r=0 || r=1
+assert_eq "2b.9 no match on unrelated exit reason" "1" "$r"
 
 # =============================================================================
 # Test Suite 3: _rule_review_loop
@@ -198,7 +264,7 @@ assert_eq "3.1 no match without state file" "1" "$r"
 
 # State file with review stage + reviewer report with CHANGES_REQUIRED
 _create_pipeline_state "review" "Max review cycles"
-echo -e "## Verdict\nCHANGES_REQUIRED" > "$TMPDIR/REVIEWER_REPORT.md"
+echo -e "## Verdict\nCHANGES_REQUIRED" > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"
 _rule_review_loop 2>/dev/null && r=0 || r=1
 assert_eq "3.2 matches on review stage with CHANGES_REQUIRED" "0" "$r"
 assert_eq "3.3 classification is REVIEW_REJECTION_LOOP" "REVIEW_REJECTION_LOOP" "$DIAG_CLASSIFICATION"
@@ -215,7 +281,7 @@ _rule_security_halt 2>/dev/null && r=0 || r=1
 assert_eq "4.1 no match without SECURITY_REPORT.md" "1" "$r"
 
 # Security report with HALT
-echo -e "Verdict: HALT\nCritical: 2" > "$TMPDIR/SECURITY_REPORT.md"
+echo -e "Verdict: HALT\nCritical: 2" > "${PROJECT_DIR}/${SECURITY_REPORT_FILE}"
 _rule_security_halt 2>/dev/null && r=0 || r=1
 assert_eq "4.2 matches with HALT in security report" "0" "$r"
 assert_eq "4.3 classification is SECURITY_HALT" "SECURITY_HALT" "$DIAG_CLASSIFICATION"
@@ -233,7 +299,7 @@ assert_eq "5.1 no match without CLARIFICATIONS.md" "1" "$r"
 
 # Clarifications with unanswered + intake stage
 _create_pipeline_state "intake" "Needs clarification"
-cat > "$TMPDIR/CLARIFICATIONS.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" << 'EOF'
 - [ ] What is the auth provider?
 - [x] What database?
 EOF
@@ -364,7 +430,7 @@ echo "=== Test Suite 13: classify_failure_diag priority ==="
 
 _reset_fixture
 _DIAG_PIPELINE_OUTCOME="failure"
-echo "error: compilation failed" > "$TMPDIR/BUILD_ERRORS.md"
+echo "error: compilation failed" > "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 _create_pipeline_state "coder" "Stuck loop"
 echo -e "\n## Orchestration Context\nPipeline attempt: 5" >> "$PIPELINE_STATE_FILE"
 MAX_PIPELINE_ATTEMPTS=5
@@ -378,7 +444,7 @@ echo "=== Test Suite 14: Fallback without causal log ==="
 
 _reset_fixture
 _DIAG_PIPELINE_OUTCOME="failure"
-echo "error: compilation failed" > "$TMPDIR/BUILD_ERRORS.md"
+echo "error: compilation failed" > "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 _read_diagnostic_context 2>/dev/null || true
 classify_failure_diag
 assert_eq "14.1 works without causal log" "BUILD_FAILURE" "$DIAG_CLASSIFICATION"
@@ -393,18 +459,18 @@ echo "=== Test Suite 15: DIAGNOSIS.md generation ==="
 
 _reset_fixture
 _DIAG_PIPELINE_OUTCOME="failure"
-echo "error: test failure" > "$TMPDIR/BUILD_ERRORS.md"
+echo "error: test failure" > "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 _create_run_summary "failure"
 _read_diagnostic_context 2>/dev/null || true
 classify_failure_diag
 generate_diagnosis_report
 
 assert "15.1 DIAGNOSIS.md created" \
-    "$([ -f "$TMPDIR/DIAGNOSIS.md" ] && echo 0 || echo 1)"
+    "$([ -f "${PROJECT_DIR}/${DIAGNOSIS_FILE}" ] && echo 0 || echo 1)"
 assert "15.2 DIAGNOSIS.md contains classification" \
-    "$(grep -q 'BUILD_FAILURE' "$TMPDIR/DIAGNOSIS.md" 2>/dev/null && echo 0 || echo 1)"
+    "$(grep -q 'BUILD_FAILURE' "${PROJECT_DIR}/${DIAGNOSIS_FILE}" 2>/dev/null && echo 0 || echo 1)"
 assert "15.3 DIAGNOSIS.md contains Recovery Suggestions" \
-    "$(grep -q '## Recovery Suggestions' "$TMPDIR/DIAGNOSIS.md" 2>/dev/null && echo 0 || echo 1)"
+    "$(grep -q '## Recovery Suggestions' "${PROJECT_DIR}/${DIAGNOSIS_FILE}" 2>/dev/null && echo 0 || echo 1)"
 
 # =============================================================================
 # Test Suite 16: LAST_FAILURE_CONTEXT.json
@@ -479,11 +545,11 @@ assert "19.1 quota first-aid message" \
 rm -f "$TMPDIR/.claude/QUOTA_PAUSED"
 
 # Build failure
-echo "error: compilation failed" > "$TMPDIR/BUILD_ERRORS.md"
+echo "error: compilation failed" > "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 output=$(print_crash_first_aid 2>&1)
 assert "19.2 build first-aid message" \
     "$(echo "$output" | grep -q 'Build failure' && echo 0 || echo 1)"
-rm -f "$TMPDIR/BUILD_ERRORS.md"
+rm -f "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 
 # Resumable state
 _create_pipeline_state "coder" "Interrupted"

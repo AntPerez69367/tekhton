@@ -185,8 +185,8 @@ compress_context() {
 #
 # Stage-specific behavior:
 #   coder   — Architecture always full; other blocks filtered
-#   review  — Architecture filtered to files from CODER_SUMMARY.md
-#   tester  — Architecture filtered to files from CODER_SUMMARY.md
+#   review  — Architecture filtered to files from ${CODER_SUMMARY_FILE}
+#   tester  — Architecture filtered to files from ${CODER_SUMMARY_FILE}
 # =============================================================================
 
 build_context_packet() {
@@ -200,10 +200,10 @@ build_context_packet() {
 
     # Extract keywords from task and available reference files (M47: cache per ref_file)
     local ref_file=""
-    if [[ -f "SCOUT_REPORT.md" ]]; then
-        ref_file="SCOUT_REPORT.md"
-    elif [[ -f "CODER_SUMMARY.md" ]]; then
-        ref_file="CODER_SUMMARY.md"
+    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
+        ref_file="${SCOUT_REPORT_FILE}"
+    elif [[ -f "${CODER_SUMMARY_FILE}" ]]; then
+        ref_file="${CODER_SUMMARY_FILE}"
     fi
 
     local keywords
@@ -222,7 +222,7 @@ build_context_packet() {
         return
     fi
 
-    log "[context-compiler] Extracted keywords: $(echo "$keywords" | tr '\n' ', ' | sed 's/,$//')"
+    log_verbose "[context-compiler] Extracted keywords: $(echo "$keywords" | tr '\n' ', ' | sed 's/,$//')"
 
     # --- Stage-specific filtering ---
 

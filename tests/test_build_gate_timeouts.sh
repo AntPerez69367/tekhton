@@ -16,6 +16,14 @@ trap 'rm -rf "$TMPDIR"' EXIT
 export TEKHTON_HOME
 export PROJECT_DIR="$TMPDIR"
 
+# Set default file paths
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+BUILD_ERRORS_FILE="${BUILD_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_ERRORS.md}"
+BUILD_RAW_ERRORS_FILE="${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+UI_TEST_ERRORS_FILE="${UI_TEST_ERRORS_FILE:-${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
+UI_VALIDATION_REPORT_FILE="${UI_VALIDATION_REPORT_FILE:-${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
+export TEKHTON_DIR BUILD_ERRORS_FILE BUILD_RAW_ERRORS_FILE UI_TEST_ERRORS_FILE UI_VALIDATION_REPORT_FILE
+
 # Source common.sh for log/warn/error
 source "${TEKHTON_HOME}/lib/common.sh"
 
@@ -29,6 +37,7 @@ UI_TEST_CMD=""
 UI_VALIDATION_ENABLED="false"
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 PASS=0
 FAIL=0
@@ -201,13 +210,13 @@ else
 fi
 
 # Check diagnostic message was written
-if [[ -f BUILD_ERRORS.md ]] && grep -q "Gate Timeout" BUILD_ERRORS.md; then
+if [[ -f "${BUILD_ERRORS_FILE}" ]] && grep -q "Gate Timeout" "${BUILD_ERRORS_FILE}"; then
     pass "Gate timeout wrote diagnostic to BUILD_ERRORS.md"
 else
     fail "Gate timeout should write diagnostic to BUILD_ERRORS.md"
 fi
 
-rm -f BUILD_ERRORS.md
+rm -f "${BUILD_ERRORS_FILE}"
 ANALYZE_CMD="true"
 
 # --- Test 7: Build gate detects real analyze errors ---
@@ -227,9 +236,9 @@ else
     fail "Build gate should have failed on analyze error"
 fi
 
-if [[ -f BUILD_ERRORS.md ]]; then
+if [[ -f "${BUILD_ERRORS_FILE}" ]]; then
     pass "BUILD_ERRORS.md created on failure"
-    rm -f BUILD_ERRORS.md
+    rm -f "${BUILD_ERRORS_FILE}"
 else
     fail "BUILD_ERRORS.md should be created on failure"
 fi

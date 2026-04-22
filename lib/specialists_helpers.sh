@@ -15,7 +15,7 @@ _extract_specialist_blockers() {
     local spec_name="$1"
     local upper_name
     upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="SPECIALIST_${upper_name}_FINDINGS.md"
+    local findings_file="${TEKHTON_DIR}/SPECIALIST_${upper_name}_FINDINGS.md"
 
     if [ ! -f "$findings_file" ]; then
         return
@@ -24,13 +24,13 @@ _extract_specialist_blockers() {
     grep "\[BLOCKER\]" "$findings_file" 2>/dev/null || true
 }
 
-# _append_specialist_notes — Reads [NOTE] items and appends to NON_BLOCKING_LOG.md.
+# _append_specialist_notes — Reads [NOTE] items and appends to ${NON_BLOCKING_LOG_FILE}.
 # Args: $1 = specialist name
 _append_specialist_notes() {
     local spec_name="$1"
     local upper_name
     upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="SPECIALIST_${upper_name}_FINDINGS.md"
+    local findings_file="${TEKHTON_DIR}/SPECIALIST_${upper_name}_FINDINGS.md"
 
     if [ ! -f "$findings_file" ]; then
         return

@@ -10,10 +10,10 @@ set -euo pipefail
 # =============================================================================
 
 # --- Summary accuracy check ---------------------------------------------------
-# Cross-checks CODER_SUMMARY.md "Files Modified" section against actual git diff.
+# Cross-checks "${CODER_SUMMARY_FILE}" "Files Modified" section against actual git diff.
 # Logs a warning when the summary underreports changes. Non-blocking — informational only.
 _warn_summary_drift() {
-    [[ -f "CODER_SUMMARY.md" ]] || return 0
+    [[ -f "${CODER_SUMMARY_FILE}" ]] || return 0
 
     # Count files actually changed (tracked modifications + staged)
     local actual_count=0
@@ -25,13 +25,13 @@ _warn_summary_drift() {
 
     # Check if summary mentions files or claims none modified
     local files_section=""
-    files_section=$(sed -n '/^## Files Modified/,/^## /p' CODER_SUMMARY.md 2>/dev/null \
+    files_section=$(sed -n '/^## Files Modified/,/^## /p' "${CODER_SUMMARY_FILE}" 2>/dev/null \
         | head -20 || true)
 
     if [[ -z "$files_section" ]] || echo "$files_section" | grep -qi "no files\|none\|N/A"; then
-        warn "CODER_SUMMARY.md reports no files modified but git shows ${actual_count} changed file(s)."
+        warn "${CODER_SUMMARY_FILE} reports no files modified but git shows ${actual_count} changed file(s)."
         warn "Summary accuracy drift detected — auto-appending actual file list."
-        # Auto-append the actual git diff file list to CODER_SUMMARY.md
+        # Auto-append the actual git diff file list to "${CODER_SUMMARY_FILE}"
         local _actual_files
         _actual_files=$(git diff --name-only HEAD 2>/dev/null | head -30)
         if [[ -n "$_actual_files" ]]; then
@@ -39,7 +39,7 @@ _warn_summary_drift() {
                 echo ""
                 echo "## Files Modified (auto-detected)"
                 echo "$_actual_files" | while IFS= read -r f; do echo "- \`${f}\`"; done
-            } >> CODER_SUMMARY.md
+            } >> "${CODER_SUMMARY_FILE}"
         fi
     fi
 }
@@ -48,16 +48,16 @@ _warn_summary_drift() {
 # Blocks pipeline progression if coder did not self-report completion
 #
 # Usage:  run_completion_gate
-# Returns: 0 if CODER_SUMMARY.md shows COMPLETE, 1 otherwise
+# Returns: 0 if "${CODER_SUMMARY_FILE}" shows COMPLETE, 1 otherwise
 run_completion_gate() {
     # Handle both "## Status: VALUE" (single-line) and "## Status\nVALUE" (next-line) formats.
     CODER_STATUS=$(awk '/^## Status/{
         sub(/^## Status:?[[:space:]]*/, "")
         if (length($0) > 0) { print; exit }
         getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit
-    }' CODER_SUMMARY.md 2>/dev/null || echo "")
+    }' "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "")
     export CODER_REMAINING
-    CODER_REMAINING=$(grep "^## Remaining Work" -A5 CODER_SUMMARY.md 2>/dev/null || echo "")
+    CODER_REMAINING=$(grep "^## Remaining Work" -A5 "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "")
 
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
         warn "Completion gate FAILED — coder self-reported IN PROGRESS."
@@ -74,7 +74,20 @@ run_completion_gate() {
            && [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]]; then
             log "Completion gate: running TEST_CMD for test integrity check..."
             local _cg_output="" _cg_exit=0
-            _cg_output=$(bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+            if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+                log "[dedup] Tests passed with no file changes since last run — skipping"
+                if command -v emit_event &>/dev/null; then
+                    emit_event "test_dedup_skip" "${_CURRENT_STAGE:-completion_gate}" \
+                        "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+                fi
+                _cg_output="[dedup] Cached pass — no files changed since last successful test run"
+                _cg_exit=0
+            else
+                _cg_output=$(run_op "Running completion tests" bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+                if [[ "$_cg_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                    test_dedup_record_pass
+                fi
+            fi
 
             if [[ "$_cg_exit" -eq 0 ]]; then
                 log "Completion gate: TEST_CMD passed."
@@ -86,7 +99,13 @@ run_completion_gate() {
                     local _cg_comparison
                     _cg_comparison=$(compare_test_with_baseline "$_cg_output" "$_cg_exit")
                     if [[ "$_cg_comparison" == "pre_existing" ]]; then
-                        log "Completion gate: test failures are pre-existing — passing."
+                        if [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-false}" = "true" ]]; then
+                            log "Completion gate: pre-existing failures accepted (PASS_ON_PREEXISTING=true)."
+                        else
+                            warn "Completion gate FAILED — pre-existing failures no longer auto-pass (M92)."
+                            warn "Set TEST_BASELINE_PASS_ON_PREEXISTING=true to opt out."
+                            return 1
+                        fi
                     else
                         warn "Completion gate FAILED — TEST_CMD exited ${_cg_exit} with new failures."
                         return 1
@@ -109,7 +128,7 @@ run_completion_gate() {
         return 1
     fi
 
-    warn "Completion gate FAILED — CODER_SUMMARY.md has no clear Status field."
+    warn "Completion gate FAILED — ${CODER_SUMMARY_FILE} has no clear Status field."
     warn "Expected '## Status' line with COMPLETE or IN PROGRESS."
     return 1
 }

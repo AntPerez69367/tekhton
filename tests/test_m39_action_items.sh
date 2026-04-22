@@ -150,6 +150,11 @@ _json_escape() {
     printf '%s' "$s"
 }
 
+HUMAN_NOTES_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR:-.tekhton}/NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR:-.tekhton}/DRIFT_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_ACTION_REQUIRED.md"
+
 # Source parsers (provides _write_js_file, _to_js_timestamp)
 # shellcheck source=../lib/dashboard_parsers.sh
 source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
@@ -172,7 +177,7 @@ count_human_actions()           { echo 0; }
 count_drift_observations()      { echo 0; }
 
 # No HUMAN_NOTES.md → hn_count stays 0
-rm -f "$TMPDIR_ROOT/HUMAN_NOTES.md"
+rm -f "$TMPDIR_ROOT/${HUMAN_NOTES_FILE}"
 
 export ACTION_ITEMS_WARN_THRESHOLD=5
 export ACTION_ITEMS_CRITICAL_THRESHOLD=10
@@ -268,7 +273,8 @@ fi
 count_open_nonblocking_notes() { echo 0; }
 
 # Create HUMAN_NOTES.md so the hn_count branch fires
-cat > "$TMPDIR_ROOT/HUMAN_NOTES.md" << 'EOF'
+mkdir -p "$TMPDIR_ROOT/${TEKHTON_DIR:-.tekhton}"
+cat > "$TMPDIR_ROOT/${HUMAN_NOTES_FILE}" << 'EOF'
 - [ ] [BUG] Fix login regression
 - [ ] [FEAT] Add dark mode
 - [ ] [BUG] Crash on startup

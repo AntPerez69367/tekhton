@@ -129,11 +129,11 @@ _run_tester_inline_fix() {
             TESTER_FIX_TEST_FILES="$_test_paths"
         fi
 
-        # Extract source files from CODER_SUMMARY.md
+        # Extract source files from ${CODER_SUMMARY_FILE}
         export TESTER_FIX_SOURCE_FILES=""
-        if [[ -f "CODER_SUMMARY.md" ]] \
+        if [[ -f "${CODER_SUMMARY_FILE}" ]] \
            && declare -f extract_files_from_coder_summary &>/dev/null; then
-            TESTER_FIX_SOURCE_FILES=$(extract_files_from_coder_summary "CODER_SUMMARY.md" 2>/dev/null || true)
+            TESTER_FIX_SOURCE_FILES=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}" 2>/dev/null || true)
         fi
 
         # Render scoped prompt and run inline agent
@@ -152,14 +152,28 @@ _run_tester_inline_fix() {
         # Log fix attempt in causal log
         if declare -f emit_event &>/dev/null; then
             emit_event "tester_fix_attempt" "tester" \
-                "attempt=${_fix_attempt} exit=${LAST_AGENT_EXIT_CODE:-0} turns=${LAST_AGENT_TURNS:-0}"
+                "attempt=${_fix_attempt} exit=${LAST_AGENT_EXIT_CODE:-0} turns=${LAST_AGENT_TURNS:-0}" \
+                >/dev/null 2>&1 || true
         fi
 
         # Check if fix succeeded — re-run test command
         local _retest_exit=0
         if [[ -n "${TEST_CMD:-}" ]]; then
-            log "[tester-fix] Re-running ${TEST_CMD} to verify fix..."
-            eval "${TEST_CMD}" >> "$LOG_FILE" 2>&1 || _retest_exit=$?
+            if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+                log "[dedup] Tests passed with no file changes since last run — skipping"
+                if declare -f emit_event &>/dev/null; then
+                    emit_event "test_dedup_skip" "${_CURRENT_STAGE:-tester_fix}" \
+                        "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+                fi
+                echo "[dedup] Cached pass — no files changed since last successful test run" >> "$LOG_FILE"
+                _retest_exit=0
+            else
+                log "[tester-fix] Re-running ${TEST_CMD} to verify fix..."
+                eval "${TEST_CMD}" >> "$LOG_FILE" 2>&1 || _retest_exit=$?
+                if [[ "$_retest_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                    test_dedup_record_pass
+                fi
+            fi
             if [[ "$_retest_exit" -eq 0 ]]; then
                 success "Tester fix attempt ${_fix_attempt} resolved all test failures."
                 return

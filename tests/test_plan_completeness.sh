@@ -22,6 +22,8 @@ warn()    { :; }
 error()   { :; }
 header()  { :; }
 
+DESIGN_FILE="${TEKHTON_DIR:-.tekhton}/DESIGN.md"
+
 # Source plan.sh (constants and config defaults) and plan_completeness.sh (check functions)
 # shellcheck source=../lib/plan.sh
 source "${TEKHTON_HOME}/lib/plan.sh"
@@ -141,7 +143,8 @@ echo
 echo "=== check_design_completeness ==="
 
 # --- Complete DESIGN.md (deep content with sub-headings) ---
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+mkdir -p "${TEST_TMPDIR}/${TEKHTON_DIR:-.tekhton}"
+cat > "${TEST_TMPDIR}/${DESIGN_FILE}" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -179,7 +182,7 @@ else
 fi
 
 # --- Incomplete DESIGN.md (empty section) ---
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/${DESIGN_FILE}" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -204,7 +207,7 @@ else
 fi
 
 # --- Missing section entirely ---
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/${DESIGN_FILE}" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -227,7 +230,7 @@ else
 fi
 
 # --- Section with only guidance comments ---
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/${DESIGN_FILE}" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -247,7 +250,7 @@ else
 fi
 
 # --- Section with TBD placeholder ---
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/${DESIGN_FILE}" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -380,7 +383,7 @@ echo
 echo "=== check_design_completeness — shallow detection ==="
 
 # DESIGN.md with short content (passes incomplete check but fails shallow check)
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/${DESIGN_FILE}" << 'EOF'
 # Design Document — Test
 
 ## Project Overview

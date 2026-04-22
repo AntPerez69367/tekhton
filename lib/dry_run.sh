@@ -56,7 +56,7 @@ validate_dry_run_cache() {
     local meta_file="${cache_dir}/DRY_RUN_META.json"
 
     if [[ ! -d "$cache_dir" ]] || [[ ! -f "$meta_file" ]]; then
-        log "Dry-run cache: no cache found."
+        log_verbose "Dry-run cache: no cache found."
         return 1
     fi
 
@@ -117,15 +117,19 @@ consume_dry_run_cache() {
     age_minutes=$(( (now - cached_timestamp) / 60 ))
 
     # Copy cached scout report
-    if [[ -f "${cache_dir}/SCOUT_REPORT.md" ]]; then
-        cp "${cache_dir}/SCOUT_REPORT.md" "SCOUT_REPORT.md"
+    local _scout_cache_name
+    _scout_cache_name=$(basename "${SCOUT_REPORT_FILE}")
+    if [[ -f "${cache_dir}/${_scout_cache_name}" ]]; then
+        cp "${cache_dir}/${_scout_cache_name}" "${SCOUT_REPORT_FILE}"
         SCOUT_CACHED=true
         export SCOUT_CACHED
     fi
 
     # Copy cached intake report
-    if [[ -f "${cache_dir}/INTAKE_REPORT.md" ]]; then
-        cp "${cache_dir}/INTAKE_REPORT.md" "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}"
+    local _intake_cache_name
+    _intake_cache_name=$(basename "${INTAKE_REPORT_FILE}")
+    if [[ -f "${cache_dir}/${_intake_cache_name}" ]]; then
+        cp "${cache_dir}/${_intake_cache_name}" "${INTAKE_REPORT_FILE}"
         INTAKE_CACHED=true
         export INTAKE_CACHED
     fi
@@ -157,11 +161,11 @@ _write_dry_run_cache() {
     mkdir -p "$cache_dir"
 
     # Copy reports if they exist
-    if [[ -f "SCOUT_REPORT.md" ]]; then
-        cp "SCOUT_REPORT.md" "${cache_dir}/SCOUT_REPORT.md"
+    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
+        cp "${SCOUT_REPORT_FILE}" "${cache_dir}/$(basename "${SCOUT_REPORT_FILE}")"
     fi
-    if [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
-        cp "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" "${cache_dir}/INTAKE_REPORT.md"
+    if [[ -f "${INTAKE_REPORT_FILE}" ]]; then
+        cp "${INTAKE_REPORT_FILE}" "${cache_dir}/$(basename "${INTAKE_REPORT_FILE}")"
     fi
 
     # Write metadata
@@ -234,7 +238,7 @@ _format_dry_run_preview() {
     echo
 }
 
-# _parse_scout_preview — Extract preview data from SCOUT_REPORT.md.
+# _parse_scout_preview — Extract preview data from scout report file.
 # Sets caller-scoped variables: _scout_file_count, _scout_summary,
 # _estimated_turns, _security_flag.
 _parse_scout_preview() {
@@ -271,7 +275,7 @@ _parse_scout_preview() {
     fi
 }
 
-# _parse_intake_preview — Extract verdict and confidence from INTAKE_REPORT.md.
+# _parse_intake_preview — Extract verdict and confidence from ${INTAKE_REPORT_FILE}.
 # Sets caller-scoped variables: _intake_verdict, _intake_confidence.
 _parse_intake_preview() {
     local report_file="$1"
@@ -314,7 +318,7 @@ run_dry_run() {
     if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]]; then
         log "Running intake evaluation..."
         run_stage_intake || true
-        if [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
+        if [[ -f "${INTAKE_REPORT_FILE}" ]]; then
             has_intake=true
         fi
     else
@@ -369,11 +373,11 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         "$LOG_FILE" \
         "$_scout_tools"
 
-    if [[ -f "SCOUT_REPORT.md" ]]; then
+    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
         has_scout=true
         success "Scout completed."
     else
-        warn "Scout did not produce SCOUT_REPORT.md."
+        warn "Scout did not produce ${SCOUT_REPORT_FILE}."
     fi
 
     # --- Validate results --------------------------------------------------
@@ -387,12 +391,12 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
     # --- Parse and display preview ------------------------------------------
     local _intake_verdict="N/A" _intake_confidence=0
     if [[ "$has_intake" == true ]]; then
-        _parse_intake_preview "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}"
+        _parse_intake_preview "${INTAKE_REPORT_FILE}"
     fi
 
     local _scout_file_count=0 _scout_summary="" _estimated_turns="unknown" _security_flag="NO"
     if [[ "$has_scout" == true ]]; then
-        _parse_scout_preview "SCOUT_REPORT.md"
+        _parse_scout_preview "${SCOUT_REPORT_FILE}"
     fi
 
     _format_dry_run_preview \

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck disable=SC2153
 # =============================================================================
 # init_synthesize_helpers.sh — Helpers for project synthesis (--plan-from-index)
 #
@@ -13,7 +14,7 @@ set -euo pipefail
 # Provides:
 #   _assemble_synthesis_context   — load project artifacts into context vars
 #   _compress_synthesis_context   — budget-driven context compression
-#   _check_synthesis_completeness — validate synthesized DESIGN.md depth
+#   _check_synthesis_completeness — validate synthesized ${DESIGN_FILE} depth
 #   _get_section_content_simple   — extract section content between headings
 #
 # Sources: lib/init_synthesize_ui.sh for UI menu functions
@@ -27,27 +28,27 @@ source "${TEKHTON_HOME:-.}/lib/init_synthesize_ui.sh"
 
 # _assemble_synthesis_context — Builds agent prompt context from project artifacts.
 #
-# Loads PROJECT_INDEX.md, detection report, README, existing ARCHITECTURE.md,
+# Loads $PROJECT_INDEX_FILE, detection report, README, existing ARCHITECTURE.md,
 # and git log summary. Applies context budget — compresses if over budget.
 #
 # Sets exported variables: PROJECT_INDEX_CONTENT, DETECTION_REPORT_CONTENT,
 #   README_CONTENT, EXISTING_ARCHITECTURE_CONTENT, GIT_LOG_SUMMARY
 #
 # Args: $1 = project directory
-# Returns: 0 on success, 1 if PROJECT_INDEX.md is missing
+# Returns: 0 on success, 1 if $PROJECT_INDEX_FILE is missing
 _assemble_synthesis_context() {
     local project_dir="$1"
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
 
     if [[ ! -f "$index_file" ]] && [[ ! -f "${project_dir}/.claude/index/meta.json" ]]; then
-        error "PROJECT_INDEX.md not found at ${index_file}"
+        error "${PROJECT_INDEX_FILE} not found at ${index_file}"
         error "Run 'tekhton --init' first to generate the project index."
         return 1
     fi
 
     # Load project index via structured reader (M68). The reader produces a
     # bounded summary (60KB) — rich enough for synthesis but prevents unbounded
-    # context injection. Falls back to legacy PROJECT_INDEX.md for pre-M67 projects.
+    # context injection. Falls back to legacy $PROJECT_INDEX_FILE for pre-M67 projects.
     export PROJECT_INDEX_CONTENT
     PROJECT_INDEX_CONTENT=$(read_index_summary "$project_dir" 60000)
     log "Loaded project index summary ($(echo "$PROJECT_INDEX_CONTENT" | wc -c | tr -d '[:space:]') chars)"
@@ -87,11 +88,12 @@ _assemble_synthesis_context() {
         fi
     fi
 
-    # Load MERGE_CONTEXT.md if present (from artifact merge — Milestone 11)
+    # Load $MERGE_CONTEXT_FILE if present (from artifact merge — Milestone 11)
     export MERGE_CONTEXT=""
-    if [[ -f "${project_dir}/MERGE_CONTEXT.md" ]]; then
-        MERGE_CONTEXT=$(cat "${project_dir}/MERGE_CONTEXT.md")
-        log "Loaded MERGE_CONTEXT.md ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
+    local _mcf="${project_dir}/${MERGE_CONTEXT_FILE}"
+    if [[ -f "${_mcf}" ]]; then
+        MERGE_CONTEXT=$(cat "${_mcf}")
+        log "Loaded ${MERGE_CONTEXT_FILE} ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
     fi
 
     # Milestone 12: Doc quality score for synthesis calibration
@@ -174,16 +176,16 @@ _compress_synthesis_context() {
     fi
 }
 
-# --- Completeness check for synthesized DESIGN.md ----------------------------
+# --- Completeness check for synthesized ${DESIGN_FILE} ----------------------------
 
-# _check_synthesis_completeness — Validates synthesized DESIGN.md and re-synthesizes
+# _check_synthesis_completeness — Validates synthesized ${DESIGN_FILE} and re-synthesizes
 # thin sections if needed.
 #
 # Args: $1 = project directory
 # Returns: 0 always (best-effort — does not block on incomplete sections)
 _check_synthesis_completeness() {
     local project_dir="$1"
-    local design_file="${project_dir}/DESIGN.md"
+    local design_file="${project_dir}/${DESIGN_FILE:-}"
 
     if [[ ! -f "$design_file" ]]; then
         return 0
@@ -194,7 +196,7 @@ _check_synthesis_completeness() {
     section_count=$(grep -c '^## ' "$design_file" || true)
 
     if [[ "$section_count" -lt 5 ]]; then
-        warn "DESIGN.md has only ${section_count} sections — running re-synthesis pass"
+        warn "${DESIGN_FILE} has only ${section_count} sections — running re-synthesis pass"
     fi
 
     # Check individual section depth regardless of total section count
@@ -226,7 +228,7 @@ _check_synthesis_completeness() {
         # Clear after use
         unset PLAN_INCOMPLETE_SECTIONS
     else
-        success "DESIGN.md has ${section_count} sections — completeness OK."
+        success "${DESIGN_FILE} has ${section_count} sections — completeness OK."
     fi
 
     return 0

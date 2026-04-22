@@ -22,7 +22,8 @@ log() { :; }
 warn() { :; }
 success() { :; }
 header() { :; }
-export -f log warn success header
+run_op() { local _l="$1"; shift; "$@"; }
+export -f log warn success header run_op
 
 # Source the module under test
 source "${TEKHTON_HOME}/lib/test_baseline.sh"

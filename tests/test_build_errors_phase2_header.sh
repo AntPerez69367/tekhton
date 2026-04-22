@@ -11,6 +11,14 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="$(mktemp -d)"
 trap 'rm -rf "$PROJECT_DIR"' EXIT
 
+# Set default file paths
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+BUILD_ERRORS_FILE="${BUILD_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_ERRORS.md}"
+BUILD_RAW_ERRORS_FILE="${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+UI_TEST_ERRORS_FILE="${UI_TEST_ERRORS_FILE:-${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
+UI_VALIDATION_REPORT_FILE="${UI_VALIDATION_REPORT_FILE:-${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
+export TEKHTON_DIR BUILD_ERRORS_FILE BUILD_RAW_ERRORS_FILE UI_TEST_ERRORS_FILE UI_VALIDATION_REPORT_FILE
+
 # Source required libraries
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/error_patterns.sh"
@@ -32,6 +40,7 @@ classify_build_errors_all() {
 export -f classify_build_errors_all
 
 cd "$PROJECT_DIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # Source gates.sh after setup
 source "${TEKHTON_HOME}/lib/gates.sh"
@@ -39,19 +48,20 @@ source "${TEKHTON_HOME}/lib/gates_phases.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 # Test: Run build gate with Phase 1 passing and Phase 2 failing
+# Note: We don't use timeout directly on the function, as timeout cannot invoke bash functions directly
 if run_build_gate "test-phase2" 2>/dev/null; then
     echo "FAIL: Expected build gate to fail but it passed"
     exit 1
 fi
 
 # Verify BUILD_ERRORS.md exists
-if [[ ! -f BUILD_ERRORS.md ]]; then
+if [[ ! -f "${BUILD_ERRORS_FILE}" ]]; then
     echo "FAIL: BUILD_ERRORS.md was not created"
     exit 1
 fi
 
 # Check for canonical header — this is where the bug manifests
-if ! grep -q "^# Build Errors" BUILD_ERRORS.md; then
+if ! grep -q "^# Build Errors" "${BUILD_ERRORS_FILE}"; then
     # Bug confirmed: the header is NOT written because the file check
     # happens AFTER bash opens the file for appending (>>)
     echo "FAIL: Canonical '# Build Errors' header not written (implementation bug in gates.sh line 170)"
@@ -59,7 +69,7 @@ if ! grep -q "^# Build Errors" BUILD_ERRORS.md; then
 fi
 
 # The following checks should pass if the header is correctly written
-if ! grep -q "^## Stage" BUILD_ERRORS.md; then
+if ! grep -q "^## Stage" "${BUILD_ERRORS_FILE}"; then
     echo "FAIL: '## Stage' section not found"
     exit 1
 fi

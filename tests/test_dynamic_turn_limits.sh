@@ -45,6 +45,8 @@ TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""
 
+CODER_SUMMARY_FILE="${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md"
+
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
@@ -53,6 +55,7 @@ source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 git init -q .
 echo "init" > init.txt && git add -A && git commit -q -m "init"
 
@@ -300,7 +303,7 @@ DYNAMIC_TURNS_ENABLED=true
 # 6.1: Fallback heuristic — small change, no actual turns (e.g., --start-at review)
 SCOUT_REC_REVIEWER_TURNS=0
 
-cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${TMPDIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -349,7 +352,7 @@ assert_eq "6.8 formula clamped reviewer min" "10" "$ADJUSTED_REVIEWER_TURNS"
 assert_eq "6.9 formula clamped tester floored to config" "30" "$ADJUSTED_TESTER_TURNS"
 
 # 6.10: Formula with many files
-cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${TMPDIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## Files Modified
@@ -384,13 +387,13 @@ DYNAMIC_TURNS_ENABLED=true
 # reviewer = 50*35/100 + 0*15/10 = 17 → floor REVIEWER_MAX_TURNS=10 → 17
 # tester   = 50*50/100 + 0*20/10 = 25 → floor TESTER_MAX_TURNS=30 → 30
 DYNAMIC_TURNS_ENABLED=true
-rm -f "${TMPDIR}/CODER_SUMMARY.md"
+rm -f "${TMPDIR}/${CODER_SUMMARY_FILE}"
 estimate_post_coder_turns 50 2>/dev/null
 assert_eq "6.14 absent summary: reviewer with files=0" "17" "$ADJUSTED_REVIEWER_TURNS"
 assert_eq "6.15 absent summary: tester with files=0" "30" "$ADJUSTED_TESTER_TURNS"
 
 # Restore small coder summary for remaining tests
-cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${TMPDIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## Files Modified

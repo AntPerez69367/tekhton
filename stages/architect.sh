@@ -11,13 +11,13 @@
 #   1. Guard: verify drift threshold is actually exceeded (or --force-audit)
 #   2. Load drift log and architecture log content for prompt
 #   3. Invoke architect agent
-#   4. Parse ARCHITECT_PLAN.md sections
+#   4. Parse architect plan sections
 #   5. Route sr coder items (Simplification)
 #   6. Route jr coder items (Staleness, Dead Code, Naming)
 #   7. Run build gate after coders
 #   8. Run expedited reviewer (single cycle, no rework loop)
-#   9. Mark addressed observations as RESOLVED in DRIFT_LOG.md
-#  10. Append Design Doc Observations to HUMAN_ACTION_REQUIRED.md
+#   9. Mark addressed observations as RESOLVED in ${DRIFT_LOG_FILE}
+#  10. Append Design Doc Observations to ${HUMAN_ACTION_FILE}
 #  11. Reset runs-since-audit counter
 run_stage_architect() {
     header "Pre-stage 2 — Architect Audit"
@@ -71,6 +71,17 @@ run_stage_architect() {
     ARCHITECT_PROMPT=$(render_prompt "architect")
 
     log "Invoking architect agent (${DRIFT_OBSERVATION_COUNT} observations, max ${architect_turns} turns)..."
+
+    # M110: make the architect pre-stage visible to the TUI lifecycle protocol.
+    # The pill row includes "architect" only when promoted by get_run_stage_plan
+    # (FORCE_AUDIT or drift thresholds); the lifecycle id allows late spinner
+    # ticks to be rejected after the stage ends.
+    local _architect_started=false
+    if declare -f tui_stage_begin &>/dev/null; then
+        tui_stage_begin "architect" "$architect_model"
+        _architect_started=true
+    fi
+
     run_agent \
         "Architect" \
         "$architect_model" \
@@ -86,18 +97,24 @@ run_stage_architect() {
     if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
         warn "Architect hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
         warn "Drift observations remain unresolved — will retry next audit cycle."
+        if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+            tui_stage_end "architect" "$architect_model" "" "" "UPSTREAM_ERROR"
+        fi
         return 0
     fi
 
     # --- Validate output -----------------------------------------------------
 
-    if [ ! -f "ARCHITECT_PLAN.md" ]; then
-        warn "Architect did not produce ARCHITECT_PLAN.md. Skipping remediation."
+    if [ ! -f "${ARCHITECT_PLAN_FILE}" ]; then
+        warn "Architect did not produce ${ARCHITECT_PLAN_FILE}. Skipping remediation."
         warn "Drift observations remain unresolved — will retry next audit cycle."
+        if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+            tui_stage_end "architect" "$architect_model" "" "" "NO_PLAN"
+        fi
         return 0
     fi
 
-    log "ARCHITECT_PLAN.md produced. Parsing sections..."
+    log "${ARCHITECT_PLAN_FILE} produced. Parsing sections..."
 
     # --- Parse plan sections -------------------------------------------------
 
@@ -107,7 +124,7 @@ run_stage_architect() {
     # Check for non-empty Simplification section
     local simplification_content
     simplification_content=$(awk '/^## Simplification/{found=1; next} found && /^##/{exit} found{print}' \
-        ARCHITECT_PLAN.md 2>/dev/null || true)
+        "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
     if [ -n "$simplification_content" ] && ! echo "$simplification_content" | grep -qiE '^\s*-?\s*None\s*$'; then
         has_simplification=1
     fi
@@ -116,7 +133,7 @@ run_stage_architect() {
     for section in "Staleness Fixes" "Dead Code Removal" "Naming Normalization"; do
         local section_content
         section_content=$(awk -v sect="$section" '/^## /{if($0 ~ sect){found=1; next}else if(found){exit}} found{print}' \
-            ARCHITECT_PLAN.md 2>/dev/null || true)
+            "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
         if [ -n "$section_content" ] && ! echo "$section_content" | grep -qiE '^\s*-?\s*None\s*$'; then
             has_jr_work=1
             break
@@ -124,6 +141,18 @@ run_stage_architect() {
     done
 
     # --- Route to coders -----------------------------------------------------
+
+    # M116: architect-remediation is a substage of architect — it records as a
+    # breadcrumb inside the architect stage without opening its own pill or
+    # mutating the architect start timestamp. Begin it only when remediation
+    # work will actually run so the timings row does not log an empty entry.
+    local _remediation_started=false
+    if [ "$has_simplification" -eq 1 ] || [ "$has_jr_work" -eq 1 ]; then
+        if declare -f tui_substage_begin &>/dev/null; then
+            tui_substage_begin "architect-remediation" "$architect_model"
+            _remediation_started=true
+        fi
+    fi
 
     if [ "$has_simplification" -eq 1 ]; then
         log "Simplification items found — routing to senior coder..."
@@ -181,6 +210,12 @@ run_stage_architect() {
                 warn "Build still broken after architect remediation. Skipping review."
                 warn "Drift observations NOT resolved — will retry next audit cycle."
                 reset_runs_since_audit
+                if [[ "$_remediation_started" == "true" ]] && declare -f tui_substage_end &>/dev/null; then
+                    tui_substage_end "architect-remediation" "BUILD_BROKEN"
+                fi
+                if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+                    tui_stage_end "architect" "$architect_model" "" "" "BUILD_BROKEN"
+                fi
                 return 0
             fi
         fi
@@ -218,7 +253,7 @@ run_stage_architect() {
         # Extract Out of Scope items — these stay unresolved for next audit cycle
         local oos_section
         oos_section=$(awk '/^## Out of Scope/{found=1; next} found && /^##/{exit} found{print}' \
-            ARCHITECT_PLAN.md 2>/dev/null || true)
+            "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
 
         local oos_items=()
         if [ -n "$oos_section" ]; then
@@ -282,7 +317,7 @@ run_stage_architect() {
 
     local design_section
     design_section=$(awk '/^## Design Doc Observations/{found=1; next} found && /^##/{exit} found{print}' \
-        ARCHITECT_PLAN.md 2>/dev/null || true)
+        "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
 
     if [ -n "$design_section" ]; then
         # Join multi-line bullets, then filter out non-actionable entries.
@@ -345,9 +380,18 @@ run_stage_architect() {
 
     # --- Archive and clean up plan -------------------------------------------
 
-    if [ -f "ARCHITECT_PLAN.md" ]; then
-        mv "ARCHITECT_PLAN.md" "${LOG_DIR}/${TIMESTAMP}_ARCHITECT_PLAN.md"
-        log "ARCHITECT_PLAN.md archived and removed from working directory."
+    if [ -f "${ARCHITECT_PLAN_FILE}" ]; then
+        mv "${ARCHITECT_PLAN_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${ARCHITECT_PLAN_FILE}")"
+        log "${ARCHITECT_PLAN_FILE} archived and removed from working directory."
+    fi
+
+    # M116: close architect-remediation substage (if it ran) then architect
+    # stage. architect is the sole pipeline-stage owner for this audit.
+    if [[ "$_remediation_started" == "true" ]] && declare -f tui_substage_end &>/dev/null; then
+        tui_substage_end "architect-remediation" ""
+    fi
+    if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+        tui_stage_end "architect" "$architect_model" "" "" ""
     fi
 
     success "Architect audit complete."

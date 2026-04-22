@@ -37,6 +37,9 @@ source "${TEKHTON_HOME}/lib/preflight_services.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"
 
+TEKHTON_DIR=".tekhton"
+PREFLIGHT_REPORT_FILE="${TEKHTON_DIR}/PREFLIGHT_REPORT.md"
+
 PASS=0
 FAIL=0
 
@@ -48,6 +51,7 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 _make_test_dir() {
     local tmpdir
     tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/.tekhton"
     echo "$tmpdir"
 }
 
@@ -74,7 +78,7 @@ else
 fi
 
 # No report file should be created
-if [[ ! -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]]; then
+if [[ ! -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]]; then
     pass
 else
     fail "Report should not be created when disabled"
@@ -343,26 +347,26 @@ printf 'DATABASE_URL=x\n' > "$PROJECT_DIR/.env"
 export PREFLIGHT_AUTO_FIX=false
 run_preflight_checks
 
-if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]]; then
+if [[ -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]]; then
     pass
 else
     fail "PREFLIGHT_REPORT.md should be created"
 fi
 
 # Check report structure
-if grep -q "^# Pre-flight Report" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+if grep -q "^# Pre-flight Report" "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md"; then
     pass
 else
     fail "Report should have title header"
 fi
 
-if grep -q "## Summary" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+if grep -q "## Summary" "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md"; then
     pass
 else
     fail "Report should have Summary section"
 fi
 
-if grep -q "## Checks" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+if grep -q "## Checks" "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md"; then
     pass
 else
     fail "Report should have Checks section"
@@ -421,7 +425,7 @@ else
     fail "Empty project should return 0 (got $rc)"
 fi
 
-if [[ ! -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]]; then
+if [[ ! -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]]; then
     pass
 else
     fail "No report should be created when no checks apply"
@@ -619,7 +623,7 @@ else
 fi
 
 # Report should exist
-if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]]; then
+if [[ -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]]; then
     pass
 else
     fail "Report should be created for mixed project"
@@ -951,28 +955,28 @@ echo '{}' > "$PROJECT_DIR/package.json"
 
 run_preflight_checks || true
 
-if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]]; then
+if [[ -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]]; then
     pass
 else
     fail "PREFLIGHT_REPORT.md should be created"
 fi
 
 # Check for services section
-if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]] && grep -q "## Services" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+if [[ -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]] && grep -q "## Services" "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md"; then
     pass
 else
     fail "Report should have Services section"
 fi
 
 # Check for table header
-if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]] && grep -q "| Service | Port | Status | Source |" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+if [[ -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]] && grep -q "| Service | Port | Status | Source |" "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md"; then
     pass
 else
     fail "Report should have services status table"
 fi
 
 # Check PostgreSQL appears in table
-if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]] && grep -q "PostgreSQL" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+if [[ -f "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md" ]] && grep -q "PostgreSQL" "$PROJECT_DIR/.tekhton/PREFLIGHT_REPORT.md"; then
     pass
 else
     fail "Report should list PostgreSQL in services table"

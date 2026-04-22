@@ -58,7 +58,7 @@ pass "Fix #5: dead _detect_recurring_failures call removed"
 
 # === Fix #6: post-archive context comment ===
 # Check that _hook_failure_context has a comment about post-archive execution
-hook_comment=$(grep -A5 "_hook_failure_context" "${TEKHTON_HOME}/lib/finalize.sh" | grep -i "archive\|causal" || echo "")
+hook_comment=$(grep -A5 "_hook_failure_context" "${TEKHTON_HOME}/lib/finalize.sh" "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh" 2>/dev/null | grep -i "archive\|causal" || echo "")
 [[ -n "$hook_comment" ]] || fail "No comment about post-archive context in _hook_failure_context"
 pass "Fix #6: post-archive context comment added"
 
@@ -104,7 +104,7 @@ pass "Fix #12: shared _run_dimension_checks helper implemented"
 
 # === Fix #13: stale dashboard health data ===
 # Check that emit_dashboard_health is called in _hook_health_reassess or reordered
-reassess_hook=$(grep -A20 "_hook_health_reassess" "${TEKHTON_HOME}/lib/finalize.sh" | grep -c "emit_dashboard_health" || echo "0")
+reassess_hook=$(grep -A20 "_hook_health_reassess" "${TEKHTON_HOME}/lib/finalize.sh" "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh" 2>/dev/null | grep -c "emit_dashboard_health" || echo "0")
 [[ "$reassess_hook" -gt 0 ]] || fail "emit_dashboard_health not called in _hook_health_reassess"
 pass "Fix #13: dashboard health data emission added to reassessment hook"
 
@@ -122,7 +122,7 @@ pass "Fix #15: trendArrow ordering assumption documented/validated"
 
 # === Fix #16: fragile JSON construction ===
 # Check that emit_dashboard_run_state uses explicit conditional instead of string replacement
-json_fix=$(grep -A10 "emit_dashboard_run_state" "${TEKHTON_HOME}/lib/finalize.sh" | grep -c 'waiting_for.*null\|waiting_for.*:' || echo "0")
+json_fix=$(grep -A10 "emit_dashboard_run_state" "${TEKHTON_HOME}/lib/finalize.sh" "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh" 2>/dev/null | grep -c 'waiting_for.*null\|waiting_for.*:' || echo "0")
 [[ "$json_fix" -gt 0 ]] || fail "JSON construction still uses string replacement hack"
 pass "Fix #16: JSON construction uses explicit conditional"
 
@@ -134,7 +134,7 @@ pass "Fix #17: lib/causality.sh extracted to query module"
 
 # === Fix #18: causal log archive timing ===
 # Check for comment in _hook_failure_context about archive timing
-archive_comment=$(grep -B5 -A10 "_hook_failure_context" "${TEKHTON_HOME}/lib/finalize.sh" | grep -i "archive" || echo "")
+archive_comment=$(grep -B5 -A10 "_hook_failure_context" "${TEKHTON_HOME}/lib/finalize.sh" "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh" 2>/dev/null | grep -i "archive" || echo "")
 [[ -n "$archive_comment" ]] || fail "No comment about causal log archive timing"
 pass "Fix #18: causal log archive timing comment added"
 

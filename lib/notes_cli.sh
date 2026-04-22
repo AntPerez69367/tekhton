@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# notes_cli.sh — CLI note management commands for HUMAN_NOTES.md
+# notes_cli.sh — CLI note management commands for ${HUMAN_NOTES_FILE}
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: common.sh sourced first (log, success, warn, error, color codes)
 # Expects: notes_core.sh sourced first (tag registry, ID functions)
-# Operates on HUMAN_NOTES.md in the current directory (PROJECT_DIR).
+# Operates on ${HUMAN_NOTES_FILE} in the current directory (PROJECT_DIR).
 #
 # M40: Tag validation and section mapping now use the registry from notes_core.sh.
 # add_human_note auto-assigns note IDs and accepts optional metadata params.
@@ -16,16 +16,12 @@ set -euo pipefail
 #   list_human_notes_cli — display unchecked notes, color-coded by tag
 # =============================================================================
 
-# --- Constants ---------------------------------------------------------------
-
-_NOTES_FILE="HUMAN_NOTES.md"
-
 # --- Helpers -----------------------------------------------------------------
 
-# _ensure_notes_file — Creates HUMAN_NOTES.md with standard header if missing.
+# _ensure_notes_file — Creates ${HUMAN_NOTES_FILE} with standard header if missing.
 # M40: Uses tag registry to generate section headings.
 _ensure_notes_file() {
-    if [[ -f "$_NOTES_FILE" ]]; then
+    if [[ -f "${HUMAN_NOTES_FILE}" ]]; then
         return 0
     fi
 
@@ -50,10 +46,10 @@ _ensure_notes_file() {
             printf '<!-- - [ ] [%s] Example: describe a %s -->\n' "$tag" "$(echo "$tag" | tr '[:upper:]' '[:lower:]')"
             printf '\n'
         done
-    } > "$_NOTES_FILE"
+    } > "${HUMAN_NOTES_FILE}"
 }
 
-# _tag_to_section — Maps a tag to its HUMAN_NOTES.md section heading.
+# _tag_to_section — Maps a tag to its ${HUMAN_NOTES_FILE} section heading.
 # M40: Delegates to the registry.
 _tag_to_section() {
     _section_for_tag_registry "$1"
@@ -68,7 +64,7 @@ _validate_tag() {
 # --- Public Functions --------------------------------------------------------
 
 # add_human_note TEXT [TAG] [PRIORITY] [SOURCE] [DESCRIPTION] [INBOX_FILE]
-# Appends a properly formatted entry with auto-assigned ID to HUMAN_NOTES.md.
+# Appends a properly formatted entry with auto-assigned ID to ${HUMAN_NOTES_FILE}.
 # TAG defaults to FEAT if omitted. Creates the file if it doesn't exist.
 add_human_note() {
     local text="$1"
@@ -108,7 +104,7 @@ add_human_note() {
                 return 0
             fi
         fi
-    done < "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}"
 
     local nid
     nid=$(_next_note_id)
@@ -140,7 +136,7 @@ add_human_note() {
         if [[ "$inserted" = false ]] && [[ "$line" = "$section_heading" ]]; then
             found_section=true
         fi
-    done < "$_NOTES_FILE" > "$tmpfile"
+    done < "${HUMAN_NOTES_FILE}" > "$tmpfile"
 
     # If section was found but no next section (end of file), append
     if [[ "$found_section" = true ]] && [[ "$inserted" = false ]]; then
@@ -150,7 +146,7 @@ add_human_note() {
         fi
     fi
 
-    mv "$tmpfile" "$_NOTES_FILE"
+    mv "$tmpfile" "${HUMAN_NOTES_FILE}"
     success "Added [${tag}] note (${nid}): ${text}"
 }
 
@@ -160,8 +156,8 @@ add_human_note() {
 list_human_notes_cli() {
     local filter="${1:-}"
 
-    if [[ ! -f "$_NOTES_FILE" ]]; then
-        log "No HUMAN_NOTES.md found. Create notes with: tekhton note \"description\""
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
+        log "No ${HUMAN_NOTES_FILE} found. Create notes with: tekhton note \"description\""
         return 0
     fi
 
@@ -203,7 +199,7 @@ list_human_notes_cli() {
         else
             printf '  %s\n' "$line"
         fi
-    done < "$_NOTES_FILE"
+    done < "${HUMAN_NOTES_FILE}"
 
     if [[ "$total" -eq 0 ]]; then
         if [[ -n "$filter" ]]; then

@@ -127,6 +127,7 @@ fi
 _STAGE_TURNS=([coder]=5)
 _STAGE_DURATION=([coder]=60)
 _STAGE_BUDGET=([coder]=10)
+# tester was not set — should not appear
 json=$(_emit_and_read "m01" 0)
 
 # tester was not set — should not appear

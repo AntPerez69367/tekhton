@@ -10,7 +10,7 @@ set -euo pipefail
 # Expects: PROJECT_DIR, Color codes (RED, GREEN, YELLOW, CYAN, BOLD, NC) (set by caller)
 #
 # Provides:
-#   generate_diagnosis_report     — write DIAGNOSIS.md
+#   generate_diagnosis_report     — write ${DIAGNOSIS_FILE}
 #   _list_relevant_files          — list files relevant to diagnosis
 #   print_diagnosis_summary       — terminal output with box formatting
 #   write_last_failure_context    — write LAST_FAILURE_CONTEXT.json
@@ -21,9 +21,9 @@ set -euo pipefail
 # --- Report generator --------------------------------------------------------
 
 # generate_diagnosis_report
-# Produces DIAGNOSIS.md with causal chain, classification, suggestions.
+# Produces ${DIAGNOSIS_FILE} with causal chain, classification, suggestions.
 generate_diagnosis_report() {
-    local report_file="${PROJECT_DIR:-.}/DIAGNOSIS.md"
+    local report_file="${PROJECT_DIR:-.}/${DIAGNOSIS_FILE}"
     local tmpfile="${report_file}.tmp.$$"
 
     {
@@ -75,6 +75,20 @@ generate_diagnosis_report() {
         done
         echo ""
 
+        # Recommended recovery command (M82)
+        if command -v _diagnose_recovery_command &>/dev/null; then
+            local recovery_cmd
+            recovery_cmd=$(_diagnose_recovery_command 2>/dev/null || echo "")
+            if [[ -n "$recovery_cmd" ]]; then
+                echo "## Recommended Recovery"
+                echo ""
+                echo '```'
+                echo "$recovery_cmd"
+                echo '```'
+                echo ""
+            fi
+        fi
+
         # Recurring failure note
         if [[ -n "$_DIAG_RECURRING_NOTE" ]]; then
             echo "## Recurring Pattern"
@@ -106,13 +120,13 @@ generate_diagnosis_report() {
 # Lists files relevant to the diagnosis.
 _list_relevant_files() {
     local files=(
-        "BUILD_ERRORS.md"
-        "REVIEWER_REPORT.md"
-        "CODER_SUMMARY.md"
-        "TESTER_REPORT.md"
-        "SECURITY_REPORT.md"
-        "CLARIFICATIONS.md"
-        "HUMAN_ACTION_REQUIRED.md"
+        "${BUILD_ERRORS_FILE}"
+        "${REVIEWER_REPORT_FILE}"
+        "${CODER_SUMMARY_FILE}"
+        "${TESTER_REPORT_FILE}"
+        "${SECURITY_REPORT_FILE}"
+        "${CLARIFICATIONS_FILE}"
+        "${HUMAN_ACTION_FILE}"
         ".claude/PIPELINE_STATE.md"
         ".claude/logs/RUN_SUMMARY.json"
         ".claude/logs/CAUSAL_LOG.jsonl"
@@ -129,43 +143,33 @@ _list_relevant_files() {
 # --- Terminal summary --------------------------------------------------------
 
 # print_diagnosis_summary
-# Prints a colored terminal-friendly summary.
+# Prints a terminal-friendly summary. Routes through the output bus so
+# TUI-mode callers get structured events instead of raw ANSI output.
 print_diagnosis_summary() {
-    local class_color="$RED"
-    case "$DIAG_CLASSIFICATION" in
-        SUCCESS)        class_color="$GREEN" ;;
-        QUOTA_EXHAUSTED) class_color="$YELLOW" ;;
-        TRANSIENT_ERROR) class_color="$YELLOW" ;;
-        UNKNOWN)        class_color="$YELLOW" ;;
-    esac
-
-    echo ""
-    echo -e "${BOLD}╔══════════════════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}║${NC}  ${class_color}DIAGNOSIS: ${DIAG_CLASSIFICATION}${NC}"
-    echo -e "${BOLD}╠══════════════════════════════════════════════════╣${NC}"
+    out_banner "DIAGNOSIS: ${DIAG_CLASSIFICATION}"
 
     # First suggestion as description
     if [[ ${#DIAG_SUGGESTIONS[@]} -gt 0 ]]; then
-        echo -e "${BOLD}║${NC}  ${DIAG_SUGGESTIONS[0]}"
+        out_msg "  ${DIAG_SUGGESTIONS[0]}"
     fi
 
     # Cause chain (short)
     if [[ -n "$_DIAG_CAUSE_CHAIN_SHORT" ]]; then
-        echo -e "${BOLD}║${NC}"
-        echo -e "${BOLD}║${NC}  ${CYAN}Cause chain:${NC}"
-        echo -e "${BOLD}║${NC}  ${_DIAG_CAUSE_CHAIN_SHORT}"
+        out_msg ""
+        out_msg "  Cause chain:"
+        out_msg "    ${_DIAG_CAUSE_CHAIN_SHORT}"
     fi
 
     # Suggestions
     if [[ ${#DIAG_SUGGESTIONS[@]} -gt 1 ]]; then
-        echo -e "${BOLD}║${NC}"
-        echo -e "${BOLD}║${NC}  ${BOLD}Suggestions:${NC}"
+        out_msg ""
+        out_msg "  Suggestions:"
         local idx=1
         for suggestion in "${DIAG_SUGGESTIONS[@]:1}"; do
             if [[ "$suggestion" =~ ^[[:space:]] ]]; then
-                echo -e "${BOLD}║${NC}  ${suggestion}"
+                out_msg "    ${suggestion}"
             else
-                echo -e "${BOLD}║${NC}  ${idx}. ${suggestion}"
+                out_msg "    ${idx}. ${suggestion}"
                 idx=$(( idx + 1 ))
             fi
         done
@@ -173,14 +177,24 @@ print_diagnosis_summary() {
 
     # Recurring note
     if [[ -n "$_DIAG_RECURRING_NOTE" ]]; then
-        echo -e "${BOLD}║${NC}"
-        echo -e "${BOLD}║${NC}  ${YELLOW}${_DIAG_RECURRING_NOTE}${NC}"
+        out_msg ""
+        out_kv "Recurring" "${_DIAG_RECURRING_NOTE}" warn
     fi
 
-    echo -e "${BOLD}║${NC}"
-    echo -e "${BOLD}║${NC}  Full report: DIAGNOSIS.md"
-    echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
-    echo ""
+    # Recommended recovery (M82)
+    if command -v _diagnose_recovery_command &>/dev/null; then
+        local recovery_cmd
+        recovery_cmd=$(_diagnose_recovery_command 2>/dev/null || echo "")
+        if [[ -n "$recovery_cmd" ]]; then
+            out_msg ""
+            out_msg "  Recommended recovery:"
+            out_msg "    ${recovery_cmd}"
+        fi
+    fi
+
+    out_msg ""
+    out_msg "  Full report: ${DIAGNOSIS_FILE}"
+    out_msg ""
 }
 
 # --- Failure context persistence ----------------------------------------------
@@ -240,15 +254,15 @@ write_last_failure_context() {
 print_crash_first_aid() {
     # Quota pause
     if [[ -f "${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED" ]]; then
-        echo -e "\033[1;33m[!] Looks like a quota issue — the pipeline is paused and will resume\033[0m" >&2
-        echo -e "\033[1;33m[!] when quota refreshes. Or run 'tekhton' to resume manually.\033[0m" >&2
+        warn "Looks like a quota issue — the pipeline is paused and will resume"
+        warn "when quota refreshes. Or run 'tekhton' to resume manually."
         return 0
     fi
 
     # Build failure
-    if [[ -f "${PROJECT_DIR:-.}/BUILD_ERRORS.md" ]] && [[ -s "${PROJECT_DIR:-.}/BUILD_ERRORS.md" ]]; then
-        echo -e "\033[1;33m[!] Build failure detected — run 'tekhton --diagnose' for detailed\033[0m" >&2
-        echo -e "\033[1;33m[!] analysis, or fix BUILD_ERRORS.md manually.\033[0m" >&2
+    if [[ -f "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]] && [[ -s "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]]; then
+        warn "Build failure detected — run 'tekhton --diagnose' for detailed"
+        warn "analysis, or fix ${BUILD_ERRORS_FILE} manually."
         return 0
     fi
 
@@ -257,8 +271,8 @@ print_crash_first_aid() {
     if [[ -f "$state_file" ]]; then
         local stage
         stage=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
-        echo -e "\033[1;33m[!] Crash during ${stage:-unknown} stage — your code is safe (checkpoint saved).\033[0m" >&2
-        echo -e "\033[1;33m[!] Run 'tekhton' to resume from where it left off.\033[0m" >&2
+        warn "Crash during ${stage:-unknown} stage — your code is safe (checkpoint saved)."
+        warn "Run 'tekhton' to resume from where it left off."
         return 0
     fi
 
@@ -267,7 +281,7 @@ print_crash_first_aid() {
     latest_log=$(find "${PROJECT_DIR:-.}/.claude/logs" -maxdepth 1 -name '*.log' -type f 2>/dev/null | head -1 || true)
     if [[ -n "$latest_log" ]]; then
         if tail -20 "$latest_log" 2>/dev/null | grep -qiE 'rate.limit|overloaded|server_error|timeout' 2>/dev/null; then
-            echo -e "\033[1;33m[!] Transient API error detected. Re-run 'tekhton' to retry.\033[0m" >&2
+            warn "Transient API error detected. Re-run 'tekhton' to retry."
             return 0
         fi
     fi
@@ -276,7 +290,7 @@ print_crash_first_aid() {
 # --- Dashboard integration ----------------------------------------------------
 
 # emit_dashboard_diagnosis
-# Reads DIAGNOSIS.md and generates data/diagnosis.js for Watchtower.
+# Reads ${DIAGNOSIS_FILE} and generates data/diagnosis.js for Watchtower.
 emit_dashboard_diagnosis() {
     if ! command -v is_dashboard_enabled &>/dev/null || ! is_dashboard_enabled; then
         return 0

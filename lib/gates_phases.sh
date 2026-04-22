@@ -11,13 +11,13 @@ set -euo pipefail
 # =============================================================================
 
 # --- _gate_write_analyze_errors -----------------------------------------------
-# Writes analyze errors to BUILD_ERRORS.md and BUILD_RAW_ERRORS.txt.
+# Writes analyze errors to "${BUILD_ERRORS_FILE}" and "${BUILD_RAW_ERRORS_FILE}".
 _gate_write_analyze_errors() {
     local analyze_errors="$1"
     local analyze_output="$2"
     local stage_label="$3"
 
-    printf '%s\n' "$analyze_errors" > BUILD_RAW_ERRORS.txt
+    printf '%s\n' "$analyze_errors" > "${BUILD_RAW_ERRORS_FILE}"
 
     {
         if command -v annotate_build_errors &>/dev/null; then
@@ -37,8 +37,8 @@ _gate_write_analyze_errors() {
         echo '```'
         echo "${analyze_output}"
         echo '```'
-    } > BUILD_ERRORS.md
-    log "Build errors written to BUILD_ERRORS.md"
+    } > "${BUILD_ERRORS_FILE}"
+    log "Build errors written to ${BUILD_ERRORS_FILE}"
 }
 
 # --- _gate_run_analyze --------------------------------------------------------
@@ -48,7 +48,7 @@ _gate_run_analyze() {
     local effective_timeout="$1"
 
     local analyze_exit=0
-    ANALYZE_OUTPUT=$(timeout "$effective_timeout" bash -c "${ANALYZE_CMD}" 2>&1) || analyze_exit=$?
+    ANALYZE_OUTPUT=$(run_op "Running static analysis" timeout "$effective_timeout" bash -c "${ANALYZE_CMD}" 2>&1) || analyze_exit=$?
 
     if [[ "$analyze_exit" -eq 124 ]]; then
         warn "ANALYZE_CMD timed out after ${effective_timeout}s. Treating as pass."
@@ -108,20 +108,20 @@ _gate_phase_analyze() {
 }
 
 # --- _gate_write_compile_errors -----------------------------------------------
-# Writes compile errors to BUILD_ERRORS.md.
+# Writes compile errors to "${BUILD_ERRORS_FILE}".
 _gate_write_compile_errors() {
     local compile_errors="$1"
     local stage_label="$2"
 
-    printf '%s\n' "$compile_errors" >> BUILD_RAW_ERRORS.txt
+    printf '%s\n' "$compile_errors" >> "${BUILD_RAW_ERRORS_FILE}"
 
-    if [[ ! -f BUILD_ERRORS.md ]]; then
+    if [[ ! -f "${BUILD_ERRORS_FILE}" ]]; then
         {
             echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
             echo "## Stage"
             echo "${stage_label}"
             echo ""
-        } >> BUILD_ERRORS.md
+        } >> "${BUILD_ERRORS_FILE}"
     fi
     {
         if command -v classify_build_errors_all &>/dev/null; then
@@ -137,7 +137,7 @@ _gate_write_compile_errors() {
         echo '```'
         echo "${compile_errors}"
         echo '```'
-    } >> BUILD_ERRORS.md
+    } >> "${BUILD_ERRORS_FILE}"
 }
 
 # --- _gate_run_compile --------------------------------------------------------
@@ -147,7 +147,7 @@ _gate_run_compile() {
     local effective_timeout="$1"
 
     local compile_exit=0
-    COMPILE_OUTPUT=$(timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
+    COMPILE_OUTPUT=$(run_op "Running build check" timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
 
     if [[ "$compile_exit" -eq 124 ]]; then
         warn "BUILD_CHECK_CMD timed out after ${effective_timeout}s. Treating as pass."

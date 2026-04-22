@@ -30,7 +30,7 @@ Task to be implemented: {{TASK}}
 
 ## Required Reading (in order)
 1. `{{TESTER_ROLE_FILE}}` — your role and conventions
-2. `SCOUT_REPORT.md` — the scout has identified relevant files and structure
+2. `{{SCOUT_REPORT_FILE}}` — the scout has identified relevant files and structure
 3. The acceptance criteria in the milestone or task description above
 
 ## Critical TDD Guidance
@@ -61,7 +61,7 @@ Task to be implemented: {{TASK}}
 - Do NOT fix or modify existing implementation code.
 
 ## Required Output Format
-Write `TESTER_PREFLIGHT.md` with this EXACT structure:
+Write `{{TDD_PREFLIGHT_FILE}}` with this EXACT structure:
 
 ```
 ## TDD Pre-Flight Tests
@@ -81,13 +81,13 @@ Any guidance for the coder about the test structure or conventions used.
 ```
 
 ## Execution Order (mandatory)
-**Step 1:** Read SCOUT_REPORT.md to understand the codebase structure.
+**Step 1:** Read {{SCOUT_REPORT_FILE}} to understand the codebase structure.
 **Step 2:** Read the acceptance criteria from the task/milestone description.
 **Step 3:** Identify existing test patterns in the project (framework, directory, naming).
 **Step 4:** Write test files that encode expected behavior from acceptance criteria.
 **Step 5:** Run `{{TEST_CMD}}` to confirm tests are loadable (they should fail, not error).
   - If tests fail to LOAD (syntax errors, missing imports for existing modules),
     fix the test setup. The tests should fail on assertions, not on loading.
-  - If a test unexpectedly PASSES, note it in TESTER_PREFLIGHT.md — it means
+  - If a test unexpectedly PASSES, note it in {{TDD_PREFLIGHT_FILE}} — it means
     the behavior already exists and does not need implementation.
-**Step 6:** Write TESTER_PREFLIGHT.md with the format above.
+**Step 6:** Write {{TDD_PREFLIGHT_FILE}} with the format above.

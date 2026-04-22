@@ -25,7 +25,15 @@
       "WebSearch",
       "Bash(ls /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/m2*.md)",
       "Bash(ls /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/*.md)",
-      "Bash(find /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/ -name *.md)"
+      "Bash(find /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/ -name *.md)",
+      "Bash(grep -E \"\\(TEST_CMD|ANALYZE_CMD|BUILD_CMD|bash.*\\\\$|shellcheck|sleep\\)\")",
+      "Read(//mnt/c/Users/Geoff/.claude/workspaces/tekhton/**)",
+      "Read(//c/Users/Geoff/workspace/geoffgodwin/tekhton/**)",
+      "Bash(grep -rn 'bash -c.*TEST_CMD\\\\|bash -c.*ANALYZE_CMD\\\\|bash -c.*BUILD_CHECK_CMD' \"$\\(pwd\\)/lib/\" --include=\"*.sh\")",
+      "Bash(grep -n \"source.*lib/.*\\\\.sh\\\\|source.*lib/tui\" \"$\\(pwd\\)/tekhton.sh\")",
+      "Bash(grep -n \"source.*lib/common.sh\\\\|source.*lib/tui.sh\" \"$\\(pwd\\)/tekhton.sh\")",
+      "Bash(grep -n \"_TUI_OPERATION_LABEL\" \"$\\(pwd\\)/lib/tui.sh\")",
+      "Bash(grep -n \"^declare\\\\|^export\\\\|^_TUI_\" \"$\\(pwd\\)/lib/tui.sh\")"
     ]
   }
 }

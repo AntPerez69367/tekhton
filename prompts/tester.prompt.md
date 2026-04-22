@@ -52,20 +52,20 @@ Task implemented: {{TASK}}
 
 ## Required Reading (in order, no more)
 1. `{{TESTER_ROLE_FILE}}` — your role and conventions
-2. `REVIEWER_REPORT.md` — the 'Coverage Gaps' section is your task list
-3. `CODER_SUMMARY.md` — read the 'Files created or modified' list
+2. `{{REVIEWER_REPORT_FILE}}` — the 'Coverage Gaps' section is your task list
+3. `{{CODER_SUMMARY_FILE}}` — read the 'Files created or modified' list
 
 ## CRITICAL: Test Integrity Rules
 - Write tests that verify REAL behavior, not hard-coded expected values.
 - Every assertion must test output from an actual function/method call.
 - Do NOT mock everything — mock only external dependencies (network, DB, filesystem).
 - If existing tests fail due to intentional API/behavior changes that the Coder
-  already implemented correctly (per CODER_SUMMARY.md), update the tests to match
+  already implemented correctly (per {{CODER_SUMMARY_FILE}}), update the tests to match
   the new behavior. If they fail because the implementation is wrong, report as
   BUG. Never weaken assertions or delete test coverage — update expectations to
   match correct new behavior.
 - If a test is impossible to pass because the feature was INTENTIONALLY
-  removed (per CODER_SUMMARY.md), mark it for removal: `- ORPHAN: [file] reason`
+  removed (per {{CODER_SUMMARY_FILE}}), mark it for removal: `- ORPHAN: [file] reason`
 - Your tests WILL be independently audited. Write them as if a skeptical
   senior engineer will review every assertion.
 - NEVER read live repo artifact files (build reports, logs, pipeline state,
@@ -73,15 +73,39 @@ Task implemented: {{TASK}}
   directory that your test owns. Tests must be deterministic — depending on
   mutable project files makes them flaky and order-dependent.
 - Tests that validate specific run outcomes (e.g., "the last pipeline run
-  produced X") belong in the commit message or CODER_SUMMARY.md, not the
+  produced X") belong in the commit message or {{CODER_SUMMARY_FILE}}, not the
   test suite. Tests must verify code behavior, not pipeline state.
+
+## CRITICAL: Primary Behavior Coverage
+
+Before planning any tests, answer this question: **what is the primary
+observable behavior this task was meant to deliver — what does a user see, or
+what system state changes, when the feature works correctly?** That outcome
+must have at least one test.
+
+**Enable/disable pattern:** If a feature has an enabled/disabled config flag
+or a fallback-when-absent path, tests for the disabled or fallback branches
+alone are **insufficient**. You MUST include at least one test that exercises
+the enabled/active/happy path — the path where the feature actually does its
+job.
+
+**Red flag — incomplete plan:** If every entry in your Planned Tests list only
+covers "feature is off", "dependency is missing", or "error/fallback" code
+paths, your plan is incomplete. Stop and add a happy-path test before
+proceeding.
+
+**Acceptance criteria mapping:** Work through each criterion stated in the task
+or milestone spec. Each criterion must map to at least one test. If a criterion
+cannot be automated (e.g., requires visual or interactive verification), add it
+as an explicit manual verification item in `## Planned Tests` — do NOT silently
+omit it.
 
 ## Critical: Read Before You Write
 Before writing any test that instantiates a model or calls a method, read the
 actual source file for that class. Do not assume constructor signatures.
 
 ## Required Output Format
-Your TESTER_REPORT.md MUST use this EXACT structure. The pipeline machine-parses
+Your {{TESTER_REPORT_FILE}} MUST use this EXACT structure. The pipeline machine-parses
 these headings and checkbox formats — deviation causes false positives and broken
 resume. Copy this skeleton verbatim as your FIRST file write:
 
@@ -113,14 +137,14 @@ Format rules the pipeline enforces:
 - **Files Modified:** check off as you complete each test file.
 
 ## Execution Order (mandatory)
-**Step 1:** Write `TESTER_REPORT.md` skeleton using the exact format above. FIRST file write.
+**Step 1:** Write `{{TESTER_REPORT_FILE}}` skeleton using the exact format above. FIRST file write.
 **Step 2:** For each unchecked item:
   a. Read source file(s) for every class the test will instantiate
   b. Write the test using only confirmed constructors and methods
   c. Run `{{TEST_CMD}} path/to/that_test.ext` immediately
   d. Fix any failures or compilation errors before continuing
-  e. Mark it `- [x]` in TESTER_REPORT.md
-  f. Update 'Test Run Results' in TESTER_REPORT.md with current counts after EACH test file
+  e. Mark it `- [x]` in {{TESTER_REPORT_FILE}}
+  f. Update 'Test Run Results' in {{TESTER_REPORT_FILE}} with current counts after EACH test file
   g. If a test reveals an implementation bug, add it to `## Bugs Found` (single-line format)
 **Step 3:** After all items done, run full `{{TEST_CMD}}` suite
 **Step 4:** Write final 'Test Run Results' with total pass/fail counts
@@ -143,7 +167,7 @@ always recorded even if the turn limit is hit.
 
 ## Timing Tracking
 When you run `{{TEST_CMD}}`, note the approximate wall-clock duration of each
-invocation. At the very end of your TESTER_REPORT.md (after all other sections),
+invocation. At the very end of your {{TESTER_REPORT_FILE}} (after all other sections),
 include this section:
 
 ```

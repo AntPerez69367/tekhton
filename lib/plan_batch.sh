@@ -38,8 +38,12 @@ _call_planning_batch() {
     # Start an in-place spinner on /dev/tty (visible even inside $() capture).
     # Animates a single line with elapsed time so the user knows it's working
     # without flooding the terminal with output over 20+ minute runs.
+    # Suppressed when the TUI sidecar is active — the sidecar owns /dev/tty
+    # and direct writes bleed through its alternate-screen buffer.
     local spinner_pid=""
-    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
+    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] \
+        && [[ "${_TUI_ACTIVE:-false}" != "true" ]] \
+        && [[ -e /dev/tty ]]; then
         (
             local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
             local start_ts

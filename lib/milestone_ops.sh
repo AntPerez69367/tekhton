@@ -101,14 +101,22 @@ tag_milestone_complete() {
 
 # should_auto_advance
 # Returns 0 if auto-advance conditions are met, 1 otherwise.
-# Checks: AUTO_ADVANCE_ENABLED, session limit, disposition.
+# Checks: AUTO_ADVANCE_ENABLED, session limit (in-memory), disposition.
+#
+# Uses _AA_SESSION_ADVANCES (in-memory, set by tekhton.sh and incremented in
+# _run_auto_advance_chain) for the session limit because finalize_run deletes
+# MILESTONE_STATE_FILE before _run_auto_advance_chain runs.
+#
+# The COMPLETE_AND_CONTINUE disposition check is only performed when the state
+# file still exists. The pre-finalize call site (run_complete_loop) reads the
+# disposition; the post-finalize call site (_run_auto_advance_chain) skips it
+# because the caller already owns the advance decision.
 should_auto_advance() {
     if [[ "${AUTO_ADVANCE_ENABLED:-false}" != "true" ]]; then
         return 1
     fi
 
-    local completed
-    completed=$(get_milestones_completed_this_session)
+    local completed="${_AA_SESSION_ADVANCES:-0}"
     local limit="${AUTO_ADVANCE_LIMIT:-3}"
 
     if [[ "$completed" -ge "$limit" ]]; then
@@ -116,10 +124,12 @@ should_auto_advance() {
         return 1
     fi
 
-    local disposition
-    disposition=$(get_milestone_disposition)
-    if [[ "$disposition" != "COMPLETE_AND_CONTINUE" ]]; then
-        return 1
+    if [[ -f "${MILESTONE_STATE_FILE:-}" ]]; then
+        local disposition
+        disposition=$(get_milestone_disposition)
+        if [[ "$disposition" != "COMPLETE_AND_CONTINUE" ]]; then
+            return 1
+        fi
     fi
 
     return 0
@@ -186,6 +196,8 @@ prompt_auto_advance_confirm() {
     else
         read -r choice < /dev/tty 2>/dev/null || choice="n"
     fi
+    # Strip trailing \r that may linger after TUI alternate screen restore
+    choice="${choice%%$'\r'*}"
 
     [[ "$choice" =~ ^[Yy]$ ]]
 }
@@ -232,7 +244,7 @@ mark_milestone_done() {
         if command -v emit_event &>/dev/null; then
             emit_event "milestone_advance" "pipeline" "Milestone ${milestone_num} done" \
                 "${_LAST_STAGE_EVT:-}" "" \
-                "{\"milestone\":\"$(_json_escape "$milestone_num")\"}" 2>/dev/null || true
+                "{\"milestone\":\"$(_json_escape "$milestone_num")\"}" >/dev/null 2>&1 || true
         fi
         if command -v emit_dashboard_milestones &>/dev/null; then
             emit_dashboard_milestones 2>/dev/null || true

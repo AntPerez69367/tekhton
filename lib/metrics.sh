@@ -94,7 +94,7 @@ record_run_metrics() {
     local security_duration_s=0 cleanup_duration_s=0
     if declare -p _STAGE_DURATION &>/dev/null; then
         coder_duration_s="${_STAGE_DURATION[coder]:-0}"
-        reviewer_duration_s="${_STAGE_DURATION[reviewer]:-0}"
+        reviewer_duration_s="${_STAGE_DURATION[review]:-0}"
         tester_duration_s="${_STAGE_DURATION[tester]:-0}"
         scout_duration_s="${_STAGE_DURATION[scout]:-0}"
         security_duration_s="${_STAGE_DURATION[security]:-0}"
@@ -255,8 +255,8 @@ record_run_metrics() {
             intake_tweaks_applied="true"
         fi
         local intake_questions=0
-        if [[ "${INTAKE_VERDICT}" == "NEEDS_CLARITY" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
-            intake_questions=$(awk '/^## Questions/{found=1; next} found && /^## /{exit} found && /^- /{count++} END{print count+0}' "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" 2>/dev/null || echo "0")
+        if [[ "${INTAKE_VERDICT}" == "NEEDS_CLARITY" ]] && [[ -f "${INTAKE_REPORT_FILE:-}" ]]; then
+            intake_questions=$(awk '/^## Questions/{found=1; next} found && /^## /{exit} found && /^- /{count++} END{print count+0}' "${INTAKE_REPORT_FILE:-}" 2>/dev/null || echo "0")
             intake_questions=$(echo "$intake_questions" | grep -oE '[0-9]+' | tail -1)
             intake_questions="${intake_questions:-0}"
         fi

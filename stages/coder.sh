@@ -6,6 +6,10 @@
 # Expects all pipeline globals to be set (TASK, LOG_FILE, TIMESTAMP, etc.)
 # =============================================================================
 
+# Source pre-coder clean sweep (M92)
+# shellcheck source=stages/coder_prerun.sh
+source "${TEKHTON_HOME}/stages/coder_prerun.sh"
+
 # _switch_to_sub_milestone — After a milestone split, update state to target
 # the first sub-milestone (N.1). Sets _CURRENT_MILESTONE, TASK, and milestone
 # state. Must be called in the same scope (not a subshell) so variable
@@ -30,7 +34,7 @@ _switch_to_sub_milestone() {
     init_milestone_state "$_first_sub" "$(get_milestone_count "$_claude_md")"
 }
 
-# _reconstruct_coder_summary — Synthesize a minimal CODER_SUMMARY.md from git state.
+# _reconstruct_coder_summary — Synthesize a minimal ${CODER_SUMMARY_FILE} from git state.
 # Called when the coder agent did substantive work but failed to produce or
 # maintain the summary file. This allows the pipeline to proceed to review
 # instead of crashing. The reviewer will assess actual file changes.
@@ -54,11 +58,11 @@ _reconstruct_coder_summary() {
         | grep -v "^$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")/" \
         | head -30 || true)
 
-    cat > CODER_SUMMARY.md <<RECON_EOF
+    cat > "${CODER_SUMMARY_FILE}" <<RECON_EOF
 ## Status: ${_status}
 
 ## Summary
-CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
+${CODER_SUMMARY_FILE} was reconstructed by the pipeline after the coder agent
 failed to produce or maintain it. The following files were modified based
 on git state. The reviewer should assess actual changes directly.
 
@@ -77,7 +81,7 @@ ${_diff_stat}
 Unable to determine — coder did not report remaining items.
 Review the task description against actual changes to identify gaps.
 RECON_EOF
-    warn "Reconstructed CODER_SUMMARY.md (status=${_status}, $(wc -l < CODER_SUMMARY.md) lines) from git state."
+    warn "Reconstructed ${CODER_SUMMARY_FILE} (status=${_status}, $(wc -l < "${CODER_SUMMARY_FILE}") lines) from git state."
 }
 
 # run_stage_coder — Runs the full coder stage including:
@@ -89,15 +93,23 @@ RECON_EOF
 #   6. Build gate with one retry
 #
 # Exits the pipeline (exit 1) on unrecoverable failure, saving state for resume.
-# On success, CODER_SUMMARY.md exists and the build passes.
+# On success, ${CODER_SUMMARY_FILE} exists and the build passes.
 run_stage_coder() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-1}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Coder"
+    stage_header "${_stage_pos}" "${_stage_count}" "Coder"
+
+    # --- Pre-coder clean sweep (M92) -----------------------------------------
+    # If tests are failing before the coder runs, spawn a restricted fix agent
+    # to restore a clean baseline. Non-fatal: a failed fix falls through to
+    # the coder, which will still face the stricter post-run gates.
+    run_prerun_clean_sweep || true
 
     # --- Scout sub-agent (optional) ------------------------------------------
     BUG_SCOUT_CONTEXT=""
     SHOULD_SCOUT=false
+    local _scout_archive_name
+    _scout_archive_name="${TIMESTAMP}_$(basename "${SCOUT_REPORT_FILE}")"
 
     # Tag-specific scout behavior (M42): configurable per tag
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
@@ -115,7 +127,7 @@ run_stage_coder() {
                     auto)
                         # Scout if est. turns > 10 or brownfield indicators present
                         local _est_turns_val=""
-                        _est_turns_val=$(grep -oP 'est_turns:\K[0-9]+' HUMAN_NOTES.md 2>/dev/null | head -1 || true)
+                        _est_turns_val=$(grep -oP 'est_turns:\K[0-9]+' "${HUMAN_NOTES_FILE}" 2>/dev/null | head -1 || true)
                         if [[ -n "$_est_turns_val" ]] && [[ "$_est_turns_val" -gt 10 ]]; then
                             SHOULD_SCOUT=true
                         elif echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
@@ -149,17 +161,17 @@ run_stage_coder() {
     fi
 
     # Use cached scout results from dry-run if available (Milestone 23)
-    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "SCOUT_REPORT.md" ]]; then
+    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "${SCOUT_REPORT_FILE}" ]]; then
         SHOULD_SCOUT=false
         log_decision "Scout using cached results" "dry-run cache available" "SCOUT_CACHED=true"
-        apply_scout_turn_limits "SCOUT_REPORT.md"
+        apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
         BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat SCOUT_REPORT.md)
+$(cat "${SCOUT_REPORT_FILE}")
 "
         # Archive the cached report same as a live one
-        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-        rm "SCOUT_REPORT.md"
+        cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
+        rm "${SCOUT_REPORT_FILE}"
     fi
 
     if [ "$SHOULD_SCOUT" = true ]; then
@@ -215,6 +227,15 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
 
         SCOUT_PROMPT=$(render_prompt "scout")
 
+        # M114: scout runs as a *substage* inside the open coder pipeline
+        # stage. tui_substage_begin/end record current_substage_label without
+        # mutating the parent coder lifecycle id, _TUI_STAGE_ORDER, or
+        # _TUI_STAGES_COMPLETE — so the pill row stays "coder" and the
+        # completed-stages list never grows a "scout" entry. The renderer
+        # turns this into a "coder » scout" breadcrumb in the live timings row.
+        if declare -f tui_substage_begin &>/dev/null; then
+            tui_substage_begin "scout" "${CLAUDE_SCOUT_MODEL:-}"
+        fi
         run_agent \
             "Scout" \
             "$CLAUDE_SCOUT_MODEL" \
@@ -222,17 +243,21 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "$SCOUT_PROMPT" \
             "$LOG_FILE" \
             "$_scout_tools"
+        if declare -f tui_substage_end &>/dev/null; then
+            tui_substage_end "scout" "PASS"
+        fi
 
-        if [ -f "SCOUT_REPORT.md" ]; then
-            print_run_summary
+        if [ -f "${SCOUT_REPORT_FILE}" ]; then
+            # M96 (IA1): scout one-liner status below is sufficient — skip
+            # the cumulative run summary after a normal scout run.
             success "Scout agent finished. Relevant files located."
 
             # Parse complexity estimate before archiving the report
-            apply_scout_turn_limits "SCOUT_REPORT.md"
+            apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
 
             BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat SCOUT_REPORT.md)
+$(cat "${SCOUT_REPORT_FILE}")
 "
             # --- Pre-flight milestone sizing gate ---------------------------------
             # After scout estimates complexity, check if the milestone is oversized.
@@ -243,12 +268,12 @@ $(cat SCOUT_REPORT.md)
 
                     if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         # Update to target the first sub-milestone
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                         # Archive original scout report and re-scout narrower scope
-                        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
-                        rm "SCOUT_REPORT.md"
+                        cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
+                        rm "${SCOUT_REPORT_FILE}"
 
                         log "Re-running scout for narrower sub-milestone ${_CURRENT_MILESTONE}..."
 
@@ -261,18 +286,19 @@ $(cat SCOUT_REPORT.md)
                             "$LOG_FILE" \
                             "$_scout_tools"
 
-                        if [ -f "SCOUT_REPORT.md" ]; then
-                            print_run_summary
+                        if [ -f "${SCOUT_REPORT_FILE}" ]; then
+                            # M96 (IA1): post-split scout is still a scout
+                            # sub-agent; skip the cumulative summary.
                             success "Post-split scout finished."
-                            apply_scout_turn_limits "SCOUT_REPORT.md"
+                            apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
                             BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat SCOUT_REPORT.md)
+$(cat "${SCOUT_REPORT_FILE}")
 "
-                            cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-                            rm "SCOUT_REPORT.md"
+                            cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
+                            rm "${SCOUT_REPORT_FILE}"
                         else
-                            warn "Post-split scout did not produce SCOUT_REPORT.md — coder will explore independently."
+                            warn "Post-split scout did not produce ${SCOUT_REPORT_FILE} — coder will explore independently."
                         fi
                     else
                         warn "Milestone split failed — proceeding with original scope."
@@ -281,15 +307,15 @@ $(cat SCOUT_REPORT.md)
             fi
 
             # Archive scout report with the run
-            if [ -f "SCOUT_REPORT.md" ]; then
-                cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-                rm "SCOUT_REPORT.md"
+            if [ -f "${SCOUT_REPORT_FILE}" ]; then
+                cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
+                rm "${SCOUT_REPORT_FILE}"
             fi
         elif was_null_run; then
-            print_run_summary
+            # M96 (IA1): scout null-run — skip cumulative summary; warn is sufficient.
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
         else
-            warn "Scout agent did not produce SCOUT_REPORT.md — coder will explore independently."
+            warn "Scout agent did not produce ${SCOUT_REPORT_FILE} — coder will explore independently."
         fi
         if declare -p _STAGE_STATUS &>/dev/null; then
             _STAGE_STATUS[scout]="complete"
@@ -308,8 +334,8 @@ $(cat SCOUT_REPORT.md)
         if [[ -n "$REPO_MAP_CONTENT" ]] && [[ -n "$BUG_SCOUT_CONTEXT" ]]; then
             # Extract file paths from the scout report context
             local _scout_files=""
-            if [[ -f "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md" ]]; then
-                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md")
+            if [[ -f "${LOG_DIR}/${_scout_archive_name}" ]]; then
+                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR}/${_scout_archive_name}")
             fi
             if [[ -n "$_scout_files" ]]; then
                 local _slice
@@ -329,7 +355,7 @@ $(cat SCOUT_REPORT.md)
 
     # --- Extract affected test files from scout report (M43) -----------------
     export AFFECTED_TEST_FILES=""
-    local _scout_archive="${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+    local _scout_archive="${LOG_DIR}/${_scout_archive_name}"
     if [[ -f "$_scout_archive" ]]; then
         # Extract the "## Affected Test Files" section from the archived scout report
         AFFECTED_TEST_FILES=$(awk '
@@ -426,15 +452,15 @@ This is a milestone-sized task. Before writing any code:
 2. Check the 'Seeds forward' annotations on this milestone for architectural decisions
    that must be made now to avoid rework later
 3. Note any 'Watch for' annotations and design those extension points into your implementation
-4. Document your architectural decisions in CODER_SUMMARY.md under '## Architecture Decisions'"
+4. Document your architectural decisions in ${CODER_SUMMARY_FILE} under '## Architecture Decisions'"
         fi
     fi
 
     # Prior reviewer context (unresolved blockers from a previous run)
     export PRIOR_REVIEWER_CONTEXT=""
-    if [ -f "REVIEWER_REPORT.md" ] && [ "$START_AT" = "coder" ]; then
+    if [ -f "${REVIEWER_REPORT_FILE}" ] && [ "$START_AT" = "coder" ]; then
         local _reviewer_content
-        _reviewer_content=$(_safe_read_file "REVIEWER_REPORT.md" "REVIEWER_REPORT")
+        _reviewer_content=$(_safe_read_file "${REVIEWER_REPORT_FILE}" "REVIEWER_REPORT")
         PRIOR_REVIEWER_CONTEXT="
 ## Prior Reviewer Report (unresolved blockers from last run)
 The previous pipeline run ended with these unresolved items.
@@ -456,7 +482,7 @@ $(_wrap_file_content "REVIEWER_REPORT" "$_reviewer_content")"
 The last coder run hit the turn limit mid-implementation. These files were already modified:
 ${PRIOR_GIT_DIFF}
 
-Check CODER_SUMMARY.md for what was completed. Do NOT redo work already done.
+Check ${CODER_SUMMARY_FILE} for what was completed. Do NOT redo work already done.
 Pick up from where the previous run left off — read the modified files first to understand current state."
             fi
         fi
@@ -464,9 +490,9 @@ Pick up from where the previous run left off — read the modified files first t
 
     # Prior tester bugs
     export PRIOR_TESTER_CONTEXT=""
-    if [ -f "TESTER_REPORT.md" ] && grep -q "^### Bugs Found\|^## Bugs\|BUG-" TESTER_REPORT.md 2>/dev/null; then
+    if [ -f "${TESTER_REPORT_FILE}" ] && grep -q "^### Bugs Found\|^## Bugs\|BUG-" "${TESTER_REPORT_FILE}" 2>/dev/null; then
         local _tester_content
-        _tester_content=$(_safe_read_file "TESTER_REPORT.md" "TESTER_REPORT")
+        _tester_content=$(_safe_read_file "${TESTER_REPORT_FILE}" "TESTER_REPORT")
         PRIOR_TESTER_CONTEXT="
 ## Bugs Found by Tester (must fix)
 The tester identified these bugs in the last run. Fix all BUG-* items before
@@ -477,9 +503,9 @@ $(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
 
     # Pre-finalization test gate failures (from orchestrate.sh retry loop)
     export PREFLIGHT_TEST_CONTEXT=""
-    if [[ -f "PREFLIGHT_ERRORS.md" ]] && [[ "$START_AT" = "coder" ]]; then
+    if [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && [[ "$START_AT" = "coder" ]]; then
         local _preflight_content
-        _preflight_content=$(_safe_read_file "PREFLIGHT_ERRORS.md" "PREFLIGHT_ERRORS")
+        _preflight_content=$(_safe_read_file "${PREFLIGHT_ERRORS_FILE}" "PREFLIGHT_ERRORS")
         PREFLIGHT_TEST_CONTEXT="
 ## Pre-Finalization Test Failures (must fix)
 The pipeline completed all stages successfully, but the final test gate failed.
@@ -509,11 +535,11 @@ ${nb_notes}"
     fi
 
     # --- TDD pre-flight context (Milestone 27) --------------------------------
-    # When PIPELINE_ORDER=test_first, inject TESTER_PREFLIGHT.md content so the
+    # When PIPELINE_ORDER=test_first, inject ${TDD_PREFLIGHT_FILE} content so the
     # coder knows which tests to make pass.
     export TESTER_PREFLIGHT_CONTENT=""
     if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]]; then
-        local _preflight_file="${TDD_PREFLIGHT_FILE:-TESTER_PREFLIGHT.md}"
+        local _preflight_file="${TDD_PREFLIGHT_FILE:-}"
         if [[ -f "$_preflight_file" ]]; then
             TESTER_PREFLIGHT_CONTENT=$(_safe_read_file "$_preflight_file" "TESTER_PREFLIGHT")
             log "TDD mode: injecting ${_preflight_file} into coder context."
@@ -549,9 +575,9 @@ ${nb_notes}"
         claim_human_notes
     elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && ! should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."
-        # Defensive hint: detect tasks that appear to originate from HUMAN_NOTES.md
+        # Defensive hint: detect tasks that appear to originate from ${HUMAN_NOTES_FILE}
         if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then
-            warn "Tip: This task appears to come from HUMAN_NOTES.md. Did you mean to use --human?"
+            warn "Tip: This task appears to come from ${HUMAN_NOTES_FILE}. Did you mean to use --human?"
         fi
     fi
 
@@ -586,7 +612,7 @@ ${nb_notes}"
 
         # If triage estimated turns are available, use them with a 1.5x buffer
         local _triage_est=""
-        _triage_est=$(grep -oP 'est_turns:\K[0-9]+' HUMAN_NOTES.md 2>/dev/null | head -1 || true)
+        _triage_est=$(grep -oP 'est_turns:\K[0-9]+' "${HUMAN_NOTES_FILE}" 2>/dev/null | head -1 || true)
         if [[ -n "$_triage_est" ]] && [[ "$_triage_est" -gt 0 ]]; then
             local _max_from_multiplier
             _max_from_multiplier=$(awk "BEGIN { printf \"%.0f\", ${_tag_base} * ${_tag_multiplier} }")
@@ -629,12 +655,13 @@ ${nb_notes}"
     _phase_end "coder_prompt"
     _phase_end "context_assembly"
 
-    log "Invoking coder agent (max ${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS} turns)..."
+    local _coder_turns="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}"
+    log "Invoking coder agent (max ${_coder_turns} turns)..."
     _phase_start "coder_agent"
     run_agent \
         "Coder" \
         "$CLAUDE_CODER_MODEL" \
-        "${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}" \
+        "$_coder_turns" \
         "$CODER_PROMPT" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
@@ -679,7 +706,7 @@ ${nb_notes}"
         if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
             if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                 # Split succeeded — update state and re-run from scout
-                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                 invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                 # Recursive call to run_stage_coder creates nested call frames up to
@@ -697,7 +724,7 @@ ${nb_notes}"
             "null_run" \
             "$(_build_resume_flag coder)" \
             "$TASK" \
-            "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a SCOUT_REPORT.md manually, or checking agent logs."
+            "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a ${SCOUT_REPORT_FILE} manually, or checking agent logs."
 
         error "State saved with exit reason 'null_run'. Check the log: ${LOG_FILE}"
         error "Re-run with a more specific task description or add context files."
@@ -706,26 +733,26 @@ ${nb_notes}"
 
     # --- Post-coder validation -----------------------------------------------
 
-    if [ ! -f "CODER_SUMMARY.md" ]; then
+    if [ ! -f "${CODER_SUMMARY_FILE}" ]; then
         # If substantive work was done, reconstruct summary and continue
         if is_substantive_work; then
-            warn "Coder did not produce CODER_SUMMARY.md but substantive work detected."
+            warn "Coder did not produce ${CODER_SUMMARY_FILE} but substantive work detected."
             _reconstruct_coder_summary
-        elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}" ]]; then
+        elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}}" ]]; then
             # Coder exhausted its turn budget without producing a summary and
             # without substantive tracked/untracked changes. This is a scope
             # problem (too much exploration, not enough implementation), not a
             # hard crash. Classify explicitly so the orchestration loop can
             # attempt recovery (split or retry).
-            warn "Coder exhausted turn budget (${LAST_AGENT_TURNS} turns) without CODER_SUMMARY.md or substantive work."
+            warn "Coder exhausted turn budget (${LAST_AGENT_TURNS} turns) without ${CODER_SUMMARY_FILE} or substantive work."
             AGENT_ERROR_CATEGORY="AGENT_SCOPE"
             AGENT_ERROR_SUBCATEGORY="turn_exhaustion_no_output"
-            AGENT_ERROR_MESSAGE="Coder used all ${LAST_AGENT_TURNS} turns but produced no CODER_SUMMARY.md and no substantive file changes."
+            AGENT_ERROR_MESSAGE="Coder used all ${LAST_AGENT_TURNS} turns but produced no ${CODER_SUMMARY_FILE} and no substantive file changes."
 
             # Attempt milestone split before giving up
             if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                 if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                     invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                     local _depth
                     _depth=$(get_split_depth "$_CURRENT_MILESTONE")
@@ -735,7 +762,7 @@ ${nb_notes}"
                 fi
             fi
 
-            error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
+            error "Coder did not produce ${CODER_SUMMARY_FILE} and no substantive work detected."
             error "Check the log: ${LOG_FILE}"
             error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
             # Reconstruct for audit trail even on failure
@@ -751,7 +778,7 @@ ${nb_notes}"
                 "Coder used ${LAST_AGENT_TURNS} turns but produced no output. Likely spent turns exploring without implementing. Consider: narrower task, manual scout report, or milestone split."
             exit 1
         else
-            error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
+            error "Coder did not produce ${CODER_SUMMARY_FILE} and no substantive work detected."
             error "Check the log: ${LOG_FILE}"
             error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
             # Reconstruct for audit trail even on failure
@@ -765,9 +792,9 @@ ${nb_notes}"
     # Detect un-updated skeleton: coder wrote the IN PROGRESS skeleton at Step 1
     # but never filled it in (placeholders still present). Treat the same as a
     # missing file — reconstruct from git state so the pipeline can proceed.
-    if [[ -f "CODER_SUMMARY.md" ]] && grep -q 'fill in as you go\|update as you go' "CODER_SUMMARY.md" 2>/dev/null; then
+    if [[ -f "${CODER_SUMMARY_FILE}" ]] && grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
         if is_substantive_work; then
-            warn "CODER_SUMMARY.md contains unfilled placeholders — reconstructing from git state."
+            warn "${CODER_SUMMARY_FILE} contains unfilled placeholders — reconstructing from git state."
             _reconstruct_coder_summary
         fi
     fi
@@ -783,7 +810,7 @@ ${nb_notes}"
 
     # --- Post-coder clarification detection ------------------------------------
 
-    if detect_clarifications "CODER_SUMMARY.md"; then
+    if detect_clarifications "${CODER_SUMMARY_FILE}"; then
         if ! handle_clarifications; then
             # User aborted — save state for resume
             write_pipeline_state \
@@ -791,7 +818,7 @@ ${nb_notes}"
                 "clarification_abort" \
                 "$(_build_resume_flag coder)" \
                 "$TASK" \
-                "Clarification collection aborted by user. Partial answers in CLARIFICATIONS.md."
+                "Clarification collection aborted by user. Partial answers in ${CLARIFICATIONS_FILE}."
             error "Pipeline paused for clarification. Re-run to resume."
             exit 1
         fi
@@ -810,7 +837,7 @@ ${nb_notes}"
             run_agent \
                 "Coder (post-clarification)" \
                 "$CLAUDE_CODER_MODEL" \
-                "${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}" \
+                "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}" \
                 "$CODER_PROMPT" \
                 "$LOG_FILE" \
                 "$AGENT_TOOLS_CODER"
@@ -835,16 +862,16 @@ ${nb_notes}"
                 exit 1
             fi
 
-            # Re-check for CODER_SUMMARY.md
-            if [[ ! -f "CODER_SUMMARY.md" ]]; then
-                error "Post-clarification coder did not produce CODER_SUMMARY.md."
+            # Re-check for ${CODER_SUMMARY_FILE}
+            if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
+                error "Post-clarification coder did not produce ${CODER_SUMMARY_FILE}."
                 exit 1
             fi
         fi
     fi
 
     # Check if coder left status as IN PROGRESS (hit turn limit mid-work)
-    CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+    CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
         warn "Coder summary shows IN PROGRESS — coder hit turn limit before finishing."
 
@@ -859,7 +886,7 @@ ${nb_notes}"
                 log_decision "Continuing coder" "turn limit hit, progress detected (attempt ${_cont_attempt}/${_cont_max})" "CONTINUATION_ENABLED=true"
 
                 # Build continuation context and inject into prompt
-                local _next_budget="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+                local _next_budget="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}"
                 export CONTINUATION_CONTEXT
                 CONTINUATION_CONTEXT=$(build_continuation_context "coder" "$_cont_attempt" "$_cont_max" "$_cumulative_turns" "$_next_budget")
 
@@ -891,19 +918,19 @@ ${nb_notes}"
                 fi
 
                 # Check if continuation completed
-                if [[ ! -f "CODER_SUMMARY.md" ]]; then
-                    warn "Continuation ${_cont_attempt} did not produce CODER_SUMMARY.md."
+                if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
+                    warn "Continuation ${_cont_attempt} did not produce ${CODER_SUMMARY_FILE}."
                     # Recover: if substantive work exists, synthesize a minimal summary
                     # so the pipeline can proceed to review instead of crashing.
                     if is_substantive_work; then
-                        warn "Substantive work detected — reconstructing CODER_SUMMARY.md from git state."
+                        warn "Substantive work detected — reconstructing ${CODER_SUMMARY_FILE} from git state."
                         _reconstruct_coder_summary
                     else
                         break
                     fi
                 fi
 
-                CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+                CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
                 if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
                     success "Coder completed after ${_cont_attempt} continuation(s) (${_cumulative_turns} total turns)."
                     # Export for metrics
@@ -926,7 +953,7 @@ ${nb_notes}"
             export CONTINUATION_CONTEXT=""
 
             # Re-check status after continuation loop
-            CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+            CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
             if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
                 # Continuation succeeded — fall through to completion gate
                 :
@@ -935,7 +962,7 @@ ${nb_notes}"
                 # Escalate: milestone mode -> try auto-split, otherwise save state
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")
@@ -950,9 +977,9 @@ ${nb_notes}"
 
         # If we reach here and status is still IN PROGRESS, check if we have
         # enough work to proceed to review instead of halting.
-        CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+        CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
         if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
-            IMPLEMENTED_LINES=$(grep -c "^- " CODER_SUMMARY.md 2>/dev/null || echo "0")
+            IMPLEMENTED_LINES=$(grep -c "^- " "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
             IMPLEMENTED_LINES=$(echo "$IMPLEMENTED_LINES" | tr -d '[:space:]')
 
             GIT_DIFF_STAT=""
@@ -995,7 +1022,7 @@ ${GIT_DIFF_STAT}
                 # Minimal output — try auto-split in milestone mode
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")
@@ -1042,15 +1069,15 @@ ${GIT_DIFF_STAT}
         if is_substantive_work; then
             warn "Completion gate failed but substantive work detected."
             warn "Proceeding to review — reviewer will assess actual changes."
-            # Ensure CODER_SUMMARY.md exists for downstream stages
-            if [[ ! -f "CODER_SUMMARY.md" ]]; then
+            # Ensure ${CODER_SUMMARY_FILE} exists for downstream stages
+            if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
                 _reconstruct_coder_summary
             fi
         else
             warn "Coder did not complete — blocking reviewer and tester."
 
-            # Ensure CODER_SUMMARY.md exists for post-run auditing
-            if [[ ! -f "CODER_SUMMARY.md" ]]; then
+            # Ensure ${CODER_SUMMARY_FILE} exists for post-run auditing
+            if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
                 _reconstruct_coder_summary "INCOMPLETE"
             fi
 
@@ -1081,10 +1108,10 @@ ${GIT_DIFF_STAT}
             # --- M53: Classify errors and route appropriately ---
             # Read raw error lines (not the annotated markdown) for classification
             local _raw_errors=""
-            if [[ -f BUILD_RAW_ERRORS.txt ]]; then
-                _raw_errors=$(_safe_read_file BUILD_RAW_ERRORS.txt "BUILD_RAW_ERRORS")
+            if [[ -f "${BUILD_RAW_ERRORS_FILE}" ]]; then
+                _raw_errors=$(_safe_read_file "${BUILD_RAW_ERRORS_FILE}" "BUILD_RAW_ERRORS")
             else
-                _raw_errors=$(_safe_read_file BUILD_ERRORS.md "BUILD_ERRORS")
+                _raw_errors=$(_safe_read_file "${BUILD_ERRORS_FILE}" "BUILD_ERRORS")
             fi
 
             # Check if ALL errors are non-code (env/service/toolchain/resource/test_infra)
@@ -1092,18 +1119,18 @@ ${GIT_DIFF_STAT}
                 && has_only_noncode_errors "$_raw_errors"; then
                 warn "All build errors are non-code (environment/setup). Skipping build-fix agent."
                 warn "These errors require environment remediation, not code changes."
-                # Log non-code errors to HUMAN_ACTION_REQUIRED.md if available
+                # Log non-code errors to "${HUMAN_ACTION_FILE}" if available
                 if command -v append_human_action &>/dev/null; then
                     append_human_action "build_gate" \
-                        "Non-code build errors detected. See BUILD_ERRORS.md for details."
+                        "Non-code build errors detected. See ${BUILD_ERRORS_FILE} for details."
                 fi
                 write_pipeline_state \
                     "coder" \
                     "env_failure" \
                     "$(_build_resume_flag coder)" \
                     "$TASK" \
-                    "Build failed with environment errors (not code bugs). See BUILD_ERRORS.md."
-                error "State saved. Fix environment issues in BUILD_ERRORS.md then re-run."
+                    "Build failed with environment errors (not code bugs). See ${BUILD_ERRORS_FILE}."
+                error "State saved. Fix environment issues in ${BUILD_ERRORS_FILE} then re-run."
                 exit 1
             fi
 
@@ -1118,10 +1145,11 @@ ${GIT_DIFF_STAT}
             fi
             BUILD_FIX_PROMPT=$(render_prompt "build_fix")
 
+            local _bf_base="${EFFECTIVE_CODER_MAX_TURNS:-$CODER_MAX_TURNS}"
             run_agent \
                 "Coder (build fix)" \
                 "$CLAUDE_CODER_MODEL" \
-                "$((CODER_MAX_TURNS / 3))" \
+                "$((_bf_base / 3))" \
                 "$BUILD_FIX_PROMPT" \
                 "$LOG_FILE" \
                 "$AGENT_TOOLS_BUILD_FIX"
@@ -1134,8 +1162,8 @@ ${GIT_DIFF_STAT}
                     "build_failure" \
                     "$(_build_resume_flag coder)" \
                     "$TASK" \
-                    "Build errors remain after auto-fix attempt. See BUILD_ERRORS.md."
-                error "State saved. Review BUILD_ERRORS.md manually then re-run."
+                    "Build errors remain after auto-fix attempt. See ${BUILD_ERRORS_FILE}."
+                error "State saved. Review ${BUILD_ERRORS_FILE} manually then re-run."
                 exit 1
             fi
         fi
@@ -1144,7 +1172,7 @@ ${GIT_DIFF_STAT}
     # --- Record task→file association for personalized ranking (M7) ----------
     if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
         local _modified_files
-        _modified_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
+        _modified_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}")
         if [[ -n "$_modified_files" ]]; then
             record_task_file_association "$TASK" "$_modified_files" || true
         fi

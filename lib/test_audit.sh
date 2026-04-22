@@ -5,276 +5,21 @@ set -euo pipefail
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: prompts.sh, agent.sh, common.sh sourced first.
+# Expects: test_audit_helpers.sh, test_audit_detection.sh,
+#          test_audit_verdict.sh sourced before this file.
 # Expects: TASK, LOG_FILE, PROJECT_DIR, TEST_AUDIT_* config vars set.
+#
+# Companion modules:
+#   lib/test_audit_helpers.sh   — Pre-audit collection + context assembly
+#   lib/test_audit_detection.sh — Orphan and weakening detection
+#   lib/test_audit_verdict.sh   — Verdict parsing and routing
+#   lib/test_audit_symbols.sh   — Symbol-level stale reference detection (M88)
+#   lib/test_audit_sampler.sh   — Rolling freshness sampler (M89)
 #
 # Provides:
 #   run_test_audit            — Main entry: collect context, run audit, route verdict
 #   run_standalone_test_audit — Full audit of ALL test files (--audit-tests)
-#   _collect_audit_context    — Gather test files, implementation files, mappings
-#   _detect_orphaned_tests    — Shell-based orphan detection (no agent needed)
-#   _detect_test_weakening    — Shell-based weakening detection via git diff
-#   _parse_audit_verdict      — Extract verdict from TEST_AUDIT_REPORT.md
-#   _route_audit_verdict      — Handle PASS/CONCERNS/NEEDS_WORK verdicts
 # =============================================================================
-
-# --- Pre-audit file collection ------------------------------------------------
-
-# _collect_audit_context
-# Gathers test files written/modified by the tester, implementation files changed
-# by the coder, and builds a mapping between them.
-# Sets globals: _AUDIT_TEST_FILES, _AUDIT_IMPL_FILES, _AUDIT_DELETED_FILES
-_collect_audit_context() {
-    _AUDIT_TEST_FILES=""
-    _AUDIT_IMPL_FILES=""
-    _AUDIT_DELETED_FILES=""
-
-    # Extract test files from TESTER_REPORT.md (checked items = written/modified)
-    if [[ -f "TESTER_REPORT.md" ]]; then
-        # shellcheck disable=SC2016  # Backtick is literal in grep pattern
-        _AUDIT_TEST_FILES=$(grep -oP '^\- \[x\] `\K[^`]+' TESTER_REPORT.md 2>/dev/null || true)
-    fi
-
-    # Extract implementation files from CODER_SUMMARY.md
-    if [[ -f "CODER_SUMMARY.md" ]]; then
-        # shellcheck disable=SC2016  # Backtick is literal in grep pattern
-        _AUDIT_IMPL_FILES=$(grep -oP '`\K[^`]+(?=`)' CODER_SUMMARY.md 2>/dev/null \
-            | grep -vE 'test|spec|Test|Spec' || true)
-    fi
-
-    # Detect deleted files from git diff (files deleted in this run)
-    if git rev-parse --git-dir &>/dev/null; then
-        _AUDIT_DELETED_FILES=$(git diff --name-status HEAD 2>/dev/null \
-            | awk '$1 == "D" { print $2 }' || true)
-        # Also check staged deletes
-        local _staged_deletes
-        _staged_deletes=$(git diff --cached --name-status 2>/dev/null \
-            | awk '$1 == "D" { print $2 }' || true)
-        if [[ -n "$_staged_deletes" ]]; then
-            _AUDIT_DELETED_FILES="${_AUDIT_DELETED_FILES}
-${_staged_deletes}"
-        fi
-    fi
-
-    export _AUDIT_TEST_FILES _AUDIT_IMPL_FILES _AUDIT_DELETED_FILES
-}
-
-# _discover_all_test_files
-# Discovers ALL test files in the project for --audit-tests standalone mode.
-# Uses common test directory/file naming conventions.
-# Returns: newline-separated list of test file paths
-_discover_all_test_files() {
-    local test_files=""
-
-    if ! git rev-parse --git-dir &>/dev/null; then
-        warn "[test-audit] Not a git repo — cannot discover test files."
-        return
-    fi
-
-    # Use git ls-files to respect .gitignore
-    test_files=$(git ls-files 2>/dev/null | grep -iE \
-        '(^tests?/|/__tests__/|_test\.|\.test\.|\.spec\.|_spec\.|test_)' || true)
-
-    echo "$test_files"
-}
-
-# --- Orphan detection (pure shell) -------------------------------------------
-
-# _detect_orphaned_tests [test_files] [deleted_files]
-# For each test file, extract import/require statements and check if they
-# reference deleted modules. Also checks for renamed/moved files.
-# Args override globals for testability. Defaults: _AUDIT_TEST_FILES, _AUDIT_DELETED_FILES
-# Sets: _AUDIT_ORPHAN_FINDINGS (multiline, one finding per line)
-# shellcheck disable=SC2120  # Args are optional overrides; callers use globals
-_detect_orphaned_tests() {
-    _AUDIT_ORPHAN_FINDINGS=""
-    local test_files="${1:-${_AUDIT_TEST_FILES:-}}"
-    local deleted_files="${2:-${_AUDIT_DELETED_FILES:-}}"
-
-    [[ -z "$test_files" ]] && return
-    [[ -z "$deleted_files" ]] && return
-
-    while IFS= read -r test_file; do
-        [[ -z "$test_file" ]] && continue
-        [[ ! -f "$test_file" ]] && continue
-
-        # Extract import targets (Python, JS/TS, Go patterns)
-        local imports=""
-        # Python: from X import / import X
-        imports=$(grep -oP '(?:from\s+|import\s+)[\w.]+' "$test_file" 2>/dev/null || true)
-        # JS/TS: require('X') / import ... from 'X'
-        local js_imports
-        js_imports=$(grep -oP "(?:require\s*\(\s*['\"]|from\s+['\"])([^'\"]+)" "$test_file" 2>/dev/null || true)
-        if [[ -n "$js_imports" ]]; then
-            imports="${imports}
-${js_imports}"
-        fi
-
-        # Check each deleted file against imports
-        while IFS= read -r deleted; do
-            [[ -z "$deleted" ]] && continue
-            local deleted_basename
-            deleted_basename=$(basename "$deleted")
-            local deleted_noext="${deleted_basename%.*}"
-
-            # Check if the test file references the deleted module
-            if echo "$imports" | grep -qF "$deleted_noext" 2>/dev/null; then
-                _AUDIT_ORPHAN_FINDINGS="${_AUDIT_ORPHAN_FINDINGS}
-ORPHAN: ${test_file} imports deleted module '${deleted}'"
-            fi
-        done <<< "$deleted_files"
-    done <<< "$test_files"
-
-    # Trim leading newline
-    _AUDIT_ORPHAN_FINDINGS="${_AUDIT_ORPHAN_FINDINGS#$'\n'}"
-    export _AUDIT_ORPHAN_FINDINGS
-}
-
-# --- Weakening detection (pure shell on git diff) ----------------------------
-
-# _detect_test_weakening
-# For each MODIFIED (not newly created) test file, analyze the diff for:
-#   - Removed assertions
-#   - Broadened assertions (specific → generic)
-#   - Removed test functions
-# Reads: _AUDIT_TEST_FILES
-# Sets: _AUDIT_WEAKENING_FINDINGS (multiline, one finding per line)
-_detect_test_weakening() {
-    _AUDIT_WEAKENING_FINDINGS=""
-
-    [[ -z "${_AUDIT_TEST_FILES:-}" ]] && return
-
-    if ! git rev-parse --git-dir &>/dev/null; then
-        return
-    fi
-
-    while IFS= read -r test_file; do
-        [[ -z "$test_file" ]] && continue
-        [[ ! -f "$test_file" ]] && continue
-
-        # Skip newly created files (no weakening possible)
-        if ! git show "HEAD:${test_file}" &>/dev/null; then
-            continue
-        fi
-
-        local diff_output
-        diff_output=$(git diff HEAD -- "$test_file" 2>/dev/null || true)
-        [[ -z "$diff_output" ]] && continue
-
-        # Count removed vs added assertion lines
-        local removed_asserts=0
-        local added_asserts=0
-        removed_asserts=$(echo "$diff_output" \
-            | grep -cE '^\-.*\b(assert|expect|should|assertEqual|assertEquals|assertThat|assertTrue|assertFalse|toBe|toEqual|toMatch|toThrow)\b' 2>/dev/null || echo "0")
-        added_asserts=$(echo "$diff_output" \
-            | grep -cE '^\+.*\b(assert|expect|should|assertEqual|assertEquals|assertThat|assertTrue|assertFalse|toBe|toEqual|toMatch|toThrow)\b' 2>/dev/null || echo "0")
-
-        removed_asserts="${removed_asserts//[!0-9]/}"
-        added_asserts="${added_asserts//[!0-9]/}"
-        : "${removed_asserts:=0}"
-        : "${added_asserts:=0}"
-
-        # Net assertion loss is suspicious
-        if [[ "$removed_asserts" -gt "$added_asserts" ]]; then
-            local net_loss=$((removed_asserts - added_asserts))
-            _AUDIT_WEAKENING_FINDINGS="${_AUDIT_WEAKENING_FINDINGS}
-WEAKENING: ${test_file} — net loss of ${net_loss} assertion(s) (removed ${removed_asserts}, added ${added_asserts})"
-        fi
-
-        # Detect specific→generic assertion pattern changes
-        local broadened=""
-        broadened=$(echo "$diff_output" \
-            | grep -cE '^\+.*(assertTrue\s*\(|assertGreater|assertLess|toBeGreater|toBeLess|toBeTruthy|toBeFalsy)' 2>/dev/null || echo "0")
-        broadened="${broadened//[!0-9]/}"
-        : "${broadened:=0}"
-        local specific_removed
-        specific_removed=$(echo "$diff_output" \
-            | grep -cE '^\-.*(assertEqual|assertEquals|toBe\(|toEqual\(|toStrictEqual)' 2>/dev/null || echo "0")
-        specific_removed="${specific_removed//[!0-9]/}"
-        : "${specific_removed:=0}"
-
-        if [[ "$specific_removed" -gt 0 ]] && [[ "$broadened" -gt 0 ]]; then
-            _AUDIT_WEAKENING_FINDINGS="${_AUDIT_WEAKENING_FINDINGS}
-WEAKENING: ${test_file} — ${specific_removed} specific assertion(s) replaced with ${broadened} broader assertion(s)"
-        fi
-
-        # Detect removed test functions
-        local removed_tests=0
-        removed_tests=$(echo "$diff_output" \
-            | grep -cE '^\-\s*(def test_|it\(|test\(|func Test|describe\()' 2>/dev/null || echo "0")
-        removed_tests="${removed_tests//[!0-9]/}"
-        : "${removed_tests:=0}"
-
-        if [[ "$removed_tests" -gt 0 ]]; then
-            _AUDIT_WEAKENING_FINDINGS="${_AUDIT_WEAKENING_FINDINGS}
-WEAKENING: ${test_file} — ${removed_tests} test function(s) removed"
-        fi
-    done <<< "$_AUDIT_TEST_FILES"
-
-    # Trim leading newline
-    _AUDIT_WEAKENING_FINDINGS="${_AUDIT_WEAKENING_FINDINGS#$'\n'}"
-    export _AUDIT_WEAKENING_FINDINGS
-}
-
-# --- Verdict parsing and routing ---------------------------------------------
-
-# _parse_audit_verdict
-# Extracts the verdict from TEST_AUDIT_REPORT.md.
-# Returns: PASS, CONCERNS, or NEEDS_WORK (defaults to PASS if unparseable)
-_parse_audit_verdict() {
-    local report_file="${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
-    if [[ ! -f "$report_file" ]]; then
-        echo "PASS"
-        return
-    fi
-
-    local verdict
-    verdict=$(grep -oiE 'Verdict:\s*(NEEDS_WORK|PASS|CONCERNS)' "$report_file" 2>/dev/null \
-        | head -1 | sed 's/.*:\s*//' | tr '[:lower:]' '[:upper:]' || true)
-
-    case "$verdict" in
-        NEEDS_WORK) echo "NEEDS_WORK" ;;
-        CONCERNS)   echo "CONCERNS" ;;
-        *)          echo "PASS" ;;
-    esac
-}
-
-# _route_audit_verdict VERDICT
-# Routes based on audit verdict:
-#   PASS       → continue (no action)
-#   CONCERNS   → log findings to NON_BLOCKING_LOG.md, continue
-#   NEEDS_WORK → tester rework (bounded by TEST_AUDIT_MAX_REWORK_CYCLES)
-_route_audit_verdict() {
-    local verdict="$1"
-    local report_file="${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
-
-    case "$verdict" in
-        PASS)
-            success "Test audit passed — all tests meet integrity standards."
-            return 0
-            ;;
-        CONCERNS)
-            warn "Test audit raised concerns — logging to NON_BLOCKING_LOG.md."
-            if [[ -f "$report_file" ]]; then
-                local findings
-                findings=$(grep -E '^\s*####\s+(INTEGRITY|SCOPE|COVERAGE|WEAKENING|NAMING)' "$report_file" 2>/dev/null || true)
-                if [[ -n "$findings" ]] && command -v _ensure_nonblocking_log &>/dev/null; then
-                    _ensure_nonblocking_log
-                    local nb_file="${NON_BLOCKING_LOG_FILE:-NON_BLOCKING_LOG.md}"
-                    {
-                        echo ""
-                        echo "### Test Audit Concerns ($(date +%Y-%m-%d))"
-                        echo "$findings"
-                    } >> "$nb_file"
-                fi
-            fi
-            return 0
-            ;;
-        NEEDS_WORK)
-            warn "Test audit verdict: NEEDS_WORK — routing to tester for rework."
-            return 1
-            ;;
-    esac
-}
 
 # --- Main audit function (pipeline integration) ------------------------------
 
@@ -296,17 +41,30 @@ run_test_audit() {
     # Step 1: Collect context
     _collect_audit_context
 
-    # Skip audit if no test files were written
-    if [[ -z "$_AUDIT_TEST_FILES" ]]; then
-        log "No test files written this run — skipping audit."
+    # Rolling freshness sample (M89): K oldest-audited tests get re-evaluated.
+    # Sampler is in lib/test_audit_sampler.sh (optional companion module).
+    if [[ "${TEST_AUDIT_ROLLING_ENABLED:-true}" == "true" ]] \
+        && command -v _sample_unaudited_test_files &>/dev/null; then
+        _sample_unaudited_test_files
+    fi
+
+    # Skip audit only when neither modified nor sampled files are available
+    if [[ -z "$_AUDIT_TEST_FILES" ]] && [[ -z "${_AUDIT_SAMPLE_FILES:-}" ]]; then
+        log "No test files written this run and no sample available — skipping audit."
         return 0
     fi
 
-    log "Auditing $(echo "$_AUDIT_TEST_FILES" | grep -c '.' || echo 0) test file(s)..."
+    local _modified_count _sample_count
+    _modified_count=$(echo "${_AUDIT_TEST_FILES:-}" | grep -c '.' || echo 0)
+    _sample_count=$(echo "${_AUDIT_SAMPLE_FILES:-}" | grep -c '.' || echo 0)
+    log "Auditing ${_modified_count} modified + ${_sample_count} sampled test file(s)..."
 
     # Step 2: Shell-based detection (instant, no agent needed)
     if [[ "${TEST_AUDIT_ORPHAN_DETECTION:-true}" == "true" ]]; then
         _detect_orphaned_tests
+    fi
+    if command -v _detect_stale_symbol_refs &>/dev/null; then
+        _detect_stale_symbol_refs
     fi
     if [[ "${TEST_AUDIT_WEAKENING_DETECTION:-true}" == "true" ]]; then
         _detect_test_weakening
@@ -327,32 +85,7 @@ run_test_audit() {
     fi
 
     # Step 3: Build audit context for the agent prompt
-    export TEST_AUDIT_CONTEXT=""
-    local _ctx=""
-    # shellcheck disable=SC2001  # sed needed for multiline prefix addition
-    _ctx="## Test Files Under Audit
-$(echo "$_AUDIT_TEST_FILES" | sed 's/^/- /')
-
-## Implementation Files Changed
-$(echo "${_AUDIT_IMPL_FILES:-none}" | sed 's/^/- /')
-"
-
-    if [[ -n "${_AUDIT_ORPHAN_FINDINGS:-}" ]]; then
-        _ctx="${_ctx}
-## Shell-Detected Orphans (pre-verified)
-${_AUDIT_ORPHAN_FINDINGS}
-"
-    fi
-
-    if [[ -n "${_AUDIT_WEAKENING_FINDINGS:-}" ]]; then
-        _ctx="${_ctx}
-## Shell-Detected Weakening (pre-verified)
-${_AUDIT_WEAKENING_FINDINGS}
-"
-    fi
-
-    TEST_AUDIT_CONTEXT="$_ctx"
-    export CODER_DELETED_FILES="${_AUDIT_DELETED_FILES:-}"
+    _build_test_audit_context
 
     # Step 4: Invoke audit agent
     local audit_prompt
@@ -376,7 +109,16 @@ ${_AUDIT_WEAKENING_FINDINGS}
     if command -v emit_event &>/dev/null; then
         emit_event "test_audit" "tester" "verdict=${verdict}" "" "" \
             "{\"verdict\":\"${verdict}\",\"orphans\":\"${_AUDIT_ORPHAN_FINDINGS:+found}\",\"weakening\":\"${_AUDIT_WEAKENING_FINDINGS:+found}\"}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$verdict" != "NEEDS_WORK" ]]; then
+        # PASS or CONCERNS — record audit history for files we evaluated.
+        # NEEDS_WORK records only after a successful rework cycle (below).
+        if command -v _record_audit_history &>/dev/null; then
+            _record_audit_history "${_AUDIT_TEST_FILES:-}
+${_AUDIT_SAMPLE_FILES:-}"
+        fi
     fi
 
     if ! _route_audit_verdict "$verdict"; then
@@ -389,8 +131,8 @@ ${_AUDIT_WEAKENING_FINDINGS}
             log "Test audit rework cycle ${rework_cycles}/${max_rework}..."
 
             export TEST_AUDIT_FINDINGS=""
-            if [[ -f "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" ]]; then
-                TEST_AUDIT_FINDINGS=$(_safe_read_file "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" "TEST_AUDIT_REPORT")
+            if [[ -f "${TEST_AUDIT_REPORT_FILE:-}" ]]; then
+                TEST_AUDIT_FINDINGS=$(_safe_read_file "${TEST_AUDIT_REPORT_FILE:-}" "TEST_AUDIT_REPORT")
             fi
 
             local rework_prompt
@@ -409,31 +151,15 @@ ${_AUDIT_WEAKENING_FINDINGS}
             if [[ "${TEST_AUDIT_ORPHAN_DETECTION:-true}" == "true" ]]; then
                 _detect_orphaned_tests
             fi
+            if command -v _detect_stale_symbol_refs &>/dev/null; then
+                _detect_stale_symbol_refs
+            fi
             if [[ "${TEST_AUDIT_WEAKENING_DETECTION:-true}" == "true" ]]; then
                 _detect_test_weakening
             fi
 
-            # Rebuild context
-            # shellcheck disable=SC2001  # sed needed for multiline prefix addition
-            TEST_AUDIT_CONTEXT="## Test Files Under Audit
-$(echo "$_AUDIT_TEST_FILES" | sed 's/^/- /')
-
-## Implementation Files Changed
-$(echo "${_AUDIT_IMPL_FILES:-none}" | sed 's/^/- /')
-"
-            if [[ -n "${_AUDIT_ORPHAN_FINDINGS:-}" ]]; then
-                TEST_AUDIT_CONTEXT="${TEST_AUDIT_CONTEXT}
-## Shell-Detected Orphans (pre-verified)
-${_AUDIT_ORPHAN_FINDINGS}
-"
-            fi
-            if [[ -n "${_AUDIT_WEAKENING_FINDINGS:-}" ]]; then
-                TEST_AUDIT_CONTEXT="${TEST_AUDIT_CONTEXT}
-## Shell-Detected Weakening (pre-verified)
-${_AUDIT_WEAKENING_FINDINGS}
-"
-            fi
-            CODER_DELETED_FILES="${_AUDIT_DELETED_FILES:-}"
+            # Rebuild context (sample is preserved across rework — same files)
+            _build_test_audit_context
 
             audit_prompt=$(render_prompt "test_audit")
             run_agent \
@@ -448,6 +174,10 @@ ${_AUDIT_WEAKENING_FINDINGS}
             log "Test audit re-check verdict: ${verdict}"
 
             if [[ "$verdict" != "NEEDS_WORK" ]]; then
+                if command -v _record_audit_history &>/dev/null; then
+                    _record_audit_history "${_AUDIT_TEST_FILES:-}
+${_AUDIT_SAMPLE_FILES:-}"
+                fi
                 _route_audit_verdict "$verdict"
                 return 0
             fi
@@ -455,7 +185,7 @@ ${_AUDIT_WEAKENING_FINDINGS}
 
         # Exhausted rework cycles
         warn "Test audit NEEDS_WORK after ${max_rework} rework cycle(s). Escalating to human."
-        warn "Review TEST_AUDIT_REPORT.md and fix tests manually."
+        warn "Review ${TEST_AUDIT_REPORT_FILE} and fix tests manually."
         return 0  # Don't block pipeline — log and proceed
     fi
 
@@ -524,14 +254,14 @@ All test files are included regardless of current diff.
     echo "════════════════════════════════════════"
     echo "  Files audited: ${file_count}"
     echo "  Verdict:       ${verdict}"
-    if [[ -f "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" ]]; then
-        echo "  Report:        ${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    if [[ -f "${TEST_AUDIT_REPORT_FILE:-}" ]]; then
+        echo "  Report:        ${TEST_AUDIT_REPORT_FILE:-}"
         echo
         # Show findings summary
         local high_count
-        high_count=$(grep -c 'Severity: HIGH' "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" 2>/dev/null || echo "0")
+        high_count=$(grep -c 'Severity: HIGH' "${TEST_AUDIT_REPORT_FILE:-}" 2>/dev/null || echo "0")
         local medium_count
-        medium_count=$(grep -c 'Severity: MEDIUM' "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" 2>/dev/null || echo "0")
+        medium_count=$(grep -c 'Severity: MEDIUM' "${TEST_AUDIT_REPORT_FILE:-}" 2>/dev/null || echo "0")
         echo "  HIGH findings:   ${high_count}"
         echo "  MEDIUM findings: ${medium_count}"
     fi
