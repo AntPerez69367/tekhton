@@ -393,6 +393,21 @@ class TestSubstageBreadcrumb:
         # surfacing the parent counter during a substage misleads the user
         # into thinking coder is making progress.
         assert "--/50" not in panel_str
+        # Direct positive assertion: inspect the grid's live row (last row)
+        # turns cell (column index 2) and confirm its text content is empty.
+        # The inverse check above is necessary but not sufficient — this
+        # guards against any non-empty fallback the renderer might produce.
+        grid = panel.renderable
+        turns_column = grid.columns[2]
+        live_turns_text = turns_column._cells[-1]
+        live_turns_plain = (
+            live_turns_text.plain
+            if hasattr(live_turns_text, "plain")
+            else str(live_turns_text)
+        )
+        assert live_turns_plain == "", (
+            f"Expected empty turns cell during substage, got {live_turns_plain!r}"
+        )
 
     def test_parent_timer_continues_across_substage_boundary(self):
         """Live-row duration is computed from the parent stage_start_ts.
@@ -415,7 +430,24 @@ class TestSubstageBreadcrumb:
         panel_str = _render_panel(panel)
         # Should display ~2m of parent elapsed, not the substage's 5s.
         assert "2m" in panel_str
-        assert "5s" not in panel_str.split("(", 1)[0]  # crude but sufficient
+        # Direct inspection of the live row's time cell (column index 1)
+        # avoids false negatives if rich adds a "(" to the label column in
+        # a future layout change. The time cell must contain the parent's
+        # ~2m elapsed and must NOT contain the substage's 5s.
+        grid = panel.renderable
+        time_column = grid.columns[1]
+        live_time_text = time_column._cells[-1]
+        live_time_plain = (
+            live_time_text.plain
+            if hasattr(live_time_text, "plain")
+            else str(live_time_text)
+        )
+        assert "2m" in live_time_plain, (
+            f"Expected parent ~2m elapsed in time cell, got {live_time_plain!r}"
+        )
+        assert "5s" not in live_time_plain, (
+            f"Substage's 5s must not leak into parent time cell, got {live_time_plain!r}"
+        )
 
     def test_missing_substage_keys_tolerated(self):
         """Renderer must not raise when substage keys are absent."""

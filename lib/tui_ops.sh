@@ -134,8 +134,12 @@ run_op() {
 
     local _verdict="PASS"
     [[ "$_rc" -ne 0 ]] && _verdict="FAIL"
-    tui_substage_end "$_label" "$_verdict"
+    # Set idle BEFORE tui_substage_end so the substage-end write already carries
+    # the final status. Otherwise tui_substage_end flushes a frame with status
+    # still "working" and an empty substage label, creating a transitional
+    # "Working…" render between the real working frame and the final idle one.
     _TUI_AGENT_STATUS="idle"
+    tui_substage_end "$_label" "$_verdict"
     _tui_write_status 2>/dev/null || true
 
     return "$_rc"
@@ -215,6 +219,10 @@ tui_stage_begin() {
 # was passed to tui_stage_begin.
 tui_stage_end() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    # Coalesce writes: auto-close + tui_finish_stage + final state mutations
+    # would otherwise issue three separate status-file writes. Suppress the
+    # intermediate writes and issue a single final one.
+    _TUI_SUPPRESS_WRITE=$(( ${_TUI_SUPPRESS_WRITE:-0} + 1 ))
     declare -f _tui_autoclose_substage_if_open &>/dev/null && _tui_autoclose_substage_if_open
     local label="${1:-}"
     local model="${2:-}"
@@ -233,6 +241,7 @@ tui_stage_end() {
         _TUI_CLOSED_LIFECYCLE_IDS[$_closing_id]=1
     fi
     _TUI_CURRENT_LIFECYCLE_ID=""
+    _TUI_SUPPRESS_WRITE=$(( ${_TUI_SUPPRESS_WRITE:-1} - 1 ))
     _tui_write_status
 }
 

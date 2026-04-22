@@ -28,6 +28,10 @@ tui_substage_begin() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
     [[ "${TUI_LIFECYCLE_V2:-true}" == "true" ]] || return 0
     local label="${1:-}"
+    # MODEL is accepted for call-site symmetry with tui_stage_begin but is not
+    # retained — substages don't carry their own model in the status file.
+    local _model="${2:-}"
+    : "$_model"
     [[ -z "$label" ]] && return 0
     _TUI_CURRENT_SUBSTAGE_LABEL="$label"
     _TUI_CURRENT_SUBSTAGE_START_TS=$(date +%s)
@@ -41,6 +45,13 @@ tui_substage_begin() {
 tui_substage_end() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
     [[ "${TUI_LIFECYCLE_V2:-true}" == "true" ]] || return 0
+    # LABEL and VERDICT are accepted for call-site symmetry with tui_stage_end
+    # but are not retained — substage completion is not appended to
+    # _TUI_STAGES_COMPLETE. Explicit binds silence linter warnings for unused
+    # positional parameters.
+    local _label="${1:-}"
+    local _verdict="${2:-}"
+    : "$_label" "$_verdict"
     _TUI_CURRENT_SUBSTAGE_LABEL=""
     _TUI_CURRENT_SUBSTAGE_START_TS=0
     _tui_write_status

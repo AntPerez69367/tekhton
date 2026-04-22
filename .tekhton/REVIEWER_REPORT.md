@@ -1,4 +1,4 @@
-# Reviewer Report — M115: run_op Substage Migration
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,10 +10,13 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `run_op` sets `_TUI_AGENT_STATUS="idle"` after calling `tui_substage_end`, which itself writes the status file while the status is still "working" with an empty substage label. This produces one transitional write that renders as "Working…" before the final `idle` write. Harmless in practice (sub-millisecond window; renderer won't catch it), but setting `_TUI_AGENT_STATUS="idle"` before `tui_substage_end` would eliminate the ambiguous intermediate frame.
+- `tools/tests/test_tui_render_timings.py` is 513 lines (300-line ceiling). Pre-existing at 480; this task added ~33 more. Splitting into e.g. `test_tui_timings_normalize.py` / `test_tui_timings_panel.py` / `test_tui_timings_substage.py` is the correct fix — out of scope here but should be scheduled as a standalone cleanup pass.
+- `tui_stage_end` semaphore arithmetic uses asymmetric defaults: increment applies `${_TUI_SUPPRESS_WRITE:-0}` but decrement applies `${_TUI_SUPPRESS_WRITE:-1}`. Both are correct in practice (the variable is always initialised before either runs), but the asymmetry is unexplained and will puzzle a reader. A brief comment stating the intent ("if somehow unset at decrement, assume we were at 1 to preserve the 0 invariant") would close the gap.
+- LOW security finding still open: the path-traversal guard in `_split_flush_sub_entry` (`lib/milestone_split_dag.sh:81`) blocks `/` correctly but does not explicitly reject a bare `..`. The security agent assessed this as fixable and self-documenting: adding `|| [[ "$sub_file" == ".." ]]` to the guard makes the defensive intent explicit. OS-level protection exists, but the code should document the boundary.
+- `run_op` emits a redundant `_tui_write_status` call after `tui_substage_end` (which already flushes internally). Harmless — both writes carry identical state — but could mislead a reader into thinking the explicit call is load-bearing. A short comment or its removal would clarify intent.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `tui_ops_substage.sh` is a runtime dependency of `run_op` (via `tui_substage_begin`/`tui_substage_end`), but the CLAUDE.md layout entry for `tui_ops.sh` still reads "M104 run_op wrapper + TUI update/event helpers" with no mention of the M113 substage dependency. A reader scanning the layout won't know the two modules are coupled.
+- `tools/tests/test_tui_render_timings.py:400-409` and `:437-450` access Rich's private `._cells` attribute directly (`grid.columns[N]._cells[-1]`). This creates a brittle implicit dependency on Rich's internal table data structure. Acceptable for precision testing, but if a Rich upgrade breaks it silently (attribute renamed or restructured), the test would fail with an `AttributeError` rather than a useful assertion message. Wrapping the access in a `hasattr` guard with a clear fallback message would improve resilience.

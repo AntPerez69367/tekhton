@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-04-21
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
+- [2026-04-22 | "Address all 12 open non-blocking notes in .tekhton/NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `tools/tests/test_tui_render_timings.py:400-409` and `:437-450` access Rich's private `._cells` attribute directly (`grid.columns[N]._cells[-1]`). This creates a brittle implicit dependency on Rich's internal table data structure. Acceptable for precision testing, but if a Rich upgrade breaks it silently (attribute renamed or restructured), the test would fail with an `AttributeError` rather than a useful assertion message. Wrapping the access in a `hasattr` guard with a clear fallback message would improve resilience.
 - [2026-04-22 | "Implement Milestone 116: Rework + Architect-Remediation Migration Retire tui_stage_transition"] `tui_ops_substage.sh` is a runtime dependency of `run_op` (via `tui_substage_begin`/`tui_substage_end`), but the CLAUDE.md layout entry for `tui_ops.sh` still reads "M104 run_op wrapper + TUI update/event helpers" with no mention of the M113 substage dependency. A reader scanning the layout won't know the two modules are coupled.
 - [2026-04-22 | "Implement Milestone 115: run_op Migration and current_operation Retirement"] `tui_ops_substage.sh` is a runtime dependency of `run_op` (via `tui_substage_begin`/`tui_substage_end`), but the CLAUDE.md layout entry for `tui_ops.sh` still reads "M104 run_op wrapper + TUI update/event helpers" with no mention of the M113 substage dependency. A reader scanning the layout won't know the two modules are coupled.
 - [2026-04-22 | "M114 - TUI Renderer + Scout Substage Migration"] `lib/tui_ops_substage.sh:27-35` — `tui_substage_begin` signature accepts a MODEL positional arg (documented in the function header comment as `tui_substage_begin LABEL [MODEL]`) but the body only assigns `label="${1:-}"`. The MODEL is never stored or forwarded anywhere. If future milestones want to display the substage model in the TUI, the infrastructure to pass it in is already present at the call site (`${CLAUDE_SCOUT_MODEL:-}`) but the receiving code is absent. Either document the ignore explicitly with a `local _model="${2:-}"` binding, or remove MODEL from the public signature in the header comment to avoid confusion.

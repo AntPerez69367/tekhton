@@ -72,6 +72,10 @@ declare -gA _TUI_CLOSED_LIFECYCLE_IDS=()
 _TUI_CURRENT_SUBSTAGE_LABEL=""
 _TUI_CURRENT_SUBSTAGE_START_TS=0
 
+# Batched-write semaphore: bump to coalesce multiple mutations into one
+# status-file write. _tui_write_status returns early when > 0.
+_TUI_SUPPRESS_WRITE=0
+
 # --- Activation check --------------------------------------------------------
 
 # _tui_should_activate — returns 0 when TUI should spawn, 1 otherwise.
@@ -256,6 +260,11 @@ tui_set_context() {
 
 _tui_write_status() {
     [[ -z "$_TUI_STATUS_FILE" ]] && return 0
+    # Batched-write suppression: callers that issue multiple state mutations
+    # in sequence (e.g. tui_stage_end auto-closing a substage) bump the
+    # counter before the first mutation and decrement after, producing a
+    # single coherent write instead of one per mutation.
+    (( ${_TUI_SUPPRESS_WRITE:-0} > 0 )) && return 0
     local now elapsed
     now=$(date +%s)
     elapsed=$(( now - _TUI_PIPELINE_START_TS ))

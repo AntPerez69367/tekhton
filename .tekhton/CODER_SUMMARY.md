@@ -4,77 +4,121 @@
 
 ## What Was Implemented
 
-M116 — Migrating rework + architect-remediation onto the M113 substage API,
-then deleting the `tui_stage_transition` helper and its M110 wiring tests.
+Addressed all 12 open non-blocking notes in `.tekhton/NON_BLOCKING_LOG.md`. Several
+notes were duplicates (M115/M116 restated the same `run_op` ordering issue;
+M110/M111 restated the same path-traversal guard request; M110/M112 restated the
+same `emit_event` guard idiom). Two notes (5 and 10/11) were informational and
+required no code change — the first acknowledges a harmless convention, and the
+second was already fixed in M113 (ce43fb8) before the notes were recorded. All
+other items produced code or test changes.
 
-- **Rework migration (`stages/review.sh`).** Both rework call sites (the
-  complex-blocker branch and the simple-blocker branch) now open rework via
-  `tui_substage_begin "rework" "$model"` and close it via
-  `tui_substage_end "rework" ""`. The enclosing review `tui_stage_begin`/end
-  pair is untouched, so review remains the sole pipeline-stage lifecycle
-  owner for each review cycle. Rework is now a breadcrumb, not a timeline
-  entry — no more `rework` entries in `stages_complete`.
-- **Architect-remediation migration (`stages/architect.sh`).** Replaced the
-  `tui_stage_transition "architect" "architect-remediation"` call with
-  `tui_substage_begin "architect-remediation" "$architect_model"`. The
-  architect stage now stays open for the entire audit: it is opened once at
-  the top, closed once at the bottom, and architect-remediation is a
-  substage that records as a breadcrumb inside it. The BUILD_BROKEN early
-  return now closes the substage first (with a verdict) and then also closes
-  the enclosing architect stage — previously the transition had already
-  closed architect, so only the substage needed closing; now architect is
-  the open pipeline stage and must be closed on that path too.
-- **`tui_stage_transition` deletion (`lib/tui_ops.sh`).** Removed the
-  function entirely after all callers migrated (scout in M114, run_op in
-  M115, rework + architect-remediation in M116). `grep -rn
-  tui_stage_transition lib/ stages/ tests/ tekhton.sh` returns empty. The
-  historical milestone docs under `.claude/milestones/` still reference the
-  name, which is permitted by the acceptance criteria.
-- **M110-5 and M110-6 test deletion (`tests/test_tui_stage_wiring.sh`).**
-  Removed the two tests that directly exercised `tui_stage_transition`.
-  Every other test in the file (lifecycle-id allocation, stage_begin/end
-  invariants, rework cycle counting, out_reset_pass, ring-buffer event
-  typing, intake-at-end regression guard) continues to pass.
+### Code changes
+
+1. **`run_op` ordering (notes 1 and 2)** — `lib/tui_ops.sh:run_op` now sets
+   `_TUI_AGENT_STATUS="idle"` **before** calling `tui_substage_end` so the
+   substage-end flush already carries the final idle status, removing the
+   transitional "Working…" frame.
+
+2. **`tui_substage_begin` unused MODEL arg (note 6)** — `lib/tui_ops_substage.sh`
+   now binds `local _model="${2:-}"` with a `: "$_model"` reference. Future
+   readers see the arg is intentional and linters no longer flag it.
+
+3. **`tui_substage_end` unused LABEL/VERDICT args (note 7)** — same treatment
+   as note 6: explicit `local _label` and `local _verdict` binds with a
+   `: "$_label" "$_verdict"` reference.
+
+4. **`tui_stage_end` triple-write consolidation (note 8)** — added
+   `_TUI_SUPPRESS_WRITE` semaphore in `lib/tui.sh` (checked at top of
+   `_tui_write_status`). `tui_stage_end` now bumps the semaphore before the
+   auto-close + finish_stage path and issues a single coherent status-file
+   write at the end instead of three.
+
+5. **Path-traversal guard in `_split_flush_sub_entry` (notes 9 and 12)** —
+   `lib/milestone_split_dag.sh` now rejects any `sub_file` value with a `/`
+   separator immediately before the write, independent of `_slugify`'s current
+   behaviour. An `error` log is emitted and the flush returns 1.
+
+### Test changes
+
+6. **`test_substage_blanks_turns_column` (note 3)** — added a direct positive
+   assertion on the grid's live-row turns cell (`grid.columns[2]._cells[-1]`)
+   with plain-text extraction, complementing the existing `--/50 not in`
+   inverse check.
+
+7. **`test_parent_timer_continues_across_substage_boundary` (note 4)** —
+   replaced the `panel_str.split("(", 1)[0]` substring check with direct
+   inspection of the live-row time cell (`grid.columns[1]._cells[-1]`). No
+   longer vulnerable to false negatives if rich ever injects a `(` into the
+   label column.
+
+### Informational items (no code change)
+
+8. **Double-guard acknowledgement (note 5)** — the `declare -f tui_substage_begin`
+   guard in `stages/coder.sh:236` is slightly redundant given the internal
+   `_TUI_ACTIVE` gate, but it follows the established codebase convention and
+   matches how every other lib function call is guarded. No change required.
+
+9. **`emit_event` guard idiom (notes 10 and 11)** — verified both
+   `stages/coder_prerun.sh:69` and `stages/tester_fix.sh:164` already use
+   `declare -f emit_event &>/dev/null`. The notes were filed against M112
+   state; the fix landed in M113 (commit ce43fb8) before the non-blocking
+   notes were collected. Nothing to do.
 
 ## Root Cause (bugs only)
 
-N/A — refactor milestone, not a bug fix.
+N/A — all items were cleanup / quality-of-implementation notes, not bugs.
 
 ## Files Modified
 
-| File | Change |
-|------|--------|
-| `stages/review.sh` | Two `tui_stage_begin/end "rework"` pairs → `tui_substage_begin/end "rework"`. |
-| `stages/architect.sh` | `tui_stage_transition "architect" "architect-remediation"` → `tui_substage_begin "architect-remediation"`; BUILD_BROKEN early return now closes substage + architect stage (instead of only architect-remediation); end-of-function close now clears substage first, then architect. |
-| `lib/tui_ops.sh` | Removed `tui_stage_transition` function (lines ~239–297 in pre-M116). |
-| `tests/test_tui_stage_wiring.sh` | Removed Tests M110-5 and M110-6 (the two that called `tui_stage_transition` directly). |
-| `.tekhton/CODER_SUMMARY.md` | This file. |
+- `lib/tui.sh` — added `_TUI_SUPPRESS_WRITE` global and the semaphore check
+  inside `_tui_write_status`.
+- `lib/tui_ops.sh` — `run_op` now sets idle before `tui_substage_end`;
+  `tui_stage_end` wraps intermediate mutations in the write-suppression
+  semaphore and issues a single final write.
+- `lib/tui_ops_substage.sh` — `tui_substage_begin` binds the unused MODEL
+  arg; `tui_substage_end` binds the unused LABEL and VERDICT args.
+- `lib/milestone_split_dag.sh` — `_split_flush_sub_entry` rejects filenames
+  containing `/` before writing.
+- `tools/tests/test_tui_render_timings.py` — strengthened
+  `test_substage_blanks_turns_column` and
+  `test_parent_timer_continues_across_substage_boundary` with direct
+  inspection of the rich grid cells instead of substring checks on the
+  rendered string.
 
-## Acceptance Criteria Self-Check
+## Observed Issues (out of scope)
 
-- [x] `tui_stage_transition` absent from all `.sh` files under `lib/`,
-      `stages/`, `tekhton.sh`, and `tests/` (milestone docs under
-      `.claude/milestones/` retain historical references, permitted by AC).
-- [x] Rework in review: `tui_substage_begin/end` pair per cycle; no pill
-      allocation; no `rework` record in `stages_complete` (the policy in
-      `pipeline_order_policy.sh` already declared rework as `sub|no|yes|yes|review`
-      — this now flows through the substage API that doesn't touch
-      `_TUI_STAGES_COMPLETE`).
-- [x] Architect-remediation: one architect `tui_stage_begin/end` pair owns
-      the pipeline-stage lifecycle; remediation flows through
-      `tui_substage_begin/end` and does not append to `stages_complete`.
-- [x] All three architect-remediation call sites (formerly at lines 151,
-      155/217, 392) now use the substage API with matched begin/end.
-- [x] `tests/test_tui_stage_wiring.sh` passes after M110-5 and M110-6 removal
-      (49 passed / 0 failed when run standalone).
-- [x] Shellcheck clean: `stages/review.sh`, `stages/architect.sh`,
-      `lib/tui_ops.sh` all produce zero warnings. (Pre-existing SC2034
-      warnings in `tests/test_tui_stage_wiring.sh` are unchanged; they were
-      already on HEAD before M116 and are out of scope.)
-- [x] Non-goals respected: no changes to rework retry limits, review cycle
-      caps, architect retry thresholds, label names, or
-      `pipeline_order_policy.sh` records.
+- `tools/tests/test_tui_render_timings.py` is 512 lines (was 480 before my
+  ~30-line additions), exceeding the 300-line ceiling. Pre-existing. Splitting
+  this test file is a separate cleanup concern and outside the scope of a
+  non-blocking-notes sweep.
+
+## Docs Updated
+
+None — no public-surface changes in this task. All modifications are internal
+to the TUI status-writer flow, substage API bookkeeping, the milestone-split
+helper, and test assertions. No config keys, CLI flags, or exported contracts
+changed.
 
 ## Human Notes Status
 
-No unchecked human notes passed to this run.
+- Note 1 (run_op idle ordering, M116 restatement) — COMPLETED (lib/tui_ops.sh).
+- Note 2 (run_op idle ordering, M115) — COMPLETED (same fix as note 1).
+- Note 3 (test_substage_blanks_turns_column strengthening) — COMPLETED
+  (tools/tests/test_tui_render_timings.py).
+- Note 4 (test_parent_timer_continues_across_substage_boundary strengthening)
+  — COMPLETED (tools/tests/test_tui_render_timings.py).
+- Note 5 (double-guard acknowledgement) — COMPLETED (informational; no change
+  needed; documented above).
+- Note 6 (tui_substage_begin MODEL arg) — COMPLETED (lib/tui_ops_substage.sh).
+- Note 7 (tui_substage_end LABEL/VERDICT args) — COMPLETED
+  (lib/tui_ops_substage.sh).
+- Note 8 (tui_stage_end triple-write consolidation) — COMPLETED (lib/tui.sh +
+  lib/tui_ops.sh).
+- Note 9 (path-traversal guard, M110 restatement) — COMPLETED
+  (lib/milestone_split_dag.sh).
+- Note 10 (emit_event guard idiom, M110 restatement) — COMPLETED
+  (already fixed in M113; verified).
+- Note 11 (emit_event guard idiom, M112 restatement) — COMPLETED
+  (already fixed in M113; verified).
+- Note 12 (path-traversal guard, M111 restatement) — COMPLETED (same fix as
+  note 9).
