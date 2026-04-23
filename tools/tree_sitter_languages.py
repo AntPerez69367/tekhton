@@ -62,10 +62,14 @@ def get_language(ext: str) -> Optional[object]:
 
     try:
         mod = importlib.import_module(module_name)
-        # Modern tree-sitter grammar packages expose a language() function
-        lang_fn = getattr(mod, "language", None)
+        # Multi-grammar packages (e.g. tree_sitter_typescript) expose
+        # grammar-specific factories like language_typescript() / language_tsx().
+        # Probe the specific name first, then fall back to the single-grammar
+        # conventions (language() function, LANGUAGE constant).
+        lang_fn = getattr(mod, f"language_{lang_name}", None)
         if lang_fn is None:
-            # Some packages use LANGUAGE constant
+            lang_fn = getattr(mod, "language", None)
+        if lang_fn is None:
             lang_fn = getattr(mod, "LANGUAGE", None)
         if lang_fn is None:
             return None

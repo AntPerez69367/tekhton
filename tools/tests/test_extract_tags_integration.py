@@ -121,3 +121,48 @@ class TestExtractTagsIntegration:
         # Should return a valid (possibly empty) result, not None
         assert result is not None
         assert result["definitions"] == []
+
+
+class TestExtractTagsTypescript:
+    """Integration tests for .ts / .tsx extraction via the multi-grammar loader.
+
+    Skipped entirely when tree_sitter_typescript isn't installed — these
+    tests exercise the fix for issue #181 and require the real grammar.
+    """
+
+    def _fixture_root(self):
+        return os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "tests",
+                         "fixtures", "indexer_project")
+        )
+
+    def test_extract_tags_typescript_file(self, tmp_path):
+        pytest.importorskip("tree_sitter_typescript")
+        # Clear cache so we actually exercise the loader, not cached tags.
+        import tree_sitter_languages as ts_lang
+        ts_lang._lang_cache.clear()
+
+        root = self._fixture_root()
+        cache = TagCache(str(tmp_path / "tags.json"))
+
+        result = _extract_tags("web/client.ts", root, cache)
+
+        assert result is not None, "Expected _extract_tags to return tags for a TS file"
+        assert "definitions" in result
+        names = [d["name"] for d in result["definitions"]]
+        assert "fetchUser" in names, f"fetchUser not in {names}"
+
+    def test_extract_tags_tsx_file(self, tmp_path):
+        pytest.importorskip("tree_sitter_typescript")
+        import tree_sitter_languages as ts_lang
+        ts_lang._lang_cache.clear()
+
+        root = self._fixture_root()
+        cache = TagCache(str(tmp_path / "tags.json"))
+
+        result = _extract_tags("web/component.tsx", root, cache)
+
+        assert result is not None, "Expected _extract_tags to return tags for a TSX file"
+        assert "definitions" in result
+        names = [d["name"] for d in result["definitions"]]
+        assert "Greeting" in names, f"Greeting not in {names}"

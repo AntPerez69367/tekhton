@@ -1,4 +1,4 @@
-# Reviewer Report — M121
+# Reviewer Report — M122
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,12 +10,15 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/validate_config.sh:138` — comment reads "Check 6: DESIGN_FILE exists on disk" but is now logically check 7 since 6a and 6b were inserted immediately before it; the numbering is misleading but not functional.
-- `lib/replan_brownfield.sh` — 347 lines, 47 over the 300-line ceiling; pre-existing before M121 and correctly called out in CODER_SUMMARY as out-of-scope to split here.
-- `stages/plan_generate.sh:123` — write to `CLAUDE.md` (`printf '%s\n' "$claude_md_content" > "$claude_md"`) is unchecked; intentionally out of scope for M121 (only `DESIGN_FILE` write path was in spec), but a future hardening opportunity analogous to what was done in `plan_interview.sh`.
+- `lib/indexer_helpers.sh` header "Provides:" comment (lines 7–9) does not list `_indexer_emit_stderr_tail()`. The new function should appear there for consistency with every other helper module.
+- `tests/test_indexer_typescript_smoke.sh:16` assigns `TMPDIR=$(mktemp -d)`, shadowing the standard env var of the same name. Downstream `mktemp` calls inside `run_repo_map` will inherit it (harmless — the value is a valid dir), but a non-reserved name (`TEST_TMPDIR` or `WORK_DIR`) would be clearer and avoids surprising OS tooling that inspects `TMPDIR`.
+- `tests/test_indexer_typescript_smoke.sh:80` defines `_indexer_find_venv_python()` before the `source` calls, then redefines it at line 92 after sourcing. The pre-source stub is dead code — the function is not called during module load. Only the post-source redefinition at line 92 is needed; the earlier stub and its comment are misleading.
 
 ## Coverage Gaps
-- None
+- M122's acceptance criteria calls for "a parametrized 'all grammars that import cleanly return a Language' test" to verify the new probe order doesn't regress non-TS extensions. No such parametrized test was added. The Non-Goals section defers the full-audit suite to M123, so this is expected — but the coverage gap should be on M123's radar.
+
+## ACP Verdicts
+(No Architecture Change Proposals in CODER_SUMMARY.md — section omitted.)
 
 ## Drift Observations
-- `lib/milestone_split_dag.sh:81` — pre-existing: the `*/*` path-traversal guard does not explicitly reject the degenerate `..` case (no slash); OS-level safety means no actual traversal is possible, but the defensive intent would be cleaner with an explicit `|| [[ "$sub_file" == ".." ]]`. Not introduced by M121 — surfaces here from the security agent's low-severity finding.
+- None

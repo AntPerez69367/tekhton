@@ -29,6 +29,25 @@ _indexer_resolve_cache_dir() {
     echo "$cache_dir"
 }
 
+# --- Fatal-exit diagnostic surfacing ------------------------------------------
+
+# Emit the last few lines of repo_map.py stderr as warnings so users can
+# self-diagnose fatal failures (missing grammars, parse errors, etc.).
+# Args: $1 — path to stderr capture file
+_indexer_emit_stderr_tail() {
+    local stderr_output="$1"
+    [[ -s "$stderr_output" ]] || return 0
+    local stderr_tail
+    stderr_tail=$(tail -n 5 "$stderr_output" 2>/dev/null | \
+        sed 's/^/[indexer]   /')
+    [[ -n "$stderr_tail" ]] || return 0
+    warn "[indexer] Last lines of repo_map.py stderr:"
+    local _line
+    while IFS= read -r _line; do
+        warn "$_line"
+    done <<< "$stderr_tail"
+}
+
 # --- Language auto-detection --------------------------------------------------
 
 # Detect programming languages in the project by scanning file extensions.

@@ -2,14 +2,14 @@
 PASS
 
 ## Confidence
-95
+93
 
 ## Reasoning
-- Scope is precisely defined: 6 numbered goals, exact files to modify, and a detailed Non-Goals section leave no ambiguity about what is in and out of scope
-- Acceptance criteria are specific and testable — each criterion names a concrete condition, expected return value, or observable output (error message text, exit code, file size check)
-- Code snippets are provided for every proposed change, removing interpretation risk for the implementation
-- Brownfield safety is explicitly addressed with two dedicated acceptance criteria, covering both the execution pipeline and validator exit-code behavior
-- Dependency on M120 is declared upfront and its interaction with M121's assertions is clearly explained (assertions won't fire on a correctly-functioning M120 pipeline)
-- No new user-facing config keys are introduced, so no Migration impact section is required
-- Not a UI milestone; UI testability criterion is not applicable
-- No existing tests require edits (stated as an acceptance criterion), reducing regression risk
+- Scope is precisely defined: a "Files Modified" table lists every file to touch, plus a "Non-Goals" section that explicitly excludes adjacent concerns (M123 defence-in-depth, broader fixture coverage, `_EXT_TO_LANG` shape changes)
+- Root cause is fully diagnosed with reproduction steps and verified output (`dir(tree_sitter_typescript)`)
+- Code changes are shown as explicit before/after diffs — no interpretation required
+- Acceptance criteria are specific and testable: named function calls, identity assertions, exit-code checks, grep-for-string checks on warning output, and shellcheck compliance
+- Negative-path testing (Goal 5 step 6) is described concretely enough for implementation
+- No user-facing config keys added; no migration impact section required
+- No UI components; UI testability criterion is not applicable
+- The implicit assumption that `lang_name` for `.ts` is `"typescript"` and for `.tsx` is `"tsx"` is clearly derivable from the factory names (`language_typescript`, `language_tsx`) shown in the design — no ambiguity for an implementor

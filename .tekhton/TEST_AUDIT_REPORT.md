@@ -1,45 +1,74 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 18 test functions
+Tests audited: 2 files, 38 test functions (53 cases including parametrized instances)
 Verdict: PASS
-
----
 
 ### Findings
 
-#### INTEGRITY: Dead code block with contradictory comment in test 3.1
-- File: tests/test_m120_init_maturity.sh:142-155
-- Issue: Lines 142–155 contain a subshell block whose output is printed to
-  stdout but is never captured or passed to `pass`/`fail`. The block
-  contributes nothing to the PASS/FAIL counters and is dead code from an
-  assertion standpoint. More importantly, the comment on lines 148–149
-  states `":= should NOT fire (DESIGN_FILE is set, just empty)"`, which is
-  factually incorrect — the `:=` operator fires on both unset AND empty
-  strings. Line 150 then correctly says "only fires if the variable is UNSET
-  or empty", creating an internal contradiction. The actual assertion at
-  lines 156–162 is correct and expects `.tekhton/DESIGN.md` (self-healing
-  fires, as it should), so no false pass is produced. The risk is that a
-  future reader, seeing the dead block's comment, believes the test validates
-  non-healing behavior for empty strings.
-- Severity: LOW
-- Action: Remove the dead subshell block (lines 142–155). The captured
-  subshell at lines 156–162 already verifies the correct behavior. If the
-  `:=` semantics warrant documentation, add a single accurate comment above
-  the captured subshell (e.g. `# := fires on both unset and empty`).
+#### INTEGRITY: test_known_extension_returns_object always passes
+- File: tools/tests/test_tree_sitter_languages.py:142-146
+- Issue: The assertion `assert lang is None or hasattr(lang, '__class__')` is a
+  tautology. Every Python object — including `None` — has `__class__`, so the
+  right-hand disjunct is unconditionally True. The test passes regardless of
+  what `get_language()` returns and provides zero coverage. Pre-existing weakness
+  not introduced by M122 (M122 added `TestTypescriptGrammarLoading` and
+  `TestAllGrammarsLoadIfInstalled`), but the file is under audit.
+- Severity: MEDIUM
+- Action: Replace with a conditional that is falsifiable. When tree-sitter is
+  absent, skip via `pytest.importorskip("tree_sitter")`; when present, assert
+  `isinstance(lang, tree_sitter.Language)`. The pattern used in
+  `test_get_language_typescript_returns_object` (line 187–194) is the correct
+  model.
 
-#### COVERAGE: Suite 3 tests only DESIGN_FILE from artifact_defaults.sh
-- File: tests/test_m120_init_maturity.sh:138-191 (Suite 3)
-- Issue: `lib/artifact_defaults.sh` defines ~30 variables using the same `:=`
-  idiom. Suite 3 exercises only `DESIGN_FILE`. The self-healing behavior for
-  other artifact paths and the `TEKHTON_DIR` chaining (e.g.
-  `CODER_SUMMARY_FILE=${TEKHTON_DIR}/CODER_SUMMARY.md`) goes untested.
-  Acceptable for the M120-scoped fix, but the pattern coverage is thin if
-  the file is later extended.
+#### COVERAGE: test_caching_behavior trivially passes when tree_sitter is absent
+- File: tools/tests/test_tree_sitter_languages.py:152-157
+- Issue: `assert lang1 is lang2` passes trivially when `tree_sitter` is not
+  installed because `get_language(".py")` returns `None` both times and
+  `None is None` is always True. The test does not clear `_lang_cache` in setup,
+  so if `.py` was already cached from a prior test the cache-hit path is exercised,
+  but when grammars are absent the assertion never validates real caching.
+  Pre-existing, not introduced by M122.
 - Severity: LOW
-- Action: Optional. Add one additional variable check — e.g. verify that
-  an unset `CODER_SUMMARY_FILE` also resolves via the `TEKHTON_DIR` default —
-  to validate the chaining mechanism for the remaining ~29 variables.
+- Action: Add `import tree_sitter_languages as mod; mod._lang_cache.clear()` at
+  the start of the test and gate the meaningful assertion behind
+  `pytest.importorskip("tree_sitter")`. When tree_sitter is available, assert
+  `lang1 is lang2 and lang1 is not None`.
+
+#### SCOPE: Shell pre-verification STALE-SYM flags are false positives
+- File: tools/tests/test_tree_sitter_languages.py (all four flagged symbols)
+- Issue: The shell detector flagged `os`, `pytest`, `sys`, and `tree_sitter_languages`
+  as stale references. These are not stale: `os` and `sys` are Python standard
+  library modules, `pytest` is the test runner, and `tree_sitter_languages` is the
+  module under test imported via `sys.path.insert` at lines 11–19.
+- Severity: LOW
+- Action: None. Shell-based symbol detection does not model Python import
+  conventions. These flags can be suppressed or ignored.
+
+---
+
+### Notes on New Tests (M122 additions)
+
+`TestTypescriptGrammarLoading` (tools/tests/test_tree_sitter_languages.py:173–222):
+All four tests are honest, properly gated on `pytest.importorskip`, clear
+`_lang_cache` in `setup_method`, and assert real `tree_sitter.Language` identity.
+`test_get_parser_typescript_parses_simple_source` parses live TypeScript source
+and checks for the absence of ERROR nodes — this directly exercises the bug fixed
+by M122 and is the strongest test in the suite.
+
+`TestAllGrammarsLoadIfInstalled` (tools/tests/test_tree_sitter_languages.py:260–287):
+Parametrized across all 21 entries in `_EXT_TO_LANG`. Clears `_lang_cache` per
+test in `setup_method`. Assertions anchor to `tree_sitter.Language` type, not a
+tautology. Correctly implements M122 acceptance criterion AC-3: verifying that the
+new factory-function probe order does not break single-grammar fallback packages.
+
+`tests/test_indexer_emit_stderr_tail.sh`: Five test sections covering non-existent
+file, empty file, short content (≤5 lines), long content (>5 lines), and exact
+prefix format. Sources `lib/indexer_helpers.sh` directly and calls
+`_indexer_emit_stderr_tail()` with controlled fixture files in a `mktemp -d` temp
+directory — fully isolated from project state. Assertions are anchored to
+implementation details (3-space prefix `[indexer]   `, `tail -n 5` semantics,
+exact header string) verifiable in `indexer_helpers.sh:41-48`. No issues found.
 
 ---
 
@@ -47,10 +76,10 @@ Verdict: PASS
 
 | Criterion | Result |
 |-----------|--------|
-| 1. Assertion Honesty | PASS — All expected values are derived from real implementation outputs; no hard-coded magic values disconnected from logic |
-| 2. Edge Case Coverage | PASS — Boundary tests at file_count=5/6, has_commands=0/1; unknown classification fallback; empty/unset/non-empty/double-source for DESIGN_FILE |
-| 3. Implementation Exercise | PASS — `init_helpers_maturity.sh` and `artifact_defaults.sh` sourced directly; stubs for `out_section`/`out_msg` are minimal and appropriate (avoids full common.sh chain) |
-| 4. Test Weakening | N/A — New test file; no existing tests modified |
-| 5. Test Naming | PASS — Names encode scenario and expected outcome (e.g. `1.5 5 files, no commands → greenfield`, `3.1 empty DESIGN_FILE self-heals to .tekhton/DESIGN.md`) |
-| 6. Scope Alignment | PASS — Tests exercise only the two new files introduced by M120; no references to deleted or renamed symbols |
-| 7. Test Isolation | PASS — Filesystem tests use `mktemp -d` with EXIT trap; variable-only tests run in subshells to avoid leaking state to the outer shell |
+| 1. Assertion Honesty | PASS — New tests (TypeScript, parametrized, stderr-tail) assert real outputs. Two pre-existing tautologies noted (MEDIUM/LOW). |
+| 2. Edge Case Coverage | PASS — Non-existent file, empty file, short/long content, unknown extensions, empty set inputs all covered. |
+| 3. Implementation Exercise | PASS — Real `get_language()`, `get_parser()`, `_indexer_emit_stderr_tail()` are called; mocking is minimal and appropriate. |
+| 4. Test Weakening | N/A — No existing tests were modified by M122; only new tests added. |
+| 5. Test Naming | PASS — Names encode scenario and expected outcome (e.g. `test_get_language_typescript_tsx_are_distinct`, `test_grammar_loads_if_installed`). |
+| 6. Scope Alignment | PASS — All imports and references match current `tree_sitter_languages.py` exports. STALE-SYM flags are false positives. |
+| 7. Test Isolation | PASS — Shell test uses `mktemp -d` with EXIT trap. Python tests clear `_lang_cache` per test in `setup_method`. No test reads mutable project files. |

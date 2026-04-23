@@ -3,103 +3,115 @@
 ## Status: COMPLETE
 
 ## What Was Implemented
-M121 — Planning Path Write-Failure Hardening + Empty-Slate Test Coverage.
 
-- **Goal 1 — Fail-loud DESIGN_FILE guard.** Added `_assert_design_file_usable()`
-  helper to `lib/plan.sh` (after `load_plan_config` block, before the
-  planning-config defaults). Returns 1 with a clear `error()` message when
-  `DESIGN_FILE` is empty or ends in `/`, returns 0 otherwise. Invoked at the
-  top of all six plan-mode / replan-mode consumers:
-  - `run_plan_interview` in `stages/plan_interview.sh`
-  - `run_plan_generate` in `stages/plan_generate.sh`
-  - `check_design_completeness` in `lib/plan_completeness.sh`
-  - `run_plan_completeness_loop` in `lib/plan_completeness.sh`
-  - `run_replan` in `lib/replan_brownfield.sh`
-  - `_apply_brownfield_delta` in `lib/replan_brownfield.sh`
+M122 — Indexer Multi-Grammar Package Support + Diagnostic Plumbing
+(TypeScript Fix). Closes Issue #181.
 
-  Per the milestone design, `lib/plan_state.sh` was intentionally left
-  unchanged (cosmetic label rendering tolerates empty values).
+- **Goal 1 — Factory-function probe.** `tools/tree_sitter_languages.py`
+  `get_language()` now probes `language_<lang_name>` first (e.g.
+  `language_typescript`, `language_tsx` on `tree_sitter_typescript`)
+  before falling back to the single-grammar `language` / `LANGUAGE`
+  conventions. Uses the `lang_name` already unpacked from
+  `_EXT_TO_LANG`. Cache key
+  (`f"{module_name}.{lang_name}"`) already disambiguates `.ts` vs
+  `.tsx` so the two return distinct cached `Language` objects.
+- **Goal 2 — Stderr diagnostic plumbing.** `lib/indexer.sh`
+  `run_repo_map()`: moved `rm -f "$stderr_output"` out of the stats-
+  parse block; on fatal exit (exit 2 or empty content) the new warning
+  now includes a `[indexer] Last lines of repo_map.py stderr:` block
+  with the tail of the Python tool's stderr. The emitter lives in
+  `lib/indexer_helpers.sh` as `_indexer_emit_stderr_tail()` to keep
+  `indexer.sh` under the 300-line ceiling. Cleanup happens exactly
+  once before return on every branch.
+- **Goal 3 — Unit tests.** Added four TS/TSX loader tests in
+  `tools/tests/test_tree_sitter_languages.py::TestTypescriptGrammarLoading`,
+  all gated on `pytest.importorskip("tree_sitter_typescript")`. Each
+  test clears `_lang_cache` in `setup_method` so the loader is exercised
+  fresh, not hitting stale state from other tests.
+- **Goal 4 — Fixture coverage.** Added
+  `tests/fixtures/indexer_project/web/client.ts` (exported function +
+  interface) and `tests/fixtures/indexer_project/web/component.tsx`
+  (typed React component). Integration tests
+  `test_extract_tags_typescript_file` and `test_extract_tags_tsx_file`
+  assert `_extract_tags()` returns definitions for `fetchUser` and
+  `Greeting` respectively; both skip-on-missing-grammar.
+- **Goal 5 — End-to-end smoke test.** New
+  `tests/test_indexer_typescript_smoke.sh` verifies:
+    - Positive: TS-only project with three `.ts` files produces a
+      non-empty repo map containing `## src/` headings; `run_repo_map`
+      exits 0.
+    - Negative: repo_map.py is swapped for a stub that exits 2 with
+      "Warning: no files could be parsed" — `run_repo_map` returns
+      non-zero, the warning includes the `[indexer] Last lines of
+      repo_map.py stderr:` header, and the stderr tail shows the
+      actionable Python-side error.
+  The whole test skips cleanly (exit 0 + SKIP line) when the indexer
+  venv or `tree_sitter_typescript` is unavailable.
+- **Goal 6 — Auto-discovery.** `tests/run_tests.sh` globs
+  `test_*.sh` files, so no explicit registration is required.
 
-- **Goal 2 — Verified write in `run_plan_interview`.** Replaced the
-  unchecked `printf ... > "$design_file"` at `stages/plan_interview.sh:194`
-  with (a) a failing-redirect check (`if ! printf ... > "$file" 2>/dev/null`)
-  that emits a specific error and returns 1, plus (b) a post-write
-  `[[ ! -s "$design_file" ]]` zero-byte assertion for defence in depth.
-  Both paths close fd 3 before returning.
+## Root Cause (bugs only)
 
-- **Goal 3 — Config validator shape checks.** Added checks 6a and 6b to
-  `lib/validate_config.sh` immediately before the existing existence check.
-  - 6a warns when `pipeline.conf` contains a literal `DESIGN_FILE=""` (empty
-    string). Detected by grepping the raw file, since `config_defaults.sh`
-    self-heals the in-memory value before validation runs. Wording is
-    brownfield-safe (informational, points out the runtime self-heal).
-  - 6b warns when `DESIGN_FILE` ends in `/`. Uses the in-memory value
-    (survives `config_defaults.sh` because `:=` does not override non-empty
-    values). Actionable wording (fix instructions).
-  Both are warnings only — `validate_config()` still returns 0 on warnings,
-  preserving brownfield safety for users on legacy `pipeline.conf` files.
+Two independent defects combined to silently hollow out the indexer on
+TS-heavy projects:
 
-- **Goal 4 — Integration test (NEW).** `tests/test_plan_empty_slate.sh`.
-  Three sub-tests:
-  1. Fresh `--init` emits canonical `DESIGN_FILE=".tekhton/DESIGN.md"`.
-  2. `run_plan_interview` with a stubbed batch call produces a non-empty
-     `.tekhton/DESIGN.md` on disk with the stubbed content.
-  3. Negative case: a pipeline.conf-equivalent `DESIGN_FILE=""` still
-     round-trips cleanly because M120 + M121 self-heal empty values. The
-     assertion does not fire and the write succeeds at the canonical path.
-
-- **Goal 5 — Unit test (NEW).** `tests/test_plan_config_loader.sh`.
-  Six sub-tests exercising: (1) empty-string self-heal, (2) custom
-  DESIGN_FILE preservation, (3) no-pipeline.conf default path, (4)
-  `_assert_design_file_usable` returns 1 on empty, (5) returns 1 on
-  trailing slash, (6) returns 0 on canonical value.
-
-- **Goal 6 — Test registration.** `tests/run_tests.sh` uses a glob
-  (`for test_file in "${TESTS_DIR}"/test_*.sh`) to auto-discover all
-  `test_*.sh` files; no explicit registration row is needed or used. Both
-  new files are picked up by the runner automatically.
+1. `get_language()` only probed `mod.language` / `mod.LANGUAGE`.
+   `tree_sitter_typescript` ships no such symbol — only
+   `language_typescript()` and `language_tsx()`. Every `.ts`/`.tsx`
+   file therefore returned `None` from `get_parser`, `_extract_tags`
+   returned `None`, `all_tags` stayed empty, and `repo_map.py` exited
+   2 with "no files could be parsed".
+2. `run_repo_map` captured Python stderr to a tempfile, parsed stats
+   out of it, and then `rm -f`-ed the file *before* the fatal-exit
+   warning fired. Users saw only the generic fallback line with no
+   actionable diagnostic.
 
 ## Files Modified
-- `lib/plan.sh` — Added `_assert_design_file_usable()` helper.
-- `stages/plan_interview.sh` — Added assertion + verified-write at the
-  write path.
-- `stages/plan_generate.sh` — Added assertion at entry.
-- `lib/plan_completeness.sh` — Added assertion at two entry points.
-- `lib/replan_brownfield.sh` — Added assertion at two entry points.
-- `lib/validate_config.sh` — Added checks 6a (empty string) and 6b
-  (trailing slash).
-- `tests/test_plan_config_loader.sh` (NEW) — Unit test.
-- `tests/test_plan_empty_slate.sh` (NEW) — Integration test.
 
-## Docs Updated
-None — no public-surface changes in this task. M121 is pure defence-in-depth
-hardening: no new config keys, no new CLI flags, no schema changes, and no
-new exported helpers that callers outside `lib/plan*.sh` would reference.
-The only user-visible change is two new validator warnings and two new
-error messages that fire only on degenerate configs — both surface through
-existing output channels (`validate_config` and `error()` respectively) and
-require no doc entry.
-
-## Verification
-- `shellcheck -S warning` clean on all modified files and both new tests
-  (only info-level SC1091 for sourced files and SC2153 for
-  exported-elsewhere variables, both expected for this codebase).
-- Both new tests pass standalone:
-  - `test_plan_config_loader.sh`: 6/6 pass.
-  - `test_plan_empty_slate.sh`: 8/8 pass (including the negative
-    self-heal round-trip case).
-- Hand-test confirms failing-write path returns exit code 1 (write to a
-  chmod 555 directory path).
-- Full `bash tests/run_tests.sh`: 439/439 shell tests pass, 188/188
-  Python tests pass. No regressions vs the pre-change state; the 8
-  pre-existing failures documented in the baseline did not recur in
-  this environment.
+- `tools/tree_sitter_languages.py` — multi-grammar factory probe in
+  `get_language()`.
+- `lib/indexer.sh` — stderr preservation + call to
+  `_indexer_emit_stderr_tail` on fatal exit; single end-of-function
+  cleanup.
+- `lib/indexer_helpers.sh` — new `_indexer_emit_stderr_tail()` helper
+  (extracted from `indexer.sh` to stay under 300 lines).
+- `tools/tests/test_tree_sitter_languages.py` — new
+  `TestTypescriptGrammarLoading` class (4 tests).
+- `tools/tests/test_extract_tags_integration.py` — new
+  `TestExtractTagsTypescript` class (2 tests).
+- `tests/fixtures/indexer_project/web/client.ts` (NEW) — TS fixture.
+- `tests/fixtures/indexer_project/web/component.tsx` (NEW) — TSX
+  fixture.
+- `tests/test_indexer_typescript_smoke.sh` (NEW) — end-to-end smoke
+  test, positive + negative paths.
 
 ## Human Notes Status
-No human notes listed in this task.
+
+The task body listed no items under a Human Notes section, only the
+Clarifications block (which concerned unrelated earlier runs about
+Watchtower, NON_BLOCKING_LOG, `--init` flow, and HUMAN_NOTES
+consistency — none relevant to M122). The CLARIFICATIONS.md file is
+left untouched. No notes to mark.
+
+## Docs Updated
+
+None — no public-surface changes in this task. The change is purely
+internal: a probe order inside `get_language()` and a diagnostic
+surfacing change in `run_repo_map`. No new CLI flags, no new config
+keys, no changed function signatures. The `CLAUDE.md` entry for
+`lib/indexer_helpers.sh` already describes it broadly as "Language
+detection, config validation, file extraction" — the new
+`_indexer_emit_stderr_tail` helper is an internal symbol and does not
+need doc mention.
 
 ## Observed Issues (out of scope)
-- `lib/replan_brownfield.sh` is 347 lines (2 above the pre-M121 baseline of
-  345). It already exceeded the 300-line ceiling before M121 and splitting
-  it out would be a refactor unrelated to the M121 design. Flagging for
-  future cleanup rather than expanding scope here.
+
+- `tests/test_tui_lifecycle_invariants.sh` failed once during the full
+  suite run but passes reliably in isolation (ran it 3 times
+  standalone, all pass; ran `run_tests.sh` a second time and it passed
+  there too). The error was
+  `/tmp/tmp.XXX/status.json.tmp: No such file or directory` from
+  `lib/tui.sh:272`, suggesting a race between parallel test tmpdir
+  cleanup and the TUI sidecar's atomic-write pattern. Pre-existing
+  flakiness, not caused by M122 — none of M122's edits touch TUI
+  lifecycle code.

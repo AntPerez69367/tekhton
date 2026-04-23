@@ -189,7 +189,8 @@ run_repo_map() {
         fi
     fi
 
-    # Parse cache stats from stderr (last line is JSON if --stats was passed)
+    # Parse cache stats from stderr (last line is JSON if --stats was passed).
+    # Stderr file is preserved until after the fatal-exit warning below fires.
     if [[ -f "$stderr_output" ]]; then
         local stats_line
         stats_line=$(grep -E '^\{' "$stderr_output" | tail -1 2>/dev/null || true)
@@ -197,20 +198,20 @@ run_repo_map() {
             INDEXER_CACHE_HIT_RATE=$(echo "$stats_line" | \
                 grep -oE '"hit_rate":[0-9.]+' | grep -oE '[0-9.]+$' || true)
         fi
-        rm -f "$stderr_output" 2>/dev/null || true
     fi
 
     if [[ "$exit_code" -eq 2 ]] || [[ -z "$REPO_MAP_CONTENT" ]]; then
         warn "[indexer] repo_map.py failed — falling back to no repo map."
+        _indexer_emit_stderr_tail "$stderr_output"
+        rm -f "$stderr_output" 2>/dev/null || true
         REPO_MAP_CONTENT=""
         return 1
     fi
+    rm -f "$stderr_output" 2>/dev/null || true
 
     if [[ "$exit_code" -eq 1 ]]; then
         log "[indexer] Partial repo map generated (some files could not be parsed)."
     fi
-
-    # M61: Save to run cache after successful generation
     _save_repo_map_run_cache
     emit_test_symbol_map
 
@@ -295,5 +296,4 @@ invalidate_repo_map_cache() {
     fi
     return 0
 }
-
 # Intra-run cache functions: see lib/indexer_cache.sh (M61)

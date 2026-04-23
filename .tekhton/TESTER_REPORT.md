@@ -1,15 +1,16 @@
 ## Planned Tests
-- [x] `tests/test_plan_config_loader.sh` — Verify existing 6/6 pass (empty self-heal, custom preservation, no-conf default, _assert_design_file_usable ×3)
-- [x] `tests/test_plan_empty_slate.sh` — Verify existing 8/8 pass (--init canonical default, round-trip write, self-heal round-trip)
-- [x] `tests/test_validate_config.sh` — Add M121 coverage: 6a warning (pipeline.conf DESIGN_FILE=""), 6b warning (trailing slash), no-false-positive on valid/unset, both are warnings-only (exit 0)
+- [x] `tools/tests/test_tree_sitter_languages.py` — Parametrized test: all grammars that import cleanly return a Language object (M122 acceptance criterion AC-3)
+- [x] `tests/test_indexer_emit_stderr_tail.sh` — Unit tests for new `_indexer_emit_stderr_tail()` helper: empty file, content output, 5-line tail limit
 
 ## Test Run Results
-Passed: 38  Failed: 0
+Passed: 460  Failed: 0
+
+Shell suite: 441 passed, 0 failed
+Python suite: 202 passed, 14 skipped (grammar packages not installed), 0 failed
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_plan_config_loader.sh`
-- [x] `tests/test_plan_empty_slate.sh`
-- [x] `tests/test_validate_config.sh`
+- [x] `tools/tests/test_tree_sitter_languages.py`
+- [x] `tests/test_indexer_emit_stderr_tail.sh`
