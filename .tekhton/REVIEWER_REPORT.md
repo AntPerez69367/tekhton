@@ -1,4 +1,4 @@
-# Reviewer Report
+# Reviewer Report — M121
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,13 +10,12 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/common.sh` is 415 lines (pre-existing, not introduced by M120). Well over the 300-line ceiling; further extraction of logging/color/box-drawing helpers is pending its own milestone.
-- In `_classify_project_maturity` (init_helpers_maturity.sh:26-27), the function checks for `.tekhton/DESIGN.md` and `DESIGN.md` on disk directly, duplicating the same checks the caller in `init.sh` (lines 225-229) already performs to build `_m120_design_file`. The redundancy is harmless and doesn't affect correctness, but the `$design_file` argument is redundant for the disk-file case.
-- Suite 1 of `test_m84_static_analysis.sh` still excludes `common.sh` from literal-filename grep. Since M120 removed the literal assignments from `common.sh` (they now live exclusively in `artifact_defaults.sh`), the exclusion is technically unnecessary. Harmless, but the comment could mislead a future reader.
+- `lib/validate_config.sh:138` — comment reads "Check 6: DESIGN_FILE exists on disk" but is now logically check 7 since 6a and 6b were inserted immediately before it; the numbering is misleading but not functional.
+- `lib/replan_brownfield.sh` — 347 lines, 47 over the 300-line ceiling; pre-existing before M121 and correctly called out in CODER_SUMMARY as out-of-scope to split here.
+- `stages/plan_generate.sh:123` — write to `CLAUDE.md` (`printf '%s\n' "$claude_md_content" > "$claude_md"`) is unchecked; intentionally out of scope for M121 (only `DESIGN_FILE` write path was in spec), but a future hardening opportunity analogous to what was done in `plan_interview.sh`.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `lib/common.sh:1-17` — File has been over the 300-line ceiling since before M120 (415 lines after M120 reduced it from 446). The box-drawing helpers (_build_box_hline, _print_box_line, _setup_box_chars, _print_box_frame) are a natural extraction candidate for a future cleanup milestone.
-- `lib/init_helpers_maturity.sh:26` and `lib/init.sh:225-229` — Redundant design-doc disk probes: the caller builds `_m120_design_file` by checking `.tekhton/DESIGN.md` and `DESIGN.md`, then passes it to `_classify_project_maturity`, which makes the same on-disk checks again internally. One of the two lookups is unnecessary.
+- `lib/milestone_split_dag.sh:81` — pre-existing: the `*/*` path-traversal guard does not explicitly reject the degenerate `..` case (no slash); OS-level safety means no actual traversal is possible, but the defensive intent would be cleaner with an explicit `|| [[ "$sub_file" == ".." ]]`. Not introduced by M121 — surfaces here from the security agent's low-severity finding.

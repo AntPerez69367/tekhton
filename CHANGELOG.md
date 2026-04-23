@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.121.0] - 2026-04-22
+
+### Added
+- M121 — Planning Path Write-Failure Hardening + Empty-Slate Test Coverage. (M121)
 
 ## [3.120.0] - 2026-04-22
 

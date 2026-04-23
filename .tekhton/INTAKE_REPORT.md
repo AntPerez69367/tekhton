@@ -2,13 +2,14 @@
 PASS
 
 ## Confidence
-88
+95
 
 ## Reasoning
-- Scope is tightly bounded: four named goals with explicit in/out declarations; the non-goals section is unusually thorough and closes off every plausible scope-creep vector
-- Files to create/modify are enumerated in a table with per-file descriptions; no guesswork about where changes land
-- Acceptance criteria are specific and binary — each maps directly to a single observable outcome (config line value, variable value in subshell, presence of hint text on stdout)
-- Design section documents the alternatives considered for each goal and states the chosen approach with rationale; two developers reading this would arrive at the same implementation
-- Backward-compatibility reasoning is explicit: brownfield projects with pre-existing `DESIGN_FILE=""` are covered by Goal 2 (self-healing via `artifact_defaults.sh` re-sourcing); projects with a correct non-empty value are provably unaffected
-- The one underspecified detail — how `file_count` is derived for `_classify_project_maturity` (all files? source files only? excluding dotfiles?) — is minor enough that a competent developer can make a reasonable judgment call (likely: non-hidden files in project root, excluding `.claude/` and `.tekhton/`) without affecting correctness of the heuristic at the threshold of 5
-- Historical pattern shows similar-scope milestones (M96, M97, M98, M105) pass on the first attempt; no systemic rework risk detected
+- Scope is precisely defined: 6 numbered goals, exact files to modify, and a detailed Non-Goals section leave no ambiguity about what is in and out of scope
+- Acceptance criteria are specific and testable — each criterion names a concrete condition, expected return value, or observable output (error message text, exit code, file size check)
+- Code snippets are provided for every proposed change, removing interpretation risk for the implementation
+- Brownfield safety is explicitly addressed with two dedicated acceptance criteria, covering both the execution pipeline and validator exit-code behavior
+- Dependency on M120 is declared upfront and its interaction with M121's assertions is clearly explained (assertions won't fire on a correctly-functioning M120 pipeline)
+- No new user-facing config keys are introduced, so no Migration impact section is required
+- Not a UI milestone; UI testability criterion is not applicable
+- No existing tests require edits (stated as an acceptance criterion), reducing regression risk
