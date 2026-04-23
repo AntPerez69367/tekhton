@@ -154,6 +154,33 @@ run_op() {
     return "$_rc"
 }
 
+# --- Per-milestone reset -----------------------------------------------------
+
+# tui_reset_for_next_milestone — clear per-milestone completion + progress
+# state on auto-advance transitions so pills start grey for the next
+# milestone. Retains sidecar activation, stage-order pill list, overall
+# pipeline start timestamp, and the monotonic lifecycle-id maps (which must
+# stay intact across the whole sidecar session so stale late spinner ticks
+# from prior milestones continue to be dropped). Safe no-op when inactive.
+tui_reset_for_next_milestone() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    _TUI_STAGES_COMPLETE=()
+    _TUI_RECENT_EVENTS=()
+    _TUI_CURRENT_STAGE_LABEL=""
+    _TUI_CURRENT_STAGE_MODEL=""
+    _TUI_CURRENT_STAGE_NUM=0
+    _TUI_CURRENT_STAGE_TOTAL=0
+    _TUI_AGENT_TURNS_USED=0
+    _TUI_AGENT_TURNS_MAX=0
+    _TUI_AGENT_ELAPSED_SECS=0
+    _TUI_AGENT_STATUS="idle"
+    _TUI_STAGE_START_TS=0
+    _TUI_CURRENT_LIFECYCLE_ID=""
+    _TUI_CURRENT_SUBSTAGE_LABEL=""
+    _TUI_CURRENT_SUBSTAGE_START_TS=0
+    _tui_write_status
+}
+
 # --- Protocol API: stage lifecycle wrappers (M106, M110 lifecycle IDs) -------
 
 # _tui_alloc_lifecycle_id LABEL — allocate next "<label>#<cycle>" id and set

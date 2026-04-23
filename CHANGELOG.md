@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.122.2] - 2026-04-23
+
+### Added
+- Added `tui_reset_for_next_milestone()` in `lib/tui_ops.sh` and wired it into
 ## [3.122.1] - 2026-04-23
 
 ### Added
