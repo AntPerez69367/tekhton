@@ -4,114 +4,82 @@
 
 ## What Was Implemented
 
-M122 — Indexer Multi-Grammar Package Support + Diagnostic Plumbing
-(TypeScript Fix). Closes Issue #181.
+Moved acceptance-criteria quality lint from end-of-run acceptance checking
+(`check_milestone_acceptance()` in `lib/milestone_acceptance.sh`) to
+authoring-time validation (`draft_milestones_validate_output()` in
+`lib/draft_milestones_write.sh`). Warnings now surface while the author is
+still iterating on the milestone file, where they are actionable.
 
-- **Goal 1 — Factory-function probe.** `tools/tree_sitter_languages.py`
-  `get_language()` now probes `language_<lang_name>` first (e.g.
-  `language_typescript`, `language_tsx` on `tree_sitter_typescript`)
-  before falling back to the single-grammar `language` / `LANGUAGE`
-  conventions. Uses the `lang_name` already unpacked from
-  `_EXT_TO_LANG`. Cache key
-  (`f"{module_name}.{lang_name}"`) already disambiguates `.ts` vs
-  `.tsx` so the two return distinct cached `Language` objects.
-- **Goal 2 — Stderr diagnostic plumbing.** `lib/indexer.sh`
-  `run_repo_map()`: moved `rm -f "$stderr_output"` out of the stats-
-  parse block; on fatal exit (exit 2 or empty content) the new warning
-  now includes a `[indexer] Last lines of repo_map.py stderr:` block
-  with the tail of the Python tool's stderr. The emitter lives in
-  `lib/indexer_helpers.sh` as `_indexer_emit_stderr_tail()` to keep
-  `indexer.sh` under the 300-line ceiling. Cleanup happens exactly
-  once before return on every branch.
-- **Goal 3 — Unit tests.** Added four TS/TSX loader tests in
-  `tools/tests/test_tree_sitter_languages.py::TestTypescriptGrammarLoading`,
-  all gated on `pytest.importorskip("tree_sitter_typescript")`. Each
-  test clears `_lang_cache` in `setup_method` so the loader is exercised
-  fresh, not hitting stale state from other tests.
-- **Goal 4 — Fixture coverage.** Added
-  `tests/fixtures/indexer_project/web/client.ts` (exported function +
-  interface) and `tests/fixtures/indexer_project/web/component.tsx`
-  (typed React component). Integration tests
-  `test_extract_tags_typescript_file` and `test_extract_tags_tsx_file`
-  assert `_extract_tags()` returns definitions for `fetchUser` and
-  `Greeting` respectively; both skip-on-missing-grammar.
-- **Goal 5 — End-to-end smoke test.** New
-  `tests/test_indexer_typescript_smoke.sh` verifies:
-    - Positive: TS-only project with three `.ts` files produces a
-      non-empty repo map containing `## src/` headings; `run_repo_map`
-      exits 0.
-    - Negative: repo_map.py is swapped for a stub that exits 2 with
-      "Warning: no files could be parsed" — `run_repo_map` returns
-      non-zero, the warning includes the `[indexer] Last lines of
-      repo_map.py stderr:` header, and the stderr tail shows the
-      actionable Python-side error.
-  The whole test skips cleanly (exit 0 + SKIP line) when the indexer
-  venv or `tree_sitter_typescript` is unavailable.
-- **Goal 6 — Auto-discovery.** `tests/run_tests.sh` globs
-  `test_*.sh` files, so no explicit registration is required.
+- Removed the ~40-line lint block from `check_milestone_acceptance()`. The
+  acceptance gate is now focused solely on pass/fail checks (tests, build
+  gate, manual syntax checks, docs strict mode). A short comment replaces
+  the block so future readers understand where lint moved.
+- Added a lint invocation to `draft_milestones_validate_output()` after
+  structural checks pass. Warnings are emitted to stderr with a `LINT:`
+  prefix and the basename of the milestone file. Lint is non-blocking —
+  the function still returns 0 so the manifest write proceeds. The call
+  is guarded by `declare -f lint_acceptance_criteria &>/dev/null` so the
+  function is safe to call in contexts where the helper was not sourced
+  (e.g. stripped-down unit tests).
+- `lib/milestone_acceptance_lint.sh` is unchanged — same API, new call
+  site. `tekhton.sh` already sources the lint helper (line 875) before
+  `draft_milestones.sh` (line 879), so the function is available when
+  `draft_milestones_write.sh` runs in production.
+
+### Tests
+
+- **`tests/test_milestone_acceptance_lint.sh`** — the integration block
+  that previously asserted lint warnings appeared in
+  `check_milestone_acceptance` output was inverted: it now asserts lint
+  is NOT emitted by the acceptance gate and does NOT write to
+  `NON_BLOCKING_LOG`. The pure unit tests for the lint helpers are
+  unchanged.
+- **`tests/test_draft_milestones_validate_lint.sh` (NEW)** — four
+  scenarios:
+  1. Structural-only refactor milestone passes validation (lint is
+     non-blocking) and emits `LINT:` warnings including the behavioral
+     and refactor-completeness checks.
+  2. A milestone with behavioral criteria produces no lint warnings.
+  3. Validation gracefully skips lint when `lint_acceptance_criteria`
+     is not loaded (defensive `declare -f` guard).
+- Kept `tests/test_draft_milestones_validate.sh` focused on structural
+  validation (tests 1–7) to keep each test file under the 300-line
+  ceiling.
+
+### Docs
+
+Updated `ARCHITECTURE.md` entry for `lib/milestone_acceptance_lint.sh` to
+note the new call site (authoring-time via
+`draft_milestones_validate_output()`).
 
 ## Root Cause (bugs only)
 
-Two independent defects combined to silently hollow out the indexer on
-TS-heavy projects:
-
-1. `get_language()` only probed `mod.language` / `mod.LANGUAGE`.
-   `tree_sitter_typescript` ships no such symbol — only
-   `language_typescript()` and `language_tsx()`. Every `.ts`/`.tsx`
-   file therefore returned `None` from `get_parser`, `_extract_tags`
-   returned `None`, `all_tags` stayed empty, and `repo_map.py` exited
-   2 with "no files could be parsed".
-2. `run_repo_map` captured Python stderr to a tempfile, parsed stats
-   out of it, and then `rm -f`-ed the file *before* the fatal-exit
-   warning fired. Users saw only the generic fallback line with no
-   actionable diagnostic.
+The lint check was wired into `check_milestone_acceptance()` — the
+end-of-run gate that decides whether a milestone passes. By the time
+lint ran there, the milestone file had already been authored, reviewed,
+coded, and tested. Warnings about "add behavioral criteria" or "add a
+completeness grep" were non-actionable at that point and only cluttered
+`NON_BLOCKING_LOG`. The fix is a pure relocation: same rule set, earlier
+call site.
 
 ## Files Modified
 
-- `tools/tree_sitter_languages.py` — multi-grammar factory probe in
-  `get_language()`.
-- `lib/indexer.sh` — stderr preservation + call to
-  `_indexer_emit_stderr_tail` on fatal exit; single end-of-function
-  cleanup.
-- `lib/indexer_helpers.sh` — new `_indexer_emit_stderr_tail()` helper
-  (extracted from `indexer.sh` to stay under 300 lines).
-- `tools/tests/test_tree_sitter_languages.py` — new
-  `TestTypescriptGrammarLoading` class (4 tests).
-- `tools/tests/test_extract_tags_integration.py` — new
-  `TestExtractTagsTypescript` class (2 tests).
-- `tests/fixtures/indexer_project/web/client.ts` (NEW) — TS fixture.
-- `tests/fixtures/indexer_project/web/component.tsx` (NEW) — TSX
-  fixture.
-- `tests/test_indexer_typescript_smoke.sh` (NEW) — end-to-end smoke
-  test, positive + negative paths.
-
-## Human Notes Status
-
-The task body listed no items under a Human Notes section, only the
-Clarifications block (which concerned unrelated earlier runs about
-Watchtower, NON_BLOCKING_LOG, `--init` flow, and HUMAN_NOTES
-consistency — none relevant to M122). The CLARIFICATIONS.md file is
-left untouched. No notes to mark.
+- `lib/milestone_acceptance.sh` — removed lint block from
+  `check_milestone_acceptance()` (replaced with a pointer comment)
+- `lib/draft_milestones_write.sh` — added non-blocking lint call at the
+  end of `draft_milestones_validate_output()`
+- `tests/test_milestone_acceptance_lint.sh` — inverted the integration
+  assertions (lint must NOT fire at acceptance time)
+- `tests/test_draft_milestones_validate_lint.sh` (NEW) — authoring-time
+  lint integration coverage
+- `ARCHITECTURE.md` — one-line update to reflect new call site
 
 ## Docs Updated
 
-None — no public-surface changes in this task. The change is purely
-internal: a probe order inside `get_language()` and a diagnostic
-surfacing change in `run_repo_map`. No new CLI flags, no new config
-keys, no changed function signatures. The `CLAUDE.md` entry for
-`lib/indexer_helpers.sh` already describes it broadly as "Language
-detection, config validation, file extraction" — the new
-`_indexer_emit_stderr_tail` helper is an internal symbol and does not
-need doc mention.
+- `ARCHITECTURE.md` — `lib/milestone_acceptance_lint.sh` entry now
+  documents the authoring-time call site
 
-## Observed Issues (out of scope)
+## Human Notes Status
 
-- `tests/test_tui_lifecycle_invariants.sh` failed once during the full
-  suite run but passes reliably in isolation (ran it 3 times
-  standalone, all pass; ran `run_tests.sh` a second time and it passed
-  there too). The error was
-  `/tmp/tmp.XXX/status.json.tmp: No such file or directory` from
-  `lib/tui.sh:272`, suggesting a race between parallel test tmpdir
-  cleanup and the TUI sidecar's atomic-write pattern. Pre-existing
-  flakiness, not caused by M122 — none of M122's edits touch TUI
-  lifecycle code.
+- NOT_ADDRESSED: [BUG] Auto-advance milestone UI state leak: in --auto-advance, milestone 2+ starts with all TUI pills already green because completed-stage state carries over. Reset per-milestone TUI completion data on transition in lib/orchestrate_helpers.sh (_run_auto_advance_chain) before re-entering run_complete_loop; reset helper/state likely belongs in lib/tui.sh or lib/tui_ops.sh (_TUI_STAGES_COMPLETE and related stage-progress fields). Add/extend coverage in tests/test_tui_multipass_lifecycle.sh. (Out of scope for this task — task is specifically the acceptance-lint relocation. The note is a separate TUI bug in the auto-advance path; fixing it would be an unrelated orchestration/TUI change.)
+- NOT_ADDRESSED: [BUG] GitHub Pages/release workflow checkout fails with `fatal: no url found for submodule path '.claude/worktrees/agent-a049075c' in .gitmodules` because the repo tree contains a committed gitlink at `.claude/worktrees/agent-a049075c` (mode 160000) but no `.gitmodules` entry. Root cause is accidental tracking of a local git worktree under `.claude/worktrees/`. Triage/fix: remove the gitlink from index/history tip (`git rm --cached .claude/worktrees/agent-a049075c`), add `.claude/worktrees/` to `.gitignore`, and add a CI guard that fails if `git ls-files --stage` contains mode 160000 paths outside approved submodules. (Out of scope for this task — task is the acceptance-lint relocation. The note is a separate repo-hygiene / CI fix that also touches committed worktree state; intentionally left for its own milestone so it can be done with the correct destructive-action scrutiny.)

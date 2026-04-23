@@ -1,4 +1,4 @@
-# Reviewer Report — M122
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,15 +10,27 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/indexer_helpers.sh` header "Provides:" comment (lines 7–9) does not list `_indexer_emit_stderr_tail()`. The new function should appear there for consistency with every other helper module.
-- `tests/test_indexer_typescript_smoke.sh:16` assigns `TMPDIR=$(mktemp -d)`, shadowing the standard env var of the same name. Downstream `mktemp` calls inside `run_repo_map` will inherit it (harmless — the value is a valid dir), but a non-reserved name (`TEST_TMPDIR` or `WORK_DIR`) would be clearer and avoids surprising OS tooling that inspects `TMPDIR`.
-- `tests/test_indexer_typescript_smoke.sh:80` defines `_indexer_find_venv_python()` before the `source` calls, then redefines it at line 92 after sourcing. The pre-source stub is dead code — the function is not called during module load. Only the post-source redefinition at line 92 is needed; the earlier stub and its comment are misleading.
+- `tests/test_draft_milestones_validate_lint.sh` tracks no PASS counter — only FAIL — so the final line is "All … tests passed." rather than an "N passed, 0 failed" count. Asymmetric from sibling test files (e.g. `test_milestone_acceptance_lint.sh`). No functional impact.
+- CODER_SUMMARY states "four scenarios" for the new test file but the file has three test fixtures. Cosmetic discrepancy between the summary prose and the implementation; not a code defect.
 
 ## Coverage Gaps
-- M122's acceptance criteria calls for "a parametrized 'all grammars that import cleanly return a Language' test" to verify the new probe order doesn't regress non-TS extensions. No such parametrized test was added. The Non-Goals section defers the full-audit suite to M123, so this is expected — but the coverage gap should be on M123's radar.
-
-## ACP Verdicts
-(No Architecture Change Proposals in CODER_SUMMARY.md — section omitted.)
+- None
 
 ## Drift Observations
 - None
+
+---
+
+## Review Notes
+
+**Lint relocation (`lib/milestone_acceptance.sh` → `lib/draft_milestones_write.sh`):** Clean. The ~40-line lint block is entirely absent from `check_milestone_acceptance()` and a single comment replaces it with a pointer to the new call site. The acceptance gate is now exclusively pass/fail as intended.
+
+**New call site in `draft_milestones_validate_output()`:** Correctly placed after the structural check returns clean (`errors -eq 0`). The `declare -f lint_acceptance_criteria &>/dev/null` guard makes the call safe in stripped-down test contexts. The `|| true` prevents lint failure from surfacing as a structural error. Lint output goes to stderr with a `LINT:` prefix and per-line indentation — appropriate for a non-blocking advisory.
+
+**Test inversion (`test_milestone_acceptance_lint.sh`):** Git diff confirms only the assertions at the bottom changed (inverted). The scaffolding (TEKHTON_DIR usage, file creation) is unchanged from the pre-existing block, so no new environment dependencies were introduced.
+
+**New test file (`test_draft_milestones_validate_lint.sh`):** Three fixture scenarios cover the contract: (1) structurally-valid-but-quality-weak milestone emits LINT: warnings and still returns 0, (2) behaviorally-rich milestone produces no warnings, (3) `declare -f` guard suppresses lint when the helper is not loaded. Each assertion is independently clear. All fixtures are structurally complete (≥5 AC items, all required sections), so no `set -e` hazard from the bare command-substitution assignments.
+
+**`ARCHITECTURE.md`:** One-line update to `lib/milestone_acceptance_lint.sh` entry correctly documents the authoring-time call site.
+
+**Line counts:** All modified files remain under the 300-line ceiling.

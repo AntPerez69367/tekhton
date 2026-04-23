@@ -1,85 +1,89 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 38 test functions (53 cases including parametrized instances)
+Tests audited: 2 files, 27 test assertions
+- `tests/test_milestone_acceptance_lint.sh` — 21 assertions (unit + integration)
+- `tests/test_draft_milestones_validate_lint.sh` — 6 assertions (authoring-time integration)
+
 Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: test_known_extension_returns_object always passes
-- File: tools/tests/test_tree_sitter_languages.py:142-146
-- Issue: The assertion `assert lang is None or hasattr(lang, '__class__')` is a
-  tautology. Every Python object — including `None` — has `__class__`, so the
-  right-hand disjunct is unconditionally True. The test passes regardless of
-  what `get_language()` returns and provides zero coverage. Pre-existing weakness
-  not introduced by M122 (M122 added `TestTypescriptGrammarLoading` and
-  `TestAllGrammarsLoadIfInstalled`), but the file is under audit.
+#### WEAKENING: Integration block inverted with net assertion loss
+- File: tests/test_milestone_acceptance_lint.sh:131-209
+- Issue: The shell-detected weakening is real but justified. Three assertions were
+  removed (lint appears in acceptance output; ≥N warnings; NON_BLOCKING_LOG written)
+  and two were added (lint does NOT appear; NON_BLOCKING_LOG not written). Net: −1
+  assertion in this block. The weakening tool reports "added 00" — this count is
+  incorrect; manual inspection confirms 2 new pass()/fail() pairs at lines 199–208.
+  The inversion is the correct response to the feature change (lint moved from
+  acceptance gate to authoring time). The 6 new assertions in
+  test_draft_milestones_validate_lint.sh cover the positive behavior at the new call
+  site, so aggregate coverage increased. The tester report explicitly documents the
+  rationale.
 - Severity: MEDIUM
-- Action: Replace with a conditional that is falsifiable. When tree-sitter is
-  absent, skip via `pytest.importorskip("tree_sitter")`; when present, assert
-  `isinstance(lang, tree_sitter.Language)`. The pattern used in
-  `test_get_language_typescript_returns_object` (line 187–194) is the correct
-  model.
+- Action: Add a one-line comment above the integration block (line 131) noting the
+  intentional inversion, e.g., "Assertions inverted: lint moved to authoring time;
+  these guard against regression back into the acceptance gate." This makes the
+  direction change self-documenting and prevents a future reader from "correcting"
+  the negated assertions back to positive.
 
-#### COVERAGE: test_caching_behavior trivially passes when tree_sitter is absent
-- File: tools/tests/test_tree_sitter_languages.py:152-157
-- Issue: `assert lang1 is lang2` passes trivially when `tree_sitter` is not
-  installed because `get_language(".py")` returns `None` both times and
-  `None is None` is always True. The test does not clear `_lang_cache` in setup,
-  so if `.py` was already cached from a prior test the cache-hit path is exercised,
-  but when grammars are absent the assertion never validates real caching.
-  Pre-existing, not introduced by M122.
+#### INTEGRITY: NON_BLOCKING_LOG assertion is trivially true
+- File: tests/test_milestone_acceptance_lint.sh:205-208
+- Issue: The assertion checks that check_milestone_acceptance() does not write
+  "Lint:" to NON_BLOCKING_LOG_FILE. lib/milestone_acceptance.sh contains zero
+  references to NON_BLOCKING_LOG_FILE — the function has no write path to that file.
+  Confirmed: grep for NON_BLOCKING_LOG in lib/milestone_acceptance*.sh returns no
+  matches. The assertion therefore always passes regardless of what the function
+  does. As a regression guard it is weak; it cannot detect a regression unless the
+  regression simultaneously re-introduces both a lint call and a NON_BLOCKING_LOG
+  write in the acceptance gate.
 - Severity: LOW
-- Action: Add `import tree_sitter_languages as mod; mod._lang_cache.clear()` at
-  the start of the test and gate the meaningful assertion behind
-  `pytest.importorskip("tree_sitter")`. When tree_sitter is available, assert
-  `lang1 is lang2 and lang1 is not None`.
+- Action: Either remove the NON_BLOCKING_LOG check as redundant (the stdout check
+  at lines 199-202 is sufficient to catch lint appearing in acceptance output), or
+  strengthen it by verifying that the file remains clean even when a
+  lint-triggering milestone is processed, while a spy/hook is in place that would
+  detect any write to the file path.
 
-#### SCOPE: Shell pre-verification STALE-SYM flags are false positives
-- File: tools/tests/test_tree_sitter_languages.py (all four flagged symbols)
-- Issue: The shell detector flagged `os`, `pytest`, `sys`, and `tree_sitter_languages`
-  as stale references. These are not stale: `os` and `sys` are Python standard
-  library modules, `pytest` is the test runner, and `tree_sitter_languages` is the
-  module under test imported via `sys.path.insert` at lines 11–19.
+#### SCOPE: False-positive loop reads live project milestone files
+- File: tests/test_milestone_acceptance_lint.sh:114-129
+- Issue: The loop iterates over m73-m83 milestone files in
+  ${TEKHTON_HOME}/.claude/milestones/. All 11 files are present as of this run, but
+  they are project-lifecycle files: future archival (removing them from
+  .claude/milestones/) would cause the loop to fire fail "M${mnum}: milestone file
+  not found" for any missing entry, failing the test for reasons unrelated to lint
+  behavior. This is pre-existing code, not introduced in this run.
 - Severity: LOW
-- Action: None. Shell-based symbol detection does not model Python import
-  conventions. These flags can be suppressed or ignored.
+- Action: Convert the false-positive check to use a small set of synthetic
+  milestone fixtures in TMPDIR that are verified to contain no spurious lint
+  triggers. This decouples the test from the project's archival lifecycle. If
+  retaining real-file coverage is preferred, replace the hard fail with a skip-if-
+  missing guard ([[ -f "$mfile" ]] || { pass "M${mnum}: file archived, skipping";
+  continue; }) and document the intent.
 
----
+### Additional Observations (no action required)
 
-### Notes on New Tests (M122 additions)
+**STALE-SYM flags are all false positives.** Every flagged symbol in
+tests/test_milestone_acceptance_lint.sh (break, cat, cd, continue, dirname, echo,
+grep, mkdir, mktemp, pwd, return, set, source, trap, true) is a shell builtin or
+standard utility. The shell symbol scanner does not model builtins. Ignore.
 
-`TestTypescriptGrammarLoading` (tools/tests/test_tree_sitter_languages.py:173–222):
-All four tests are honest, properly gated on `pytest.importorskip`, clear
-`_lang_cache` in `setup_method`, and assert real `tree_sitter.Language` identity.
-`test_get_parser_typescript_parses_simple_source` parses live TypeScript source
-and checks for the absence of ERROR nodes — this directly exercises the bug fixed
-by M122 and is the strongest test in the suite.
+**Assertion honesty: PASS.** All assertions in both files derive from real function
+calls (_lint_has_behavioral_criterion, _lint_refactor_has_completeness_check,
+_lint_config_has_self_referential_check, lint_acceptance_criteria,
+draft_milestones_validate_output) with non-trivial fixture inputs. No hard-coded
+expected values unrelated to implementation logic were found.
 
-`TestAllGrammarsLoadIfInstalled` (tools/tests/test_tree_sitter_languages.py:260–287):
-Parametrized across all 21 entries in `_EXT_TO_LANG`. Clears `_lang_cache` per
-test in `setup_method`. Assertions anchor to `tree_sitter.Language` type, not a
-tautology. Correctly implements M122 acceptance criterion AC-3: verifying that the
-new factory-function probe order does not break single-grammar fallback packages.
+**Test isolation: PASS.** Both test files create all run-specific state in TMPDIR
+with an EXIT trap cleanup. The defensive bash -c subprocess in
+test_draft_milestones_validate_lint.sh:170-188 correctly isolates the no-helper
+scenario. No test reads mutable pipeline run artifacts (.tekhton/, .claude/logs/,
+build reports, or pipeline state files). The false-positive milestone file loop is
+the only non-isolated read, and it reads versioned source files (LOW severity,
+noted above).
 
-`tests/test_indexer_emit_stderr_tail.sh`: Five test sections covering non-existent
-file, empty file, short content (≤5 lines), long content (>5 lines), and exact
-prefix format. Sources `lib/indexer_helpers.sh` directly and calls
-`_indexer_emit_stderr_tail()` with controlled fixture files in a `mktemp -d` temp
-directory — fully isolated from project state. Assertions are anchored to
-implementation details (3-space prefix `[indexer]   `, `tail -n 5` semantics,
-exact header string) verifiable in `indexer_helpers.sh:41-48`. No issues found.
-
----
-
-### Rubric Results
-
-| Criterion | Result |
-|-----------|--------|
-| 1. Assertion Honesty | PASS — New tests (TypeScript, parametrized, stderr-tail) assert real outputs. Two pre-existing tautologies noted (MEDIUM/LOW). |
-| 2. Edge Case Coverage | PASS — Non-existent file, empty file, short/long content, unknown extensions, empty set inputs all covered. |
-| 3. Implementation Exercise | PASS — Real `get_language()`, `get_parser()`, `_indexer_emit_stderr_tail()` are called; mocking is minimal and appropriate. |
-| 4. Test Weakening | N/A — No existing tests were modified by M122; only new tests added. |
-| 5. Test Naming | PASS — Names encode scenario and expected outcome (e.g. `test_get_language_typescript_tsx_are_distinct`, `test_grammar_loads_if_installed`). |
-| 6. Scope Alignment | PASS — All imports and references match current `tree_sitter_languages.py` exports. STALE-SYM flags are false positives. |
-| 7. Test Isolation | PASS — Shell test uses `mktemp -d` with EXIT trap. Python tests clear `_lang_cache` per test in `setup_method`. No test reads mutable project files. |
+**test_draft_milestones_validate_lint.sh: PASS on all rubric criteria.** Fixtures
+are synthetic, assertions are anchored to real function output ("LINT:", "behavioral",
+"completeness"), the no-helper guard test exercises a real code path (declare -f
+guard at draft_milestones_write.sh:85), and the clean-milestone negative test uses
+criteria containing actual behavioral keywords that the implementation recognizes.
