@@ -5,7 +5,7 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v3.121.0 — Context-Aware Pipeline</em></p>
+  <p><em>v3.125.3 — Context-Aware Pipeline</em></p>
 </div>
 
 ## What is Tekhton?
@@ -36,7 +36,8 @@ This installs Tekhton to `~/.tekhton` and adds `tekhton` to your PATH.
 ### macOS (Homebrew)
 
 ```bash
-brew install geoffgodwin/tekhton/tekhton
+brew tap geoffgodwin/tekhton
+brew install tekhton
 ```
 
 ### From source
@@ -48,7 +49,7 @@ cd tekhton && ./install.sh
 
 ### Platform notes
 
-- **macOS:** `brew install geoffgodwin/tekhton/tekhton` (preferred) or the curl one-liner. macOS ships with bash 3.2 — both methods install bash 4.3+ automatically. See [Installation -> macOS](docs/getting-started/installation.md#macos) for details.
+- **macOS:** `brew tap geoffgodwin/tekhton && brew install tekhton` (preferred) or the curl one-liner. macOS ships with bash 3.2 — both methods install bash 4.3+ automatically. See [Installation -> macOS](docs/getting-started/installation.md#macos) for details.
 - **Linux / WSL:** The curl one-liner is the recommended path.
 - **From source:** `git clone` + `./install.sh` for contributors or custom installs.
 

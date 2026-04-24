@@ -1,0 +1,39 @@
+name: Version Consistency Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check VERSION file is well-formed
+        run: |
+          raw="$(tr -d '[:space:]' < VERSION)"
+          if ! printf '%s\n' "$raw" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error file=VERSION::VERSION must be MAJOR.MINOR.PATCH, got: $raw"
+            exit 1
+          fi
+          echo "VERSION=$raw"
+
+      - name: Check README hero version matches VERSION
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          hero=$(grep -oE '<p><em>v[0-9]+\.[0-9]+\.[0-9]+ —' README.md | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          if [ -z "$hero" ]; then
+            echo "::warning file=README.md::README hero version line not found — skipping check."
+            exit 0
+          fi
+          if [ "$hero" != "v${version}" ]; then
+            echo "::error file=README.md::README hero version ($hero) does not match VERSION ($version). Run 'tools/release.sh prepare' to sync it."
+            exit 1
+          fi
+          echo "README hero version matches VERSION: $hero"
