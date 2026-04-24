@@ -44,7 +44,7 @@ jobs:
 
             def install
               libexec.install Dir["*"]
-              (bin/"tekhton").write_env_script libexec/"tekhton.sh", PATH: "#{Formula[\"bash\"].opt_bin}:#{ENV[\"PATH\"]}"
+              (bin/"tekhton").write_env_script libexec/"tekhton.sh", PATH: "#{Formula["bash"].opt_bin}:#{ENV["PATH"]}"
             end
 
             test do
