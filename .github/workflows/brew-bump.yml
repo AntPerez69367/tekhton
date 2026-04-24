@@ -59,8 +59,9 @@ jobs:
           eval "$(brew shellenv)"
           brew tap geoffgodwin/tekhton
           brew install tekhton
+          brew install bash
 
-          brew_bash="$(brew --prefix)/opt/bash/bin/bash"
+          brew_bash="$(brew --prefix bash)/bin/bash"
           [ -x "$brew_bash" ] || {
             echo "::error::Expected Homebrew bash at $brew_bash, but it is not executable"
             exit 1
