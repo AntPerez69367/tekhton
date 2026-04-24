@@ -1,5 +1,3 @@
-# Reviewer Report — M125: Quota Pause Refresh Accuracy & Probe Budget
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,15 +8,18 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_quota.sh:396` — The "Config defaults" test block asserts `QUOTA_MAX_PAUSE_DURATION is 14400` (the old value), but the actual new default from `config_defaults.sh` is `18900`. The assertion passes only because the test primes the variable to `14400` at lines 44, 360, and 383. The assertion label is now factually wrong and will mislead anyone reading the test. Fix: update the assertion to `18900` and remove the manual override where it shadows the real default, or rename the block to clarify it is testing "module compatibility with a custom value", not the canonical default.
-- `_extract_retry_after_seconds` is inlined verbatim in `tests/test_quota.sh` (lines 412–431) and `tests/test_quota_retry_after_integration.sh` (lines 56–75) to avoid pulling in the full agent monitoring stack. If the canonical definition in `lib/agent_retry.sh` ever diverges, both test copies silently go stale. Consider extracting to a shared test helper sourced by both test files.
+- `lib/milestone_split_dag.sh:87` — `echo "$sub_block" > ...` should be `printf '%s\n' "$sub_block" > ...` (security agent LOW/fixable finding: bash `echo` interprets `-n`/`-e` flags on agent-generated content, potentially truncating or corrupting a milestone file). Carried forward from cycle 1 — not addressed in rework, still valid.
+- `tests/test_ensure_gitignore_entries.sh` — comment says "All 17 Tekhton runtime patterns" but `common.sh` defines 18 entries; `EXPECTED_ENTRIES` omits `.claude/tui_sidecar.pid`. Update array and comment to 18. Carried forward from cycle 1.
+- CLAUDE.md repository layout section does not document the four new lib files: `common_box.sh`, `common_timing.sh`, `replan_brownfield_apply.sh`, `init_helpers_maturity.sh`. `ARCHITECTURE.md` was updated; CLAUDE.md should follow for canonical file inventory accuracy. Carried forward from cycle 1.
 
 ## Coverage Gaps
-- No test exercises the fallback-mode throttle path inside `_quota_probe` where `_QUOTA_PROBE_LAST_TS` causes the probe to skip the expensive call and return 1 immediately (the "min-interval not yet elapsed" branch at `quota_probe.sh:76-79`).
-- No test verifies that `_QUOTA_PROBE_MODE` is reused (not re-detected) on a second `enter_quota_pause` call within the same pipeline session, confirming the `[[ -n "$_QUOTA_PROBE_MODE" ]] && return 0` early-exit in `_quota_detect_probe_mode` is actually hit.
-
-## ACP Verdicts
-None — no Architecture Change Proposals in CODER_SUMMARY.md.
+- `lib/validate_config.sh` — branches for empty DESIGN_FILE string (6a) and DESIGN_FILE ending in `/` (6b) have no dedicated test.
+- `lib/common_box.sh` — box-drawing edge cases (UTF-8 vs ASCII fallback, wide content) are not exercised by any test.
 
 ## Drift Observations
-- `lib/config_defaults.sh` is 621 lines, more than double the 300-line ceiling stated in the reviewer checklist. The file contains no logic (only `:=` default assignments and `_clamp_config_value` calls), so it is arguably a data file rather than a code file. However, there is no explicit carve-out for it in CLAUDE.md. As the file continues to grow each milestone, this gap should be acknowledged — either document `config_defaults.sh` as exempt from the ceiling, or plan a split (e.g., quota-related defaults into their own file).
+- `tests/test_quota.sh:415–434` inline-defines `_extract_retry_after_seconds`; `tests/helpers/retry_after_extract.sh` defines the same function with matching logic but `test_quota.sh` does not source that helper. If the helper exists for reuse, source it to prevent logic drift between the two definitions.
+
+## Re-review Verification
+- **Blocker 1 fixed**: `lib/common_box.sh` — `set -euo pipefail` present on line 2. ✓
+- **Blocker 2 fixed**: `lib/common_timing.sh` — `set -euo pipefail` present on line 2. ✓
+- **Blocker 3 fixed**: `lib/replan_brownfield_apply.sh` — `set -euo pipefail` present on line 2. ✓

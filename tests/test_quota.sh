@@ -386,49 +386,30 @@ _QUOTA_TOTAL_PAUSE_TIME=0
 _QUOTA_PAUSED=false
 
 # =============================================================================
-echo "=== Config defaults ==="
+echo "=== Module compatibility with canonical default values ==="
 # =============================================================================
 
-# Test: defaults are set correctly via config_defaults.sh
-# (These are validated by the fact that we can source quota.sh with them)
-assert "QUOTA_RETRY_INTERVAL is 300" "$([ "${QUOTA_RETRY_INTERVAL:-}" = "300" ] && echo 0 || echo 1)"
-assert "QUOTA_RESERVE_PCT is 10" "$([ "${QUOTA_RESERVE_PCT:-}" = "10" ] && echo 0 || echo 1)"
-assert "QUOTA_MAX_PAUSE_DURATION is 18900" "$([ "${QUOTA_MAX_PAUSE_DURATION:-}" = "18900" ] && echo 0 || echo 1)"
-assert "MAX_AUTONOMOUS_AGENT_CALLS is 200" "$([ "${MAX_AUTONOMOUS_AGENT_CALLS:-}" = "200" ] && echo 0 || echo 1)"
+# This block verifies quota.sh operates correctly under the canonical default
+# values declared in config_defaults.sh. The test fixture primes each variable
+# at file top (lines 42–44) rather than sourcing config_defaults.sh, so the
+# assertions below confirm the fixture primes match the canonical defaults —
+# update both sites together when a default is changed.
+assert "QUOTA_RETRY_INTERVAL matches canonical default (300)" "$([ "${QUOTA_RETRY_INTERVAL:-}" = "300" ] && echo 0 || echo 1)"
+assert "QUOTA_RESERVE_PCT matches canonical default (10)" "$([ "${QUOTA_RESERVE_PCT:-}" = "10" ] && echo 0 || echo 1)"
+assert "QUOTA_MAX_PAUSE_DURATION matches canonical default (18900)" "$([ "${QUOTA_MAX_PAUSE_DURATION:-}" = "18900" ] && echo 0 || echo 1)"
+assert "MAX_AUTONOMOUS_AGENT_CALLS matches canonical default (200)" "$([ "${MAX_AUTONOMOUS_AGENT_CALLS:-}" = "200" ] && echo 0 || echo 1)"
 
 # =============================================================================
 echo "=== M125: _extract_retry_after_seconds ==="
 # =============================================================================
 
-# Source agent_retry.sh lazily — we only need _extract_retry_after_seconds.
-# Most of agent_retry.sh's machinery requires agent.sh state, so we stub the
-# fns we don't call and only pull the helper definition.
-# shellcheck disable=SC1090
+# Source the shared test helper (canonical source: lib/agent_retry.sh).
+# This avoids duplicating the function across multiple test files.
+# shellcheck source=helpers/retry_after_extract.sh
+source "${TEKHTON_HOME}/tests/helpers/retry_after_extract.sh"
+
 _M125_SESS_DIR="$TMPDIR/m125_session"
 mkdir -p "$_M125_SESS_DIR"
-
-# Define the helper directly (copy of the one in agent_retry.sh so this test
-# doesn't require sourcing the full monitoring stack).
-_extract_retry_after_seconds() {
-    local session_dir="${1:-}"
-    [[ -n "$session_dir" ]] || return 1
-    local f secs=""
-    for f in "${session_dir}/agent_last_output.txt" "${session_dir}/agent_stderr.txt"; do
-        [[ -f "$f" ]] || continue
-        secs=$(grep -oiE '"?retry[._-]?after"?[[:space:]]*:[[:space:]]*"?[0-9]+' "$f" 2>/dev/null \
-               | grep -oE '[0-9]+' | head -1 || true)
-        if [[ -z "$secs" ]]; then
-            secs=$(grep -oiE 'retry[-[:space:]]+after[[:space:]]+[0-9]+' "$f" 2>/dev/null \
-                   | grep -oE '[0-9]+' | head -1 || true)
-        fi
-        [[ -n "$secs" ]] && break
-    done
-    if [[ -n "$secs" ]] && [[ "$secs" =~ ^[0-9]+$ ]]; then
-        echo "$secs"
-        return 0
-    fi
-    return 1
-}
 
 # Test: JSON form in agent_last_output.txt
 echo '{"error":{"type":"rate_limit_error","retry_after": 47}}' > "$_M125_SESS_DIR/agent_last_output.txt"

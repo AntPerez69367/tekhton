@@ -9,11 +9,12 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+TEST_TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
+PASS=0
 FAIL=0
-pass() { echo "  PASS: $*"; }
+pass() { echo "  PASS: $*"; PASS=$(( PASS + 1 )); }
 fail() { echo "  FAIL: $*"; FAIL=$(( FAIL + 1 )); }
 
 # Minimal stubs for common.sh surface used by sourced files.
@@ -23,7 +24,7 @@ error()   { :; }
 success() { :; }
 header()  { :; }
 
-export PROJECT_DIR="$TMPDIR"
+export PROJECT_DIR="$TEST_TMPDIR"
 export MILESTONE_DIR=".claude/milestones"
 export MILESTONE_MANIFEST="MANIFEST.cfg"
 
@@ -33,7 +34,7 @@ source "${TEKHTON_HOME}/lib/milestone_acceptance_lint.sh"
 source "${TEKHTON_HOME}/lib/draft_milestones_write.sh"
 
 # --- Fixture: structurally valid refactor milestone with only structural criteria
-cat > "$TMPDIR/lint_refactor.md" << 'EOF'
+cat > "$TEST_TMPDIR/lint_refactor.md" << 'EOF'
 # Milestone 99: Refactor Old Thing
 
 <!-- milestone-meta
@@ -84,7 +85,7 @@ N/A.
 - [ ] docs updated
 EOF
 
-lint_output=$(draft_milestones_validate_output "$TMPDIR/lint_refactor.md" 2>&1)
+lint_output=$(draft_milestones_validate_output "$TEST_TMPDIR/lint_refactor.md" 2>&1)
 lint_rc=$?
 if [[ "$lint_rc" -eq 0 ]]; then
     pass "Structural-only refactor passes validation (lint is non-blocking)"
@@ -111,7 +112,7 @@ else
 fi
 
 # --- Fixture: well-formed milestone with behavioral acceptance criteria
-cat > "$TMPDIR/lint_clean.md" << 'EOF'
+cat > "$TEST_TMPDIR/lint_clean.md" << 'EOF'
 # Milestone 99: Add Event Emitter
 
 <!-- milestone-meta
@@ -159,7 +160,7 @@ N/A.
 - [ ] shellcheck is clean
 EOF
 
-clean_output=$(draft_milestones_validate_output "$TMPDIR/lint_clean.md" 2>&1)
+clean_output=$(draft_milestones_validate_output "$TEST_TMPDIR/lint_clean.md" 2>&1)
 if echo "$clean_output" | grep -q "LINT:"; then
     fail "Clean milestone should not emit lint warnings, got: ${clean_output}"
 else
@@ -169,7 +170,7 @@ fi
 # --- Fixture: lint helper not loaded → validation skips lint silently
 lint_no_helper=$(bash -c '
     set -euo pipefail
-    export PROJECT_DIR="'"$TMPDIR"'"
+    export PROJECT_DIR="'"$TEST_TMPDIR"'"
     export MILESTONE_DIR=".claude/milestones"
     export MILESTONE_MANIFEST="MANIFEST.cfg"
     log()     { :; }
@@ -179,7 +180,7 @@ lint_no_helper=$(bash -c '
     header()  { :; }
     # shellcheck source=../lib/draft_milestones_write.sh
     source "'"${TEKHTON_HOME}"'/lib/draft_milestones_write.sh"
-    draft_milestones_validate_output "'"$TMPDIR"'/lint_refactor.md" 2>&1
+    draft_milestones_validate_output "'"$TEST_TMPDIR"'/lint_refactor.md" 2>&1
 ' || true)
 
 if echo "$lint_no_helper" | grep -q "LINT:"; then
@@ -189,8 +190,9 @@ else
 fi
 
 echo
+echo "────────────────────────────────────────"
+echo "  ${PASS} passed, ${FAIL} failed"
+echo "────────────────────────────────────────"
 if [[ "$FAIL" -gt 0 ]]; then
-    echo "FAILED: ${FAIL} test(s)"
     exit 1
 fi
-echo "All draft_milestones_validate_lint tests passed."

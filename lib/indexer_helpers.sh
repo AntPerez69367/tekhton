@@ -5,7 +5,7 @@
 # Sourced by tekhton.sh — do not run directly.
 # Provides: _indexer_resolve_cache_dir(), detect_repo_languages(),
 #           validate_indexer_config(), extract_files_from_coder_summary(),
-#           infer_test_counterparts()
+#           infer_test_counterparts(), _indexer_emit_stderr_tail()
 #
 # Extracted from indexer.sh to stay under the 300-line ceiling.
 #

@@ -160,10 +160,21 @@ run_op() {
 
 # tui_reset_for_next_milestone — clear per-milestone completion + progress
 # state on auto-advance transitions so pills start grey for the next
-# milestone. Retains sidecar activation, stage-order pill list, overall
-# pipeline start timestamp, and the monotonic lifecycle-id maps (which must
-# stay intact across the whole sidecar session so stale late spinner ticks
-# from prior milestones continue to be dropped). Safe no-op when inactive.
+# milestone. Cleared globals are listed by the function body below.
+# Preserved (sidecar-lifetime): _TUI_ACTIVE, _TUI_STAGE_CYCLE (per-label
+# monotonic lifecycle-id counter), _TUI_CLOSED_LIFECYCLE_IDS (seen-and-closed
+# set), stage-order pill list, overall pipeline start ts. These must stay
+# intact across the whole sidecar session so stale late spinner ticks from
+# prior milestones continue to be dropped. When adding a new TUI global,
+# decide whether its scope is per-milestone (clear here) or sidecar-lifetime
+# (preserve here, document above).
+# NOTE: _TUI_CURRENT_SUBSTAGE_LABEL is zeroed directly rather than via
+# _tui_autoclose_substage_if_open. In practice the substage is always closed
+# inside tui_stage_end before the milestone boundary, so no auto-close warn
+# event is expected; the silent path is deliberately asymmetric from the
+# normal close protocol. If a caller ever crosses a milestone boundary with
+# a substage still open, reroute through the auto-close helper.
+# Safe no-op when inactive.
 tui_reset_for_next_milestone() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
     _TUI_STAGES_COMPLETE=()

@@ -68,6 +68,14 @@ _tui_recent_events_json() {
                 runtime|summary)
                     # Modern 5-field has "source|msg" in after_type. Detect
                     # 4-field legacy by absence of an additional pipe.
+                    # NOTE: legacy detection is defensive-only. The ring
+                    # buffer is in-memory, reset each run, and fully owned
+                    # by tui_append_event (which always serialises 5-field
+                    # entries post-M117). A crafted old-format entry whose
+                    # message body contained a literal "|" would misparse as
+                    # 5-field, but no such entry can exist at runtime. Do
+                    # not attempt to exercise this branch with synthetic
+                    # old-format inputs.
                     if [[ "$after_type" == *"|"* ]]; then
                         source="${after_type%%|*}"
                         msg="${after_type#*|}"

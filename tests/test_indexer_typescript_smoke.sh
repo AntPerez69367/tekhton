@@ -13,8 +13,8 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+TEST_TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
 PASS=0
 FAIL=0
@@ -39,7 +39,7 @@ if ! "$VENV_PY" -c "import tree_sitter_typescript" 2>/dev/null; then
 fi
 
 # --- Build the fake TS-only project ------------------------------------------
-PROJECT_DIR="$TMPDIR/ts_project"
+PROJECT_DIR="$TEST_TMPDIR/ts_project"
 mkdir -p "$PROJECT_DIR/src"
 cat > "$PROJECT_DIR/src/app.ts" <<'TS'
 export function main(): void {
@@ -75,10 +75,6 @@ export REPO_MAP_CACHE_DIR=".claude/index"
 # Force auto-detection — parent env may set this to something that excludes TS.
 export REPO_MAP_LANGUAGES="auto"
 
-# Point the venv lookup at the real tekhton venv — our fake project does
-# not ship one.
-_indexer_find_venv_python() { echo "$VENV_PY"; }
-
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
 # shellcheck source=/dev/null
@@ -88,7 +84,8 @@ source "${TEKHTON_HOME}/lib/indexer_history.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/indexer.sh"
 
-# Override after sourcing so our stub wins.
+# Point the venv lookup at the real tekhton venv — our fake project does
+# not ship one. Defined after sourcing so it overrides the real helper.
 _indexer_find_venv_python() { echo "$VENV_PY"; }
 # shellcheck disable=SC2034  # consumed by run_repo_map from the sourced indexer.sh
 INDEXER_AVAILABLE=true
@@ -119,7 +116,7 @@ echo "=== Negative path: fatal exit surfaces stderr tail in warning ==="
 
 # Move to a fresh project dir so the cache from the positive run doesn't
 # hide the grammar failure below.
-PROJECT_DIR="$TMPDIR/ts_project_neg"
+PROJECT_DIR="$TEST_TMPDIR/ts_project_neg"
 mkdir -p "$PROJECT_DIR/src"
 cat > "$PROJECT_DIR/src/a.ts" <<'TS'
 export function a(): void {}
@@ -136,7 +133,7 @@ export PROJECT_DIR
 # "no files could be parsed" warning the real tool emits when no grammar is
 # available. This triggers the Goal 2 stderr-tail branch without depending on
 # the installed grammars' behavior.
-FAKE_HOME="$TMPDIR/fake_home"
+FAKE_HOME="$TEST_TMPDIR/fake_home"
 mkdir -p "$FAKE_HOME/tools"
 cat > "$FAKE_HOME/tools/repo_map.py" <<'PY'
 import sys

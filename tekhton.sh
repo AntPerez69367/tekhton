@@ -1964,7 +1964,7 @@ if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
         warn "${HUMAN_NOTES_FILE} has ${HUMAN_NOTE_COUNT} unchecked item(s) — will be injected into coder prompt."
     fi
     extract_human_notes | sed 's/^/  /'
-    REMAINING_UNFILTERED=$(grep -c "^- \[ \]" ${HUMAN_NOTES_FILE} || true)
+    REMAINING_UNFILTERED=$(grep -c "^- \[ \]" "${HUMAN_NOTES_FILE}" || true)
     REMAINING_UNFILTERED=$(echo "$REMAINING_UNFILTERED" | tr -d '[:space:]')
     if [ -n "$NOTES_FILTER" ] && [ "$REMAINING_UNFILTERED" -gt "$HUMAN_NOTE_COUNT" ]; then
         log "  ($(( REMAINING_UNFILTERED - HUMAN_NOTE_COUNT )) note(s) with other tags deferred to future runs)"
@@ -2073,7 +2073,7 @@ elif [ "$START_AT" = "test" ]; then
 elif [ "$START_AT" = "tester" ]; then
     log "Resuming tester from existing ${TESTER_REPORT_FILE}"
     log "Planned tests remaining:"
-    grep "^- \[ \]" ${TESTER_REPORT_FILE} || log "(none found — may already be complete)"
+    grep "^- \[ \]" "${TESTER_REPORT_FILE}" || log "(none found — may already be complete)"
 else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
 fi

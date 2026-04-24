@@ -107,7 +107,9 @@ Each stage is a single function sourced by `tekhton.sh`:
 
 ### Layer 3: Libraries (`lib/*.sh`)
 
-- **`lib/common.sh`** — Colors, `log()`, `warn()`, `error()`, `success()`, `header()`, `require_cmd()`
+- **`lib/common.sh`** — Colors, `log()`, `warn()`, `error()`, `success()`, `header()`, `require_cmd()`. Sources `common_box.sh` and `common_timing.sh`.
+- **`lib/common_box.sh`** — Box-drawing helpers and structured error/retry reporting. `_is_utf8_terminal`, `_build_box_hline`, `_print_box_line`, `_setup_box_chars`, `_print_box_frame`, `report_error`, `report_retry`. Sourced by `common.sh` — do not source directly.
+- **`lib/common_timing.sh`** — Phase timing helpers (M46). `_get_epoch_secs`, `_phase_start`, `_phase_end`, `_get_phase_duration`, `_format_duration_human`. Exposes `_PHASE_STARTS` and `_PHASE_TIMINGS`. Sourced by `common.sh` — do not source directly.
 - **`lib/config.sh`** — `load_config()` reads `PROJECT_DIR/.claude/pipeline.conf`, validates required fields, applies milestone overrides via `apply_milestone_overrides()`
 - **`lib/agent.sh`** — `run_agent(name, model, turns, prompt, logfile)` wraps claude CLI invocation with JSON output parsing, turn counting, timing, and error classification. Sources `agent_monitor_platform.sh`, `agent_monitor.sh`, `agent_monitor_helpers.sh`, `agent_retry.sh`, and `agent_helpers.sh`.
 - **`lib/agent_monitor_platform.sh`** — Platform detection (Windows/WSL interop, GNU timeout flags) and `_kill_agent_windows()`. Sourced by `agent.sh` before `agent_monitor.sh`.
@@ -151,7 +153,8 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/pipeline_order_policy.sh`** — M110 extraction. `get_stage_metrics_key()`, `get_stage_array_key()`, `get_stage_policy()`, `get_run_stage_plan()`. Sourced by `pipeline_order.sh` — do not source directly.
 - **`lib/replan.sh`** — Thin shim that sources `replan_midrun.sh` and `replan_brownfield.sh`. Holds shared config defaults (`REPLAN_MODEL`, `REPLAN_MAX_TURNS`).
 - **`lib/replan_midrun.sh`** — Mid-run replanning triggered by reviewer `REPLAN_REQUIRED` verdict. `detect_replan_required()`, `trigger_replan()`, `_run_midrun_replan()`, `_apply_midrun_delta()`.
-- **`lib/replan_brownfield.sh`** — Brownfield replan orchestration (`--replan` CLI command). `run_replan()`, `_generate_codebase_summary()`, `_brownfield_approval_menu()`, `_apply_brownfield_delta()`, `_archive_replan_delta()`.
+- **`lib/replan_brownfield.sh`** — Brownfield replan orchestration (`--replan` CLI command). `run_replan()`, `_generate_codebase_summary()`. Sources `replan_brownfield_apply.sh`.
+- **`lib/replan_brownfield_apply.sh`** — Approval menu, delta merge, archive helpers for `--replan`. `_brownfield_approval_menu()`, `_apply_brownfield_delta()`, `_archive_replan_delta()`. Sourced by `replan_brownfield.sh` — do not source directly.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
 - **`lib/milestone_dag.sh`** — Milestone DAG infrastructure and manifest parser (v3 Milestone 1). Sources `milestone_dag_io.sh` (I/O: `_dag_manifest_path`, `_dag_milestone_dir`, `has_milestone_manifest`, `load_manifest`, `save_manifest`), `milestone_dag_validate.sh`, and `milestone_dag_migrate.sh`. Provides: `dag_get_frontier()`, `dag_deps_satisfied()`, `dag_set_status()`, and query functions (`dag_get_status`, `dag_get_active`, `dag_find_next`).
