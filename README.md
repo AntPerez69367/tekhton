@@ -49,7 +49,7 @@ cd tekhton && ./install.sh
 
 ### Platform notes
 
-- **macOS:** `brew tap geoffgodwin/tekhton && brew install tekhton` (preferred) or the curl one-liner. macOS ships with bash 3.2 — both methods install bash 4.3+ automatically. See [Installation -> macOS](docs/getting-started/installation.md#macos) for details.
+- **macOS:** `brew tap geoffgodwin/tekhton && brew install tekhton` (preferred) or the curl one-liner. macOS ships with bash 3.2; Tekhton requires Homebrew bash 4.3+ active on `PATH`. See [Installation -> macOS](docs/getting-started/installation.md#macos) for details.
 - **Linux / WSL:** The curl one-liner is the recommended path.
 - **From source:** `git clone` + `./install.sh` for contributors or custom installs.
 

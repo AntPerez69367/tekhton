@@ -60,12 +60,20 @@ jobs:
           brew tap geoffgodwin/tekhton
           brew install tekhton
 
+          brew_bash="$(brew --prefix)/opt/bash/bin/bash"
+          [ -x "$brew_bash" ] || {
+            echo "::error::Expected Homebrew bash at $brew_bash, but it is not executable"
+            exit 1
+          }
+
           echo "PATH=$PATH"
           echo "bash on PATH: $(command -v bash)"
           bash --version | head -1
+          echo "brew bash: $brew_bash"
+          "$brew_bash" --version | head -1
 
           set +e
-          out=$(tekhton --version 2>&1)
+          out=$($brew_bash -lc 'tekhton --version' 2>&1)
           status=$?
           set -e
 
