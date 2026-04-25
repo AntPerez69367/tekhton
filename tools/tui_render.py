@@ -20,7 +20,7 @@ from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
-from tui_render_common import _SPIN_CHARS, _fmt_duration  # noqa: F401
+from tui_render_common import _SPIN_CHARS, _fmt_duration, _truncate  # noqa: F401
 from tui_render_logo import _build_logo, _build_simple_logo  # noqa: F401
 from tui_render_pause import _build_paused_bar  # noqa: F401
 from tui_render_timings import _build_timings_panel  # noqa: F401
@@ -168,10 +168,6 @@ def _build_active_bar(status: dict[str, Any]) -> Table:
 
 
 # ---- Header bar (logo + context) --------------------------------------------
-
-def _truncate(s: str, limit: int) -> str:
-    return s if len(s) <= limit else s[:limit] + "\u2026"
-
 
 def _build_context(status: dict[str, Any]) -> Table:
     milestone = status.get("milestone") or ""

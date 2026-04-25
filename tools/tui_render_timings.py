@@ -15,10 +15,18 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from tui_render_common import _SPIN_CHARS, _fmt_duration
+from tui_render_common import _SPIN_CHARS, _fmt_duration, _truncate
 
 
 _FAIL_VERDICTS = {"FAIL", "FAILED", "BLOCKED", "REJECT"}
+
+# Cap label width in the stage timings panel. The panel is ratio=1 of the body
+# (≈1/3 of the screen) so a long substage breadcrumb like
+# "wrap-up » running final static analyzer" otherwise pushes the right-aligned
+# time/turns columns off-screen even with overflow="fold". Trims to ellipsis
+# at this character budget; the column's wrap setting still handles narrower
+# terminals as a backstop.
+_LABEL_MAX_CHARS = 32
 
 
 def _normalize_time(time_str: str) -> str:
@@ -82,7 +90,7 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
         else:
             icon, style = "\u2713", "green"
         grid.add_row(
-            Text(f"{icon} {label}", style=style),
+            Text(f"{icon} {_truncate(label, _LABEL_MAX_CHARS)}", style=style),
             Text(time_str, style="dim"),
             Text(turns_str, style="dim"),
         )
@@ -118,7 +126,10 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
             live_turns = f"--/{turns_max}" if turns_max else "--"
         char = _SPIN_CHARS[int(time.time() * 10) % len(_SPIN_CHARS)]
         grid.add_row(
-            Text(f"{char} {display_label}", style="yellow bold"),
+            Text(
+                f"{char} {_truncate(display_label, _LABEL_MAX_CHARS)}",
+                style="yellow bold",
+            ),
             Text(_fmt_duration(live_elapsed), style="yellow"),
             Text(live_turns, style="yellow dim"),
         )

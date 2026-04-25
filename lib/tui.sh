@@ -230,6 +230,7 @@ tui_stop() {
 # TUI_COMPLETE_HOLD_TIMEOUT seconds. Set the timeout to 0 for the pre-M98
 # behaviour (brief pause + kill, suitable for CI / non-interactive wrappers).
 tui_complete() {
+    # Happy-path only: EXIT trap calls tui_stop directly, which is unconditional.
     [[ "$_TUI_ACTIVE" == "true" ]] || return 0
     _TUI_VERDICT="${1:-}"
     _TUI_COMPLETE=true

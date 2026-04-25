@@ -1,82 +1,83 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 3 test scenarios (sidecar startup/kill, pidfile cleanup, watchdog bonus)
-Verdict: PASS
-
-Implementation cross-referenced: `lib/tui.sh` (`tui_stop`), `tools/tui.py` (watchdog + escape hatch), `tools/tui_render_timings.py` (label wrap).
+Tests audited: 2 files, 28 test functions
+Verdict: CONCERNS
 
 ---
 
 ### Findings
 
-#### EXERCISE: Process-alive check accepts watchdog death as a passing outcome
-- File: tests/test_tui_orphan_lifecycle_integration.sh:156-164
-- Issue: The loop polls `_proc_alive` for up to 5 seconds (10 × 0.5 s) and passes on any cause
-  of death, explicitly acknowledging this with the message "Sidecar was killed by tui_stop (or
-  watchdog fired)". With `--watchdog-secs 2`, the double-timeout escape hatch fires at 2 × 2 = 4 s
-  of staleness — squarely inside the test's 5-second wait window. If `tui_stop`'s pidfile fallback
-  were completely broken (e.g., the pre-fix early-return guard restored), the watchdog would kill
-  the process by iteration ~8, and this block would still emit a PASS. The process-alive check
-  therefore cannot independently certify that Fix #1 (tui_stop pidfile fallback) is working.
-  The pidfile-removal check at line 175 IS a clean discriminator: if `tui_stop` early-returns it
-  neither kills the process nor removes the pidfile, so the test fails there regardless. The
-  process-alive PASS block is redundant and its attribution message is misleading.
-- Severity: LOW
-- Action: Raise `--watchdog-secs` to 60 in the first test scenario (lines 102-108) so the watchdog
-  cannot fire during the 5-second polling window. This makes the process-alive check cleanly
-  attribute death to `tui_stop` without ambiguity. Keep `--watchdog-secs 1` only in the second
-  (watchdog-specific) scenario at line 196. The pidfile check at line 175 is authoritative and
-  should be kept as-is regardless.
+#### INTEGRITY: Tautological assertion always passes
+- File: tools/tests/test_tui_render_timings_label_truncation.py:292
+- Issue: `assert "…" not in panel_str or "…" in panel_str` is a logical tautology
+  (`¬A or A`). It passes regardless of whether the panel contains an ellipsis or
+  not. The intent is to verify that a 32-char label (exactly at the `_LABEL_MAX_CHARS`
+  limit) is **not** truncated. The correct assertion is `assert "…" not in panel_str`
+  — `_truncate("x" * 32, 32)` returns the string unchanged per the implementation
+  contract `len(s) <= limit → return s` (`tui_render_common.py:27`).
+- Severity: HIGH
+- Action: Replace the tautology with `assert "…" not in panel_str` to confirm that
+  a 32-char label exits `_truncate` unmodified and no ellipsis is rendered in the
+  panel output.
 
-#### COVERAGE: Watchdog escape hatch bonus test uses a no-op instead of fail
-- File: tests/test_tui_orphan_lifecycle_integration.sh:220-223
-- Issue: The bonus watchdog scenario (lines 187-224) calls `warn` when `WATCHDOG_FIRED` is false:
-  ```bash
-  if [[ "$WATCHDOG_FIRED" == "false" ]]; then
-      warn "Watchdog test: sidecar still alive after 5 seconds (may be slow system)"
-      kill -9 "$WATCHDOG_PID" 2>/dev/null || true
-  fi
-  ```
-  `warn` is stubbed to a no-op (`:`) at line 22 — it does not increment `FAIL` and does not affect
-  the exit code. Fix #2 (the `2 × watchdog_secs` escape hatch in `tools/tui.py:206`) therefore has
-  no hard assertion in this file. If the escape hatch were reverted, the integration test exits 0.
-  Fix #2 is covered by hard assertions only in `tools/tests/test_tui.py` (coder-authored unit
-  tests; not in this audit's scope). The integration file's watchdog scenario is effectively
-  advisory only.
+#### INTEGRITY: Truncation assertion silently dead-lettered
+- File: tools/tests/test_tui_render_timings_label_truncation.py:263–268
+- Issue: `test_very_long_breadcrumb_is_truncated` computes
+  `has_ellipsis = "…" in panel_str` inside an `if len(full_breadcrumb) > 32` block
+  (which is always True — the 56-char breadcrumb is always over the limit) but never
+  asserts on it. The only executed assertion is `assert panel_str` (non-empty string),
+  which passes for any valid Rich panel regardless of whether truncation occurred.
+  The test name claims to verify truncation behaviour; the assertions do not.
+- Severity: HIGH
+- Action: Replace `assert panel_str` with `assert "…" in panel_str` and remove
+  the unused `has_ellipsis` variable. The `if len(full_breadcrumb) > 32` guard
+  is always True and can also be dropped.
+
+#### COVERAGE: Weak disjunctions produce near-always-true assertions
+- File: tools/tests/test_tui_render_timings_label_truncation.py:83
+  `assert "review » rework cycle 2" in panel_str or "review" in panel_str`
+  — the `or "review"` fallback lets a broken truncation that discards everything
+  after "review" still pass.
+- File: tools/tests/test_tui_render_timings_label_truncation.py:244
+  `assert "wrap" in panel_str or "…" in panel_str`
+  — "wrap-up » running final static analyzer" is 39 chars, always above the 32-char
+  cap; the `or "wrap"` arm allows silent regression if `_truncate` were to return
+  the full untruncated string.
 - Severity: MEDIUM
-- Action: Replace `warn "Watchdog test: ..."` with
-  `fail "Watchdog escape hatch" "sidecar PID=$WATCHDOG_PID still alive after 5 s"` so the
-  bonus scenario produces a definitive failure when the implementation regresses. If latency on
-  loaded CI is a concern, extend the poll budget (e.g., 30 × 0.25 s = 7.5 s) rather than silently
-  tolerating a non-fire. The "may be slow system" escape belongs in a skip guard, not a silent
-  no-op.
+- Action: Tighten both assertions to the primary check only:
+  - Line 83: `assert "review » rework cycle 2" in panel_str` (24 chars, never truncated)
+  - Line 244: `assert "…" in panel_str` (breadcrumb is always > 32 chars)
+
+#### COVERAGE: Column-alignment smoke tests are too coarse to detect regressions
+- File: tools/tests/test_tui_render_timings_label_truncation.py:356–357
+  `assert "m" in panel_str or "s" in panel_str`
+  — single letters appear in ANSI escape codes, borders, and spinner text; this
+  assertion never fails even if the time column is completely absent.
+- File: tools/tests/test_tui_render_timings_label_truncation.py:375–376
+  `assert "15" in panel_str or "5" in panel_str`
+  — "5" is ubiquitous in formatted output.
+- Severity: LOW
+- Action: Assert the full formatted cell value. For the time column: the input is
+  `"time": "90s"` which `_normalize_time` converts via `_fmt_duration(90)` →
+  `"1m30s"`, so use `assert "1m30s" in panel_str`. For the turns column: the input
+  is `"turns": "5/15"`, so use `assert "5/15" in panel_str`. These confirm the
+  actual cell content is present, not a stray character.
 
 ---
 
-### No findings in remaining categories
+### No Issues Found In
 
-**INTEGRITY:** No always-passing assertions. All pass/fail calls verify outputs from real function
-calls with meaningful inputs. The hard-coded values used in fixture data (`"running"`, `0`,
-`"testing"`) are inputs fed into the implementation, not expected outputs — they are structurally
-honest.
+`tools/tests/test_truncate_function.py` — All 13 tests call
+`tui_render_common._truncate()` directly with no mocking. Assertions are derived
+from the implementation contract (`s[:limit] + "…"`, `tui_render_common.py:27`).
+Edge case coverage is thorough: empty string, at-limit, one-over, far-exceeds,
+limit=0, limit=1, unicode, and real-world breadcrumbs. Test names encode both
+scenario and expected outcome. No mutable project files are read; all fixture data
+is inline.
 
-**SCOPE:** The test correctly targets `lib/tui.sh::tui_stop` and `tools/tui.py`. It does not
-exercise `tools/tui_render_timings.py` (the label-wrap polish fix), which is appropriate — that
-fix is a rendering change with no tui_stop/watchdog overlap.
-
-**WEAKENING:** `tests/test_tui_orphan_lifecycle_integration.sh` is a new file; no existing
-assertions were removed or broadened.
-
-**NAMING:** Test messages clearly describe the scenario and expected outcome. The "or watchdog
-fired" qualifier in the PASS message (line 158) accurately flags ambiguity but should be resolved
-by the LOW fix above rather than left as permanent documentation of a known gap.
-
-**ISOLATION:** The test creates a fresh `mktemp -d` directory, exports `PROJECT_DIR` and
-`TEKHTON_SESSION_DIR` into it, and removes the tree on EXIT. It does not read `.tekhton/`,
-`.claude/logs/`, or any live pipeline artifact. Isolation is clean.
-
-**IMPLEMENTATION EXERCISE:** The test sources the real `lib/tui.sh`, spawns the real
-`tools/tui.py`, and calls the real `tui_stop`. Mocking is limited to logging stubs (`log`,
-`warn`, `error`, etc.) that are irrelevant to the fix paths under test. Implementation exercise
-is strong.
+`tools/tests/test_tui_render_timings_label_truncation.py` — Scope alignment is
+correct: imports `tui_render_timings` where `_LABEL_MAX_CHARS = 32` and the
+`_truncate` calls now live (`tui_render_timings.py:29, 93, 130`). No orphaned
+imports or stale name references. All fixture dicts are constructed inline; no
+live pipeline artifacts, log files, or `.tekhton/` state files are read.
