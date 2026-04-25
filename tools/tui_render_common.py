@@ -21,3 +21,7 @@ def _fmt_duration(secs: int) -> str:
     if mins:
         return f"{mins}m{s}s"
     return f"{s}s"
+
+
+def _truncate(s: str, limit: int) -> str:
+    return s if len(s) <= limit else s[:limit] + "…"

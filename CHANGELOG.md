@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.125.4] - 2026-04-25
+
+### Fixed
+- TUI sidecar orphan after build-gate-failure exit. When the build gate failed and the parent shell exited via `error "…"; exit 1` (e.g. `stages/coder.sh:1167` and sibling sites), `tools/tui.py` could remain alive indefinitely with a stale `.claude/tui_sidecar.pid` left on disk. Three coupled fixes:
+  - `lib/tui.sh::tui_stop` — dropped the `_TUI_ACTIVE` early-return guard and added a pidfile fallback so the EXIT trap reaps the sidecar even when `_TUI_ACTIVE` was flipped false earlier in the run. Pidfile is now removed on every code path (alive process, dead PID, or no PID at all). `tui_complete` keeps its happy-path guard — the asymmetry is intentional.
+  - `tools/tui.py` — added a double-timeout watchdog escape hatch that fires on `2 × watchdog_secs` of status-file staleness regardless of `current_agent_status` / `agent_turns_used`, closing the gap where the original watchdog preconditions were unreachable in the orphan scenario.
+  - Regression coverage: `tests/test_tui_stop_orphan_recovery.sh`, `tests/test_tui_orphan_lifecycle_integration.sh`, and watchdog tests in `tools/tests/test_tui.py`.
+
+### Changed
+- Stage Timings panel — long-label truncation. Substage breadcrumbs like `wrap-up » running final static analyzer` were pushing the right-aligned time/turns columns off-screen. `_truncate(s, limit)` was promoted from `tools/tui_render.py` into a new `tools/tui_render_common.py` module (avoids a circular import) and applied with a 32-char cap (`_LABEL_MAX_CHARS`) to both completed-stage labels and the live-row breadcrumb in `tools/tui_render_timings.py`. The column's existing `overflow="fold"` remains as a backstop on narrow terminals.
+
+### Docs
+- 300-line file ceiling — data-only exemption. Added an explicit carve-out in `CLAUDE.md` (Non-Negotiable Rule #8) for files containing only `:=` defaults, constant declarations, and shared clamp/validation helper calls — no function bodies, no conditional logic. Documents `lib/config_defaults.sh` as the canonical example.
+
 ## [3.125.3] - 2026-04-24
 
 ### Fixed

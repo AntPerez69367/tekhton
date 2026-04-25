@@ -83,3 +83,6 @@ MILESTONE_ARCHIVE.md
 # Watchtower Dashboard
 .claude/dashboard/
 .claude/watchtower_inbox/
+
+# SDI cache (auto-generated, do not commit)
+.sdi/cache/

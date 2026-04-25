@@ -34,6 +34,14 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/pipeline_order.sh"
 
+# Clean environment to start with a known baseline
+unset PIPELINE_ORDER
+unset DOCS_AGENT_ENABLED
+unset INTAKE_AGENT_ENABLED
+unset SECURITY_AGENT_ENABLED
+unset SKIP_SECURITY
+unset SKIP_DOCS
+
 FAIL=0
 
 assert_eq() {

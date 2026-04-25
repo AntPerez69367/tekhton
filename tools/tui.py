@@ -181,6 +181,7 @@ def main() -> int:
                         _last_mtime_time = time.monotonic()
                 except OSError:
                     pass
+                staleness = time.monotonic() - _last_mtime_time
                 # M124: extend eligibility to "paused" so the watchdog can
                 # save the user when the parent shell dies during a quota
                 # pause. The mtime-staleness check still protects against
@@ -192,8 +193,17 @@ def main() -> int:
                 if (
                     status.get("current_agent_status") in ("idle", "paused")
                     and status.get("agent_turns_used", 0) > 0
-                    and time.monotonic() - _last_mtime_time > watchdog_secs
+                    and staleness > watchdog_secs
                 ):
+                    break
+                # Bug-fix escape hatch: the preconditions above (idle/paused +
+                # turns>0) are unreachable when the parent shell dies during
+                # a shell-side build gate. In that case the last status
+                # snapshot has current_agent_status="running" and
+                # agent_turns_used=0 (build gate is not an agent turn). After
+                # 2× watchdog_secs of mtime staleness the parent is provably
+                # dead, so fire regardless of the snapshot's logical state.
+                if staleness > 2 * watchdog_secs:
                     break
 
             time.sleep(tick)

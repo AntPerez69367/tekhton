@@ -197,29 +197,31 @@ tui_start() {
     log_verbose "[tui] Sidecar started (pid ${_TUI_PID}, status=${_TUI_STATUS_FILE})"
 }
 
-# tui_stop — unconditional sidecar teardown. Safe to call when inactive.
+# tui_stop — unconditional sidecar teardown. Pidfile fallback reaps the
+# orphan when _TUI_ACTIVE has been flipped false before the EXIT trap fires
+# (e.g. on build-gate-failure exit), leaving _TUI_PID empty in this shell.
 tui_stop() {
-    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local pidfile="${PROJECT_DIR:-.}/.claude/tui_sidecar.pid"
+    local target_pid="${_TUI_PID:-}"
+    if [[ -z "$target_pid" ]] && [[ -f "$pidfile" ]]; then
+        target_pid=$(cat "$pidfile" 2>/dev/null) || target_pid=""
+    fi
     _TUI_ACTIVE=false
-    if [[ -n "$_TUI_PID" ]] && kill -0 "$_TUI_PID" 2>/dev/null; then
-        kill "$_TUI_PID" 2>/dev/null || true
-        # Brief wait so the sidecar can restore terminal state on its own
+    if [[ -n "$target_pid" ]] && kill -0 "$target_pid" 2>/dev/null; then
+        kill "$target_pid" 2>/dev/null || true
         for _ in 1 2 3 4 5; do
-            kill -0 "$_TUI_PID" 2>/dev/null || break
+            kill -0 "$target_pid" 2>/dev/null || break
             sleep 0.1
         done
-        kill -9 "$_TUI_PID" 2>/dev/null || true
-        wait "$_TUI_PID" 2>/dev/null || true
+        kill -9 "$target_pid" 2>/dev/null || true
+        wait "$target_pid" 2>/dev/null || true
     fi
     _TUI_PID=""
-    # Remove PID file so next run doesn't try to kill a recycled PID
-    rm -f "${PROJECT_DIR:-.}/.claude/tui_sidecar.pid" 2>/dev/null || true
-    # Safety net: restore terminal state in case the sidecar exited without
+    rm -f "$pidfile" 2>/dev/null || true
+    # Safety net: restore terminal state if the sidecar exited without
     # cleaning up (e.g. SIGKILL before rich could send RMCUP / cnorm).
-    # These are no-ops if the terminal is already in normal mode.
     tput rmcup 2>/dev/null || true
     tput cnorm 2>/dev/null || true
-    # Restore ICRNL (input CR→NL translation) which Rich may leave disabled
     stty icrnl 2>/dev/null || true
 }
 
@@ -228,6 +230,7 @@ tui_stop() {
 # TUI_COMPLETE_HOLD_TIMEOUT seconds. Set the timeout to 0 for the pre-M98
 # behaviour (brief pause + kill, suitable for CI / non-interactive wrappers).
 tui_complete() {
+    # Happy-path only: EXIT trap calls tui_stop directly, which is unconditional.
     [[ "$_TUI_ACTIVE" == "true" ]] || return 0
     _TUI_VERDICT="${1:-}"
     _TUI_COMPLETE=true

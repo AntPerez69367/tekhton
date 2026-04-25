@@ -1,7 +1,7 @@
 # Reviewer Report
 
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
 None
@@ -10,22 +10,10 @@ None
 None
 
 ## Non-Blocking Notes
-- `lib/milestone_split_dag.sh:87` — Security agent flagged `echo "$sub_block" > "${milestone_dir}/${sub_file}"` (LOW, fixable:yes): if `$sub_block` begins with `-n` or `-e`, bash `echo` will misinterpret them as flags, potentially producing a truncated or escape-expanded milestone file. Not introduced by this task; should migrate to the non-blocking log so it is addressed in a future cleanup pass (fix: `printf '%s\n' "$sub_block" > ...`).
+- `tools/tui_render_timings.py:64` — column config comment still describes overflow/wrap as the mechanism that "keeps the time/turns columns from being pushed off-screen"; that was the old (non-working) approach. Truncation is now the primary fix; the `no_wrap=False` wrap setting is the backstop. Comment should be updated to reflect the actual fix.
 
 ## Coverage Gaps
 None
 
 ## Drift Observations
 None
-
----
-
-## Review Notes
-
-**Scope:** One doc-hygiene item — mark the last open non-blocking note `[x]` with a resolution annotation.
-
-**Investigation verified:** `tests/test_draft_milestones_validate_lint.sh` has exactly three `# --- Fixture:` blocks (lines 36, 114, 170). No surviving "four scenarios" reference exists anywhere in the working tree outside `.tekhton/`. The coder's factual claims are correct.
-
-**Log state is correct:** All 19 `## Open` items are now `[x]`; `## Resolved` is empty. The `[ ]` → `[x]` → next-run sweep into `## Resolved` flow (via `clear_completed_nonblocking_notes`) is preserved.
-
-**No shell code was changed**, so shell quality, shellcheck, and architecture boundary checks are not applicable to this diff.
