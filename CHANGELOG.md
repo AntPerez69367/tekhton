@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Jekyll GitHub Pages build failure caused by unguarded `{%s}` printf format string in `DESIGN_v4.md` being parsed as an unterminated Liquid tag; wrapped block in `{% raw %}...{% endraw %}`.
 - Missing `{% endraw %}` closing tag that would have caused the raw block to consume the rest of the document.
 
+- Three coupled fixes that close the TUI sidecar orphan that was reported on
 ## [3.125.2] - 2026-04-24
 
 ### Added

@@ -1042,3 +1042,112 @@ def test_watchdog_does_not_fire_when_paused_and_fresh(tmp_path):
         and _time.monotonic() - last_mtime_time > watchdog_secs
     )
     assert not watchdog_should_fire, "Watchdog must not fire while pause heartbeats"
+
+
+# =============================================================================
+# Bug-fix: double-timeout watchdog escape hatch (orphan-on-build-gate-failure)
+# =============================================================================
+
+
+def test_double_timeout_fires_on_running_status_after_2x_staleness(tmp_path):
+    """The standard watchdog preconditions become unreachable when the parent
+    shell dies during a shell-side build gate: the last status snapshot has
+    current_agent_status='running' (not idle/paused) and agent_turns_used=0
+    (the gate is not an agent turn). After 2× watchdog_secs of mtime
+    staleness the parent is provably dead, so fire regardless of the snapshot.
+    """
+    status_file = tmp_path / "tui_status.json"
+    snapshot = tui._empty_status()
+    snapshot["current_agent_status"] = "running"
+    snapshot["agent_turns_used"] = 0
+    snapshot["complete"] = False
+    status_file.write_text(json.dumps(snapshot))
+
+    watchdog_secs = 1
+    # Single-timeout preconditions are unreachable for this snapshot.
+    status = tui._read_status(status_file)
+    assert status is not None
+    last_mtime_time = _time.monotonic() - (watchdog_secs * 2 + 0.1)
+    staleness = _time.monotonic() - last_mtime_time
+
+    standard_fire = (
+        status.get("current_agent_status") in ("idle", "paused")
+        and status.get("agent_turns_used", 0) > 0
+        and staleness > watchdog_secs
+    )
+    assert not standard_fire, (
+        "Standard watchdog must NOT fire on the orphan snapshot "
+        "(running + zero turns) — that is the bug we are working around"
+    )
+
+    # The escape hatch fires after 2× watchdog_secs regardless of agent state.
+    escape_hatch_fires = staleness > 2 * watchdog_secs
+    assert escape_hatch_fires, (
+        "Escape hatch must fire after 2× watchdog_secs of staleness even "
+        "when current_agent_status is 'running' and turns are 0"
+    )
+
+
+def test_double_timeout_does_not_fire_before_2x_threshold(tmp_path):
+    """The escape hatch must not fire before 2× watchdog_secs of staleness."""
+    status_file = tmp_path / "tui_status.json"
+    snapshot = tui._empty_status()
+    snapshot["current_agent_status"] = "running"
+    snapshot["agent_turns_used"] = 0
+    status_file.write_text(json.dumps(snapshot))
+
+    watchdog_secs = 5
+    # Stale beyond 1× but not yet beyond 2×.
+    last_mtime_time = _time.monotonic() - (watchdog_secs + 1.0)
+    staleness = _time.monotonic() - last_mtime_time
+
+    escape_hatch_fires = staleness > 2 * watchdog_secs
+    assert not escape_hatch_fires, (
+        "Escape hatch must not fire prematurely — give the standard "
+        "watchdog its full single-timeout window first"
+    )
+
+
+# =============================================================================
+# Stage timings: long-label truncation (human-note POLISH)
+# =============================================================================
+
+
+def test_timings_panel_long_label_does_not_push_time_columns_offscreen():
+    """A very long stage label must not push the time/turns columns off-screen.
+    The label column is configured with no_wrap=False so long breadcrumbs
+    wrap onto additional lines while the time/turns columns stay visible.
+    Pre-fix behaviour squashed the right columns to "1…" / cut them off.
+    """
+    import io
+    from rich.console import Console
+    status = {
+        **tui._empty_status(),
+        "stages_complete": [
+            {"label": "wrap-up » running final static analyzer "
+                      "across the entire repo with extra notes",
+             "model": "", "turns": "12/30", "time": "3m0s", "verdict": None},
+        ],
+    }
+    panel = tui._build_timings_panel(status)
+    # Render into a narrow console — same width as the right-third panel
+    # in a typical 80-col terminal (80/3 ≈ 26 cols inside the body split).
+    buf = io.StringIO()
+    Console(file=buf, width=30, force_terminal=False).print(panel)
+    rendered = buf.getvalue()
+
+    # Time column must remain visible at full text — that is the bug the
+    # human note describes: long labels currently push these off the side.
+    assert "3m0s" in rendered, (
+        f"Time column 3m0s missing from narrow render; full output:\n{rendered}"
+    )
+    # Turns column must remain visible at full text too.
+    assert "12/30" in rendered, (
+        f"Turns column 12/30 missing from narrow render; full output:\n{rendered}"
+    )
+    # Long label wraps onto multiple lines rather than truncating the
+    # numeric columns.
+    line_count = sum(1 for line in rendered.splitlines() if line.strip())
+    assert line_count > 3, (
+        "Expected the long label to wrap onto extra lines; got: \n" + rendered
+    )

@@ -26,6 +26,7 @@ _brownfield_approval_menu() {
         echo "  Review the proposed changes in ${REPLAN_DELTA_FILE}"
         echo
         echo "  Options:"
+        # shellcheck disable=SC2153
         echo "    [a] Apply   — merge changes into ${DESIGN_FILE} and regenerate CLAUDE.md"
         echo "    [e] Edit    — open delta in \${EDITOR:-nano} before applying"
         echo "    [n] Reject  — discard delta"

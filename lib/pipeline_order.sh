@@ -236,5 +236,5 @@ get_stage_display_label() {
 # M110 policy, metrics-key resolver, and stage planner live in
 # pipeline_order_policy.sh. Sourced below so all consumers of this module
 # (tekhton.sh, test suites that source only pipeline_order.sh) keep working.
-# shellcheck source=./pipeline_order_policy.sh
+# shellcheck source=./pipeline_order_policy.sh disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/pipeline_order_policy.sh"
