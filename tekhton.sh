@@ -39,6 +39,7 @@
 #   --force-audit         Force architect audit regardless of threshold
 #   --draft-milestones [desc] Interactive milestone authoring: clarify, analyze, split, generate
 #   --add-milestone "desc"   (deprecated — alias for --draft-milestones)
+#   --reconcile-milestones    Add orphan milestone files (on disk but not in MANIFEST.cfg) to the manifest
 #   --migrate --dag       Convert inline CLAUDE.md milestones to DAG file format
 #   --progress            Show milestone progress at a glance
 #   --progress --all      Include completed milestones
@@ -608,6 +609,19 @@ if [ "${1:-}" = "--draft-milestones" ]; then
     exit 0
 fi
 
+if [ "${1:-}" = "--reconcile-milestones" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    source "${TEKHTON_HOME}/lib/draft_milestones_write.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    load_config
+    shift
+    reconcile_milestone_manifest "$@"
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Early --health check (runs before execution pipeline) ------------------
 
 if [ "${1:-}" = "--health" ]; then
@@ -1016,6 +1030,7 @@ usage() {
         echo "  --notes-filter TAG        Inject only [TAG] notes (BUG, FEAT, POLISH)"
         echo "  --draft-milestones [desc] Interactive milestone authoring: clarify, analyze, split, generate"
         echo "  --add-milestone \"desc\"    (deprecated — alias for --draft-milestones)"
+        echo "  --reconcile-milestones    Add orphan milestone files (on disk but not in MANIFEST.cfg) to the manifest"
         echo "  --triage [TAG]            Triage all unchecked notes (size estimate) without running"
         echo "  --dry-run                 Preview mode: run scout + intake only, show what would happen"
         echo "  --continue-preview        Resume from a previous --dry-run (uses cached results)"

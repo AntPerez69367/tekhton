@@ -33,7 +33,14 @@
       "Bash(grep -n \"source.*lib/.*\\\\.sh\\\\|source.*lib/tui\" \"$\\(pwd\\)/tekhton.sh\")",
       "Bash(grep -n \"source.*lib/common.sh\\\\|source.*lib/tui.sh\" \"$\\(pwd\\)/tekhton.sh\")",
       "Bash(grep -n \"_TUI_OPERATION_LABEL\" \"$\\(pwd\\)/lib/tui.sh\")",
-      "Bash(grep -n \"^declare\\\\|^export\\\\|^_TUI_\" \"$\\(pwd\\)/lib/tui.sh\")"
+      "Bash(grep -n \"^declare\\\\|^export\\\\|^_TUI_\" \"$\\(pwd\\)/lib/tui.sh\")",
+      "Bash(/home/groundhack/tekhton/tekhton.sh --help)",
+      "Bash(bash -c ' *)",
+      "Bash(timeout 30 claude --model claude-haiku-4-5 --output-format json -p)",
+      "Read(//home/groundhack/projects/recipe-project/.tekhton/**)",
+      "Read(//home/groundhack/projects/recipe-project/.claude/**)",
+      "Bash(python3 *)",
+      "Bash(bash --noprofile --norc -c ' *)"
     ]
   }
 }

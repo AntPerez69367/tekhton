@@ -105,7 +105,7 @@ draft_milestones_validate_output() {
 draft_milestones_write_manifest() {
     local id_list="$1"
     local group="${2:-devx}"
-    local manifest_path="${PROJECT_DIR}/${MILESTONE_DIR}/${MILESTONE_MANIFEST}"
+    local manifest_path="${MILESTONE_DIR}/${MILESTONE_MANIFEST}"
 
     if [[ ! -f "$manifest_path" ]]; then
         error "MANIFEST.cfg not found at ${manifest_path}"
@@ -137,7 +137,7 @@ draft_milestones_write_manifest() {
 
         # Find the milestone file to extract title
         local ms_file
-        ms_file=$(find "${PROJECT_DIR}/${MILESTONE_DIR}" -name "m${id}-*.md" -print -quit 2>/dev/null || true)
+        ms_file=$(find "${MILESTONE_DIR}" -name "m${id}-*.md" -print -quit 2>/dev/null || true)
         if [[ -z "$ms_file" ]]; then
             warn "No milestone file found for m${id}, skipping manifest entry"
             continue
@@ -158,4 +158,74 @@ draft_milestones_write_manifest() {
     if [[ "$added" -gt 0 ]]; then
         log "Added ${added} milestone(s) to MANIFEST.cfg"
     fi
+}
+
+# reconcile_milestone_manifest [GROUP] [--yes]
+# Scans MILESTONE_DIR for m<N>-*.md files whose ID is missing from
+# MANIFEST.cfg and adds them via draft_milestones_write_manifest. Used to
+# rescue files left behind by failed --draft-milestones runs without
+# re-invoking the agent. Pass --yes (or -y) to skip the confirmation prompt.
+reconcile_milestone_manifest() {
+    local group="devx"
+    local assume_yes=false
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            -y|--yes) assume_yes=true ;;
+            -*) warn "Unknown flag: $arg" ;;
+            *) group="$arg" ;;
+        esac
+    done
+    local manifest_path="${MILESTONE_DIR}/${MILESTONE_MANIFEST}"
+
+    if [[ ! -d "$MILESTONE_DIR" ]]; then
+        error "MILESTONE_DIR does not exist: ${MILESTONE_DIR}"
+        return 1
+    fi
+    if [[ ! -f "$manifest_path" ]]; then
+        error "MANIFEST.cfg not found at ${manifest_path}"
+        return 1
+    fi
+
+    local orphan_ids=""
+    local f base id
+    for f in "${MILESTONE_DIR}"/m[0-9]*.md; do
+        [[ -f "$f" ]] || continue
+        base=$(basename "$f")
+        id="${base#m}"
+        id="${id%%-*}"
+        [[ "$id" =~ ^[0-9]+$ ]] || continue
+        if ! grep -qE "^m${id}\|" "$manifest_path"; then
+            orphan_ids="${orphan_ids} ${id}"
+        fi
+    done
+
+    if [[ -z "${orphan_ids// }" ]]; then
+        log "No orphan milestone files found — MANIFEST.cfg is in sync."
+        return 0
+    fi
+
+    echo
+    echo "Orphan milestone files (on disk, not in MANIFEST.cfg):"
+    for id in $orphan_ids; do
+        local ms_file
+        ms_file=$(find "${MILESTONE_DIR}" -name "m${id}-*.md" -print -quit 2>/dev/null || true)
+        echo "  m${id}: $(basename "${ms_file:-?}")"
+    done
+    echo
+    local confirm="n"
+    if [[ "$assume_yes" = true ]]; then
+        confirm="y"
+    else
+        # Print the prompt to stdout so it's visible; `read -p` would route
+        # it to stderr, which earlier callers were inadvertently silencing.
+        printf 'Add these to MANIFEST.cfg? [y/N] '
+        read -r confirm < /dev/tty || confirm="n"
+    fi
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        log "Aborted. No changes made."
+        return 0
+    fi
+
+    draft_milestones_write_manifest "$orphan_ids" "$group"
 }

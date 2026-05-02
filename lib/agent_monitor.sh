@@ -53,7 +53,8 @@ _invoke_and_monitor() {
                 --model "$model" \
                 "${_IM_PERM_FLAGS[@]}" \
                 --max-turns "$max_turns" \
-                --output-format json \
+                --output-format stream-json \
+                --verbose \
                 -p \
                 < "$_prompt_file" \
                 > "$_fifo" 2> >(tee -a "$_stderr_file" >&1)
@@ -79,6 +80,10 @@ _invoke_and_monitor() {
             exec 3>>"$log_file"
             _last_activity=$(date +%s)
             _last_line=""
+            # Most-recent {"type":"result"} line (NDJSON); used to extract
+            # num_turns at the end. We track it incrementally because the
+            # event is emitted only once near end-of-stream.
+            _result_line=""
             _read_interval="${AGENT_ACTIVITY_POLL:-30}"
             [ "$_activity_timeout" -le 0 ] 2>/dev/null && _read_interval=0
 
@@ -102,6 +107,10 @@ _invoke_and_monitor() {
                 # Ring buffer: store line
                 _rb[$(( _rb_idx % _rb_size ))]="$1"
                 _rb_idx=$(( _rb_idx + 1 ))
+                # Capture result event for end-of-run turn-count extraction.
+                case "$1" in
+                    *'"type":"result"'*) _result_line="$1" ;;
+                esac
                 # Real-time API error detection
                 case "$1" in
                     *'"type":"error"'*|*'"status":'*429*|*'"status":'*500*|*'"status":'*502*|*'"status":'*503*|*'"status":'*529*|*server_error*|*rate_limit*|*overloaded*|*authentication_error*)
@@ -122,11 +131,25 @@ _invoke_and_monitor() {
                         fi
                         ;;
                 esac
-                if echo "$1" | grep -q '"type":"text"'; then
-                    echo "$1" | python3 -c \
-                        "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
-                        2>/dev/null || true
-                fi
+                # Print live progress: text blocks from assistant messages.
+                # In stream-json, those look like:
+                #   {"type":"assistant","message":{"content":[{"type":"text","text":"…"},…]}}
+                case "$1" in
+                    *'"type":"assistant"'*'"type":"text"'*)
+                        echo "$1" | python3 -c '
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+    for block in (d.get("message", {}) or {}).get("content", []) or []:
+        if block.get("type") == "text":
+            t = block.get("text", "")
+            if t:
+                print(t)
+except Exception:
+    pass
+' 2>/dev/null || true
+                        ;;
+                esac
             }
 
             while true; do
@@ -189,9 +212,11 @@ _invoke_and_monitor() {
                 fi
             done
 
-            # Extract turn count from final result object
-            _turns=$(echo "$_last_line" | python3 -c \
-                "import sys,json; d=json.load(sys.stdin); print(d.get('num_turns', 0))" \
+            # Extract turn count from the captured {"type":"result",...} event.
+            # In stream-json mode that event is emitted exactly once near the
+            # end of the stream and carries num_turns.
+            _turns=$(echo "$_result_line" | python3 -c \
+                "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('num_turns', 0))" \
                 2>/dev/null || echo "0")
             echo "$_turns" > "$_turns_file"
 
@@ -272,22 +297,36 @@ _invoke_and_monitor() {
             --model "$model" \
             "${_IM_PERM_FLAGS[@]}" \
             --max-turns "$max_turns" \
-            --output-format json \
+            --output-format stream-json \
+            --verbose \
             -p \
             < "$_prompt_file" \
             2>&1 | tee -a "$log_file" | (
                 turns=0
-                last_line=""
+                result_line=""
                 while IFS= read -r line; do
-                    if echo "$line" | grep -q '"type":"text"'; then
-                        echo "$line" | python3 -c \
-                            "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
-                            2>/dev/null || true
-                    fi
-                    last_line="$line"
+                    case "$line" in
+                        *'"type":"result"'*) result_line="$line" ;;
+                    esac
+                    case "$line" in
+                        *'"type":"assistant"'*'"type":"text"'*)
+                            echo "$line" | python3 -c '
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+    for block in (d.get("message", {}) or {}).get("content", []) or []:
+        if block.get("type") == "text":
+            t = block.get("text", "")
+            if t:
+                print(t)
+except Exception:
+    pass
+' 2>/dev/null || true
+                            ;;
+                    esac
                 done
-                turns=$(echo "$last_line" | python3 -c \
-                    "import sys,json; d=json.load(sys.stdin); print(d.get('num_turns', 0))" \
+                turns=$(echo "$result_line" | python3 -c \
+                    "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('num_turns', 0))" \
                     2>/dev/null || echo "0")
                 echo "$turns" > "$_turns_file"
             )

@@ -29,8 +29,8 @@ source "${TEKHTON_HOME}/lib/draft_milestones_write.sh"
 # max+1. If COUNT is given, prints COUNT consecutive IDs (one per line).
 draft_milestones_next_id() {
     local count="${1:-1}"
-    local manifest_path="${PROJECT_DIR}/${MILESTONE_DIR}/${MILESTONE_MANIFEST}"
-    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR}"
+    local manifest_path="${MILESTONE_DIR}/${MILESTONE_MANIFEST}"
+    local milestone_dir="${MILESTONE_DIR}"
 
     local max_id=0
 
@@ -75,7 +75,7 @@ draft_milestones_next_id() {
 # format exemplars for the prompt. N = DRAFT_MILESTONES_SEED_EXEMPLARS.
 draft_milestones_build_exemplars() {
     local count="${DRAFT_MILESTONES_SEED_EXEMPLARS:-3}"
-    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR}"
+    local milestone_dir="${MILESTONE_DIR}"
     local exemplars=""
 
     if [[ ! -d "$milestone_dir" ]]; then
@@ -115,7 +115,7 @@ $(head -100 "$f")
 # 5. Writes MANIFEST.cfg rows
 run_draft_milestones() {
     local seed="${1:-}"
-    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR}"
+    local milestone_dir="${MILESTONE_DIR}"
     local log_dir="${PROJECT_DIR}/.claude/logs"
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -149,7 +149,12 @@ run_draft_milestones() {
     local prompt
     prompt=$(render_prompt "draft_milestones")
 
-    # Invoke agent
+    # Marker for post-run discovery — any milestone file newer than this
+    # was written or overwritten by the agent, regardless of which ID it
+    # picked. Avoids relying on next_id, which becomes stale across reruns.
+    local _draft_marker="${log_dir}/.draft-milestones-marker-$$"
+    touch "$_draft_marker"
+
     run_agent "Draft Milestones" \
         "${DRAFT_MILESTONES_MODEL}" \
         "${DRAFT_MILESTONES_MAX_TURNS}" \
@@ -157,19 +162,30 @@ run_draft_milestones() {
         "$log_file" \
         "$AGENT_TOOLS_CODER"
 
-    # Discover generated milestone files (new files matching m<next_id+>-*.md)
+    # Preserve session debug files when the agent fails, before the EXIT
+    # trap nukes TEKHTON_SESSION_DIR. Lets us see what claude actually choked
+    # on after a non-zero exit / null run.
+    if [[ "${LAST_AGENT_EXIT_CODE:-0}" -ne 0 ]] || [[ "${LAST_AGENT_NULL_RUN:-false}" = true ]]; then
+        local _sess="${TEKHTON_SESSION_DIR:-}"
+        if [[ -n "$_sess" ]] && [[ -d "$_sess" ]]; then
+            local _dbg_base="${log_file%.log}"
+            cp -f "${_sess}/agent_stderr.txt" "${_dbg_base}.stderr.txt" 2>/dev/null || true
+            cp -f "${_sess}/agent_last_output.txt" "${_dbg_base}.lastout.txt" 2>/dev/null || true
+            warn "Saved agent debug to ${_dbg_base}.{stderr,lastout}.txt"
+        fi
+    fi
+
+    # Discover milestone files written/touched during this run.
     local generated_files=()
     local f
     for f in "${milestone_dir}"/m[0-9]*.md; do
         [[ -f "$f" ]] || continue
-        local base
-        base=$(basename "$f")
-        local num="${base#m}"
-        num="${num%%-*}"
-        if [[ "$num" =~ ^[0-9]+$ ]] && [[ "$num" -ge "$next_id" ]]; then
+        if [[ "$f" -nt "$_draft_marker" ]]; then
             generated_files+=("$f")
         fi
     done
+
+    rm -f "$_draft_marker"
 
     if [[ ${#generated_files[@]} -eq 0 ]]; then
         warn "No milestone files were generated."
